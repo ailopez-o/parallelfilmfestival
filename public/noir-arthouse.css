@@ -1,0 +1,177 @@
+/* Noir Arthouse Style: Inky, Textured, Dramatic */
+
+:root {
+  --bg-inky: #050508;
+  --bg-card: rgba(10, 10, 15, 0.9);
+  --accent-oxblood: #7f1d1d;
+  --accent-gold: #b45309;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --border: rgba(255, 255, 255, 0.05);
+  --success: #166534;
+  
+  font-family: 'Syne', sans-serif;
+  line-height: 1.6;
+  background-color: var(--bg-inky);
+  color: var(--text-primary);
+}
+
+body {
+  margin: 0;
+  /* Film Grain Effect */
+  background: 
+    linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)),
+    url('https://www.transparenttextures.com/patterns/stardust.png'),
+    #050508;
+  background-attachment: fixed;
+}
+
+h1, h2, h3, h4 {
+  font-family: 'Cormorant Garamond', serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+header {
+  border-bottom: 1px solid var(--border);
+  padding: 2.5rem 0;
+  background: var(--bg-inky);
+}
+
+.logo {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+.hero {
+  padding: 6rem 0;
+  text-align: center;
+}
+
+.hero h1 {
+  font-size: 4.5rem;
+  margin-bottom: 0.5rem;
+  color: #fff;
+  font-style: italic;
+}
+
+.hero p {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.1rem;
+  opacity: 0.7;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.movie-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 2px; /* Sharp corners like a film frame */
+  transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+  box-shadow: 0 30px 60px rgba(0,0,0,0.8);
+}
+
+.movie-card:hover {
+  transform: scale(1.02);
+  border-color: var(--accent-oxblood);
+}
+
+.poster-wrapper img {
+  filter: contrast(110%) sepia(10%);
+  transition: filter 0.5s ease;
+}
+
+.movie-card:hover .poster-wrapper img {
+  filter: contrast(120%) sepia(0%);
+}
+
+.movie-title {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.5rem;
+  font-style: italic;
+}
+
+.vote-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  padding: 0.5rem 1rem;
+  border-radius: 0;
+  color: var(--text-secondary);
+  transition: all 0.3s ease;
+}
+
+.vote-btn:hover {
+  border-color: var(--accent-oxblood);
+  color: #fff;
+}
+
+.vote-btn.active.up {
+  background: var(--accent-oxblood);
+  color: #fff;
+  border-color: var(--accent-oxblood);
+}
+
+.vote-btn.active.down {
+  background: #333;
+  color: #fff;
+}
+
+.mark-seen-btn {
+  background: transparent;
+  border: 1px solid var(--accent-oxblood);
+  color: var(--accent-oxblood);
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 0.75rem;
+  padding: 1rem;
+  border-radius: 0;
+  margin-top: 1.5rem;
+  width: 100%;
+  cursor: pointer;
+  transition: all 0.4s;
+}
+
+.mark-seen-btn:hover {
+  background: var(--accent-oxblood);
+  color: #fff;
+}
+
+.theme-switcher {
+  background: #000;
+  border-radius: 0;
+  border: 1px solid var(--border);
+}
+
+.theme-switcher button {
+  border-radius: 0;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+}
+
+.theme-switcher button.active {
+  background: var(--accent-oxblood);
+}
+
+.search-wrapper input {
+  background: transparent;
+  border-radius: 0;
+  border: none;
+  border-bottom: 2px solid var(--border);
+  padding-left: 0;
+}
+
+.search-wrapper input:focus {
+  border-bottom-color: var(--accent-oxblood);
+}

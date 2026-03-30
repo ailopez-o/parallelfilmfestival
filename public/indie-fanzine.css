@@ -1,0 +1,121 @@
+@import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Special+Elite&display=swap');
+
+:root {
+  --bg-color: #f0f0f0;
+  --text-main: #111;
+  --accent: #ff4d00;
+  --border-thick: 3px solid #111;
+  --paper-grain: linear-gradient(rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.8)), url('https://www.transparenttextures.com/patterns/stardust.png');
+  
+  font-family: 'Courier Prime', monospace;
+  background-color: var(--bg-color);
+  color: var(--text-main);
+}
+
+body {
+  background: var(--paper-grain);
+  margin: 0;
+  line-height: 1.4;
+}
+
+h1, h2, h3, h4 {
+  font-family: 'Special Elite', cursive;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+header {
+  background: #fff;
+  border-bottom: var(--border-thick);
+  padding: 2rem 0;
+  transform: rotate(-0.5deg);
+  width: 102%;
+  margin-left: -1%;
+}
+
+.logo {
+  font-size: 2rem;
+  background: #111;
+  color: #fff;
+  padding: 0.5rem 1rem;
+  display: inline-block;
+  transform: rotate(1deg);
+}
+
+.hero h1 {
+  font-size: 4rem;
+  line-height: 0.9;
+  margin-bottom: 2rem;
+  background: #111;
+  color: #fff;
+  display: inline;
+  padding: 0.2rem 1rem;
+  box-shadow: 10px 10px 0 var(--accent);
+}
+
+.movie-card {
+  background: #fff;
+  border: var(--border-thick);
+  padding: 1rem;
+  border-radius: 0;
+  box-shadow: 8px 8px 0 #111;
+  transition: transform 0.1s;
+}
+
+.movie-card:hover {
+  transform: translate(-4px, -4px);
+  box-shadow: 12px 12px 0 var(--accent);
+}
+
+.poster-wrapper {
+  background: #111;
+  padding: 0.5rem;
+  border: 1px solid #333;
+}
+
+.poster-wrapper img {
+  filter: grayscale(100%) contrast(120%);
+}
+
+.vote-btn {
+  background: transparent;
+  border: 2px solid #111;
+  font-family: 'Special Elite', cursive;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.vote-btn.active.up {
+  background: var(--accent);
+  color: #fff;
+}
+
+.vote-btn.active.down {
+  background: #111;
+  color: #fff;
+}
+
+.search-wrapper input {
+  border: var(--border-thick);
+  border-radius: 0;
+  background: #fff;
+  padding: 0.5rem 1rem;
+  width: 100%;
+}
+
+.admin-toggle {
+  background: #111;
+  color: #fff;
+  border: 2px solid var(--accent);
+  border-radius: 0;
+  box-shadow: 4px 4px 0 var(--accent);
+}
+
+.section-title h2 {
+  background: var(--accent);
+  color: #fff;
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  transform: rotate(-1deg);
+}
