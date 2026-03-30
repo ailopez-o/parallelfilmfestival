@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/javascript.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Parallel Film Festival | Proposals & Voting</title>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts for Arthouse -->
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+    <!-- Main Style -->
+    <link id="theme-link" rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="container nav-wrapper">
+        <nav>
+          <div class="logo" onclick="window.navigateTo('home')">
+            <i data-lucide="clapperboard"></i>
+            <span>Parallel<span>FilmFestival</span></span>
+          </div>
+          <div class="nav-links">
+            <button class="nav-btn" onclick="window.navigateTo('explore')">
+              <i data-lucide="compass"></i> Explore
+            </button>
+          </div>
+          <div id="userHeader" class="user-actions">
+            <!-- Auth buttons/user info will be injected here -->
+          </div>
+        </nav>
+      </div>
+    </header>
+
+    <main id="appContent">
+      <!-- HOME VIEW -->
+      <section id="homeView" class="view">
+        <section class="hero container">
+          <h1>Vote for your <br/>Next Favorite Film</h1>
+          <p>Propose your favorite movies and vote on the lineup for our next festival session.</p>
+          
+          <div id="searchContainer" class="main-search-container">
+            <div class="search-wrapper">
+              <i data-lucide="search"></i>
+              <input type="text" id="movieSearch" placeholder="Search for movies to propose..." />
+              <div id="searchResults" class="search-results-dropdown"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="proposals container">
+          <div class="section-title">
+            <h2>Proposed Movies</h2>
+          </div>
+          <div id="movieGrid" class="movie-grid">
+            <!-- Movie cards will be injected here -->
+          </div>
+        </section>
+
+        <section class="history-section">
+          <div class="container">
+            <div class="section-title">
+              <h2>Seen Movies History</h2>
+              <div class="rating-display">
+                <i data-lucide="star"></i>
+                <span>Overall Average: 8.4</span>
+              </div>
+            </div>
+            <div id="historyGrid" class="movie-grid">
+              <!-- Seen movies will be injected here -->
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- AUTH VIEW -->
+      <section id="authView" class="view page-hidden">
+        <div class="container auth-container">
+          <div class="auth-card">
+            <div class="auth-tabs">
+              <button class="auth-tab active" data-tab="login">Sign In</button>
+              <button class="auth-tab" data-tab="signup">Create Account</button>
+            </div>
+
+            <div id="loginForm" class="auth-form-content">
+              <h2>Welcome Back</h2>
+              <p>Sign in to vote and propose movies.</p>
+              <button class="google-btn" onclick="window.signInWithGoogle()">
+                <img src="https://www.google.com/favicon.ico" width="20" alt="G">
+                Continue with Google
+              </button>
+              <div class="divider">or use email</div>
+              <input type="email" id="loginEmail" placeholder="Email Address" />
+              <input type="password" id="loginPassword" placeholder="Password" />
+              <button class="submit-btn" onclick="window.handleLogin()">Sign In</button>
+            </div>
+
+            <div id="signupForm" class="auth-form-content page-hidden">
+              <h2>Join the Festival</h2>
+              <p>Create an account to join the community.</p>
+              <input type="email" id="signupEmail" placeholder="Email Address" />
+              <input type="password" id="signupPassword" placeholder="Password" />
+              <button class="submit-btn" onclick="window.handleSignup()">Create Account</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PROFILE VIEW -->
+      <section id="profileView" class="view page-hidden">
+        <div class="container">
+          <div class="profile-header">
+            <div class="profile-info-main">
+              <img id="profileAvatar" src="" class="large-avatar" />
+              <div>
+                <h2 id="profileName">User Name</h2>
+                <p id="profileEmail">user@example.com</p>
+              </div>
+            </div>
+            <div class="profile-stats">
+              <div class="stat-card">
+                <div class="stat-value" id="countProposals">0</div>
+                <div class="stat-label">Proposals</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="countVotes">0</div>
+                <div class="stat-label">Votes</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="profile-activity">
+            <div class="section-title">
+              <h2>My Activity</h2>
+            </div>
+            <div class="activity-tabs">
+              <button class="activity-tab active" data-view="myProposals">My Proposals</button>
+              <button class="activity-tab" data-view="myVotes">My Votes</button>
+            </div>
+            <div id="profileActivityGrid" class="movie-grid">
+              <!-- User activity cards will be injected here -->
+            </div>
+          </div>
+          
+          <div class="logout-section">
+            <button class="logout-btn" onclick="window.handleLogout()">Sign Out</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- EXPLORE VIEW -->
+      <section id="exploreView" class="view page-hidden">
+        <div id="apertureOverlay" class="aperture-overlay">
+          <div class="aperture-iris"></div>
+          <div class="scout-loading-content">
+            <div class="scout-loading-text">SCANNING GALACTIC ARCHIVES...</div>
+            <div class="status-text">Initializing AI Scout...</div>
+            <button id="cancelAISearch" class="btn-outline" style="margin-top: 2rem; padding: 0.8rem 2rem; border-color: rgba(255,255,255,0.2);">
+              Cancel & Use Manual
+            </button>
+          </div>
+        </div>
+
+        <div class="container">
+          <div class="section-title">
+            <h2>Explore Movies</h2>
+            <div class="explore-modes">
+              <button class="mode-tab active" data-mode="manual">Manual Filter</button>
+              <button class="mode-tab" data-mode="ai">AI Scout ✨</button>
+            </div>
+          </div>
+
+          <!-- Manual Search Panel -->
+          <div id="manualSearchPanel" class="explore-panel glass">
+            <div class="explore-row">
+              <div class="input-group">
+                <label>Title Keywords</label>
+                <input type="text" id="exploreTitle" placeholder="e.g. Inception..." class="explore-input" />
+              </div>
+              <div class="input-group">
+                <label>Director</label>
+                <input type="text" id="exploreDirector" placeholder="e.g. Nolan..." class="explore-input" />
+              </div>
+            </div>
+
+            <div class="explore-row">
+              <div class="input-group">
+                <label>Genre</label>
+                <select id="exploreGenre" class="explore-input">
+                  <option value="">All Genres</option>
+                </select>
+              </div>
+              <div class="input-group">
+                <label>Year Range</label>
+                <div class="range-inputs">
+                  <input type="number" id="exploreYearFrom" placeholder="From" min="1900" max="2030" />
+                  <span>to</span>
+                  <input type="number" id="exploreYearTo" placeholder="To" min="1900" max="2030" />
+                </div>
+              </div>
+            </div>
+
+            <div class="explore-actions">
+              <button class="btn-clear" id="exploreClearBtn">
+                <i data-lucide="rotate-ccw"></i> Clear
+              </button>
+              <button class="btn-search" id="exploreSearchBtn">
+                <i data-lucide="search"></i> Search
+              </button>
+            </div>
+          </div>
+
+          <!-- AI Search Panel -->
+          <div id="aiSearchPanel" class="explore-panel glass page-hidden">
+            <div class="ai-input-wrapper">
+              <label>What's on your mind?</label>
+              <textarea id="aiSearchInput" placeholder="e.g. Movies about space and loneliness from the 70s similar to 2001..." rows="3"></textarea>
+              <p class="ai-hint">Try searching by theme, plot, or atmosphere.</p>
+            </div>
+            <div class="explore-actions">
+              <button class="btn-search" id="aiSearchBtn">
+                <i data-lucide="sparkles"></i> Ask AI Scout
+              </button>
+            </div>
+          </div>
+
+          <div id="exploreGrid" class="movie-grid">
+            <div class="empty-state">Start searching to discover films.</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/main.js"></script>
+    <script>
+      // Initialize icons
+      window.onload = () => {
+        lucide.createIcons();
+      };
+    </script>
+  </body>
+</html>
+
