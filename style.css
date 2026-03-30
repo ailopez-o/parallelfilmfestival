@@ -61,9 +61,8 @@ header {
 
 nav {
   display: flex;
-  justify-content: flex-start;
+  justify-content: space-between;
   align-items: center;
-  gap: 2rem;
 }
 
 .nav-links {
@@ -269,10 +268,54 @@ nav {
 /* Main Search */
 .main-search-container {
   margin-top: 2.5rem;
-  max-width: 600px;
+  max-width: 800px;
   margin-left: auto;
   margin-right: auto;
   position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: 1rem;
+}
+
+.explore-btn-hero {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  color: #fff;
+  padding: 0 2.5rem;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+}
+
+.explore-btn-hero:hover {
+  background: rgba(79, 70, 229, 0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(79, 70, 229, 0.2);
+}
+
+.explore-btn-hero i {
+  color: var(--accent);
+}
+
+@media (max-width: 768px) {
+  .main-search-container {
+    flex-direction: column;
+    padding: 0 1rem;
+  }
+  .explore-btn-hero {
+    padding: 1rem;
+    justify-content: center;
+  }
 }
 
 .search-wrapper {
@@ -711,12 +754,13 @@ nav {
 .explore-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.5rem;
+  gap: 3.5rem; /* Significantly increased gap for breathing room */
+  width: 100%;
 }
 
 .explore-row .input-group {
-  flex: 1;
-  min-width: 280px; /* Stronger min-width to prevent clash */
+  flex: 1 1 300px; /* Better flex shorthand with basis */
+  min-width: 0; /* Allows shrinking if needed, but basis/gap should handle it */
 }
 
 /* --- UI Polish Extras & Toasts --- */

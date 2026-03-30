@@ -122,7 +122,17 @@ async function refreshData() {
     m.average_community_rating = mRatings.length > 0 
       ? mRatings.reduce((sum, r) => sum + r.rating, 0) / mRatings.length 
       : 0;
+
+    // Harmonize score fields (favoring vote_average if present, then average_rating)
+    if (m.vote_average === undefined || m.vote_average === null || m.vote_average === 0) {
+      if (typeof m.average_rating === 'number' && m.average_rating !== 0) {
+        m.vote_average = m.average_rating;
+      }
+    }
   });
+
+  // Background enrichment for movies with missing scores
+  enrichMissingScores(movies);
 
   proposedMovies = movies.filter(m => !m.is_seen);
   seenMovies = movies.filter(m => m.is_seen);
@@ -130,6 +140,46 @@ async function refreshData() {
   renderProposals();
   renderHistory();
   if (currentView === 'profile') loadUserActivity();
+}
+
+// Rendering Helpers
+function formatScore(score) {
+  if (score === undefined || score === null || (typeof score === 'string' && score === 'N/A')) return 'N/A';
+  const num = parseFloat(score);
+  return isNaN(num) ? 'N/A' : num.toFixed(1);
+}
+
+async function enrichMissingScores(movies) {
+  const moviesToEnrich = movies.filter(m => m.tmdb_id && (m.vote_average === undefined || m.vote_average === null || m.vote_average === 0));
+  
+  if (moviesToEnrich.length === 0) return;
+
+  console.log(`[Enrichment] Found ${moviesToEnrich.length} movies needing TMDB scores.`);
+
+  for (const movie of moviesToEnrich) {
+    try {
+      const url = `https://api.themoviedb.org/3/movie/${movie.tmdb_id}?api_key=${tmdbApiKey}`;
+      const resp = await fetch(url);
+      const data = await resp.json();
+      
+      if (data.vote_average !== undefined) {
+        movie.vote_average = data.vote_average;
+        console.log(`[Enrichment] Updated ${movie.title} with score ${movie.vote_average}`);
+        
+        // Update DB silently for future loads
+        await supabase.from('movies').update({ 
+          vote_average: data.vote_average,
+          average_rating: data.vote_average 
+        }).eq('id', movie.id);
+      }
+    } catch (e) {
+      console.error(`[Enrichment] Failed for ${movie.title}:`, e);
+    }
+  }
+
+  // Re-render if we are in a view that uses these movies
+  renderProposals();
+  renderHistory();
 }
 
 // Routing
@@ -224,7 +274,7 @@ function renderProposals() {
           
           <div class="rating-badge">
             <i data-lucide="star" style="width:14px; height:14px; fill:#fbbf24;"></i>
-            <span class="rating-value">(${movie.vote_average ? movie.vote_average.toFixed(1) : (movie.average_rating ? movie.average_rating.toFixed(1) : 'N/A')})</span>
+            <span class="rating-value" title="TMDB Score">(${formatScore(movie.vote_average)})</span>
           </div>
 
           <div class="genre-tags">
@@ -270,7 +320,7 @@ function renderHistory() {
           
           <div class="rating-badge">
             <i data-lucide="star" style="width:14px; height:14px; fill:#fbbf24;"></i>
-            <span class="rating-value">(${movie.vote_average ? movie.vote_average.toFixed(1) : 'TMDB N/A'})</span>
+            <span class="rating-value" title="TMDB Score">(${formatScore(movie.vote_average)})</span>
           </div>
 
           <div class="genre-tags">
@@ -725,7 +775,7 @@ function createExploreCard(movie) {
       <div class="movie-meta">${movie.release_date ? movie.release_date.split('-')[0] : 'N/A'} • ${movie.director}</div>
       <div class="rating-badge">
         <i data-lucide="star" style="width:14px; height:14px; fill:#fbbf24;"></i>
-        <span class="rating-value">(${movie.vote_average ? movie.vote_average.toFixed(1) : 'N/A'})</span>
+        <span class="rating-value">(${formatScore(movie.vote_average)})</span>
       </div>
       <div class="genre-tags">
         ${movie.genres.slice(0, 2).map(g => `<span class="genre-tag">${g}</span>`).join('')}
@@ -762,7 +812,7 @@ function renderSearchResults(results) {
             <span style="color: rgba(255,255,255,0.2);">•</span>
             <div class="rating-badge" style="margin:0; padding:0; background:transparent; border:none; font-size: 0.75rem;">
               <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
-              <span style="color:#fbbf24;">${movie.vote_average ? movie.vote_average.toFixed(1) : 'N/A'}</span>
+              <span style="color:#fbbf24;">${formatScore(movie.vote_average)}</span>
             </div>
           </div>
           <div style="font-size: 0.7rem; color: var(--text-secondary); opacity: 0.7;">${movie.director}</div>
@@ -798,6 +848,7 @@ window.proposeMovie = async (tmdbMovie, el) => {
   let { data, error } = await supabase.from('movies').insert([{
     ...payload,
     vote_average: tmdbMovie.vote_average,
+    average_rating: tmdbMovie.vote_average, // Backwards compatibility with the current column name found in research
     vote_count: tmdbMovie.vote_count
   }]).select();
 

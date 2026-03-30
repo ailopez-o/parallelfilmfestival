@@ -20,11 +20,6 @@
             <i data-lucide="clapperboard"></i>
             <span>Parallel<span>FilmFestival</span></span>
           </div>
-          <div class="nav-links">
-            <button class="nav-btn" onclick="window.navigateTo('explore')">
-              <i data-lucide="compass"></i> Explore
-            </button>
-          </div>
           <div id="userHeader" class="user-actions">
             <!-- Auth buttons/user info will be injected here -->
           </div>
@@ -45,6 +40,9 @@
               <input type="text" id="movieSearch" placeholder="Search for movies to propose..." />
               <div id="searchResults" class="search-results-dropdown"></div>
             </div>
+            <button class="explore-btn-hero" onclick="window.navigateTo('explore')">
+              <i data-lucide="compass"></i> Explore All
+            </button>
           </div>
         </section>
 
@@ -61,10 +59,6 @@
           <div class="container">
             <div class="section-title">
               <h2>Seen Movies History</h2>
-              <div class="rating-display">
-                <i data-lucide="star"></i>
-                <span>Overall Average: 8.4</span>
-              </div>
             </div>
             <div id="historyGrid" class="movie-grid">
               <!-- Seen movies will be injected here -->
