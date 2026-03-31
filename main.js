@@ -155,8 +155,8 @@ async function refreshData() {
     }
   });
 
-  // Background enrichment for movies with missing scores
-  enrichMissingScores(movies);
+  // Background enrichment for movies with missing data
+  enrichMovieData(movies);
 
   proposedMovies = movies.filter(m => !m.is_seen);
   seenMovies = movies.filter(m => m.is_seen);
@@ -173,35 +173,59 @@ function formatScore(score) {
   return isNaN(num) ? 'N/A' : num.toFixed(1);
 }
 
-async function enrichMissingScores(movies) {
-  const moviesToEnrich = movies.filter(m => m.tmdb_id && (m.vote_average === undefined || m.vote_average === null || m.vote_average === 0));
+async function enrichMovieData(movies) {
+  // Find movies that need enrichment (missing scores, trailers, or providers)
+  const moviesToEnrich = movies.filter(m => m.tmdb_id && (
+    m.vote_average === undefined || m.vote_average === null || m.vote_average === 0 ||
+    !m.trailer_url || 
+    !m.watch_providers
+  ));
   
   if (moviesToEnrich.length === 0) return;
 
-  console.log(`[Enrichment] Found ${moviesToEnrich.length} movies needing TMDB scores.`);
+  console.log(`[Enrichment] Found ${moviesToEnrich.length} movies needing TMDB data.`);
 
   for (const movie of moviesToEnrich) {
     try {
-      const url = `https://api.themoviedb.org/3/movie/${movie.tmdb_id}?api_key=${tmdbApiKey}`;
-      const resp = await fetch(url);
+      const baseUrl = `https://api.themoviedb.org/3/movie/${movie.tmdb_id}?api_key=${tmdbApiKey}`;
+      const videosUrl = `${baseUrl}&append_to_response=videos,watch/providers`;
+      
+      const resp = await fetch(videosUrl);
       const data = await resp.json();
       
+      const updates = {};
+      
+      // 1. Enriched Scores
       if (data.vote_average !== undefined) {
         movie.vote_average = data.vote_average;
-        console.log(`[Enrichment] Updated ${movie.title} with score ${movie.vote_average}`);
-        
-        // Update DB silently for future loads
-        await supabase.from('movies').update({ 
-          vote_average: data.vote_average,
-          average_rating: data.vote_average 
-        }).eq('id', movie.id);
+        updates.vote_average = data.vote_average;
+        updates.average_rating = data.vote_average;
+      }
+      
+      // 2. Trailers
+      const trailer = data.videos?.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube');
+      if (trailer) {
+        movie.trailer_url = `https://www.youtube.com/watch?v=${trailer.key}`;
+        updates.trailer_url = movie.trailer_url;
+      }
+      
+      // 3. Watch Providers (Spain priority)
+      const providers = data['watch/providers']?.results?.ES;
+      if (providers) {
+        movie.watch_providers = providers;
+        updates.watch_providers = providers;
+      }
+      
+      if (Object.keys(updates).length > 0) {
+        console.log(`[Enrichment] Data updated for ${movie.title}`);
+        await supabase.from('movies').update(updates).eq('id', movie.id);
       }
     } catch (e) {
       console.error(`[Enrichment] Failed for ${movie.title}:`, e);
     }
   }
 
-  // Re-render if we are in a view that uses these movies
+  // Re-render
   renderProposals();
   renderHistory();
 }
@@ -281,6 +305,14 @@ function renderProposals() {
     const canDelete = isOwner || isAdmin;
     const genres = movie.genres ? movie.genres.slice(0, 3) : [];
     
+    // Watch providers logic
+    const providers = movie.watch_providers?.flatrate || [];
+    const providersHtml = providers.slice(0, 3).map(p => `
+      <div class="provider-icon" title="${p.provider_name}">
+        <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
+      </div>
+    `).join('');
+
     return `
       <div class="movie-card" data-id="${movie.id}">
         ${canDelete ? `
@@ -294,19 +326,43 @@ function renderProposals() {
                onerror="this.onerror=null; this.src='${FALLBACK_IMAGE}'">
         </div>
         <div class="movie-info">
-          <div class="movie-title">${movie.title}</div>
-          <div class="movie-meta">${movie.release_year} • ${movie.director || 'Unknown Director'}</div>
-          
-          <div class="rating-badge">
-            <i data-lucide="star" style="width:14px; height:14px; fill:#fbbf24;"></i>
-            <span class="rating-value" title="TMDB Score">(${formatScore(movie.vote_average)})</span>
+          <div class="header-main">
+            <div class="title-row">
+              <div class="movie-title">${movie.title}</div>
+              <div class="rating-badge">
+                <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
+                <span class="rating-value">${formatScore(movie.vote_average)}</span>
+              </div>
+            </div>
+            <div class="movie-meta">
+              <span>${movie.release_year} • ${movie.director || 'Unknown Director'}</span>
+              ${movie.trailer_url ? `
+                <a href="${movie.trailer_url}" target="_blank" class="trailer-link-btn" title="Watch Trailer">
+                  <i data-lucide="play-circle"></i> Trailer
+                </a>
+              ` : ''}
+            </div>
           </div>
-
+          
           <div class="genre-tags">
             ${genres.map(g => `<span class="genre-tag">${g}</span>`).join('')}
           </div>
 
           <div class="synopsis">${movie.synopsis || 'No synopsis available.'}</div>
+
+          <!-- Watch Providers -->
+          ${providers.length > 0 ? `
+            <div class="watch-providers">
+              <span class="provider-label">Available on:</span>
+              <div class="provider-list">
+                ${providers.slice(0, 4).map(p => `
+                  <a href="${movie.watch_providers.link}" target="_blank" class="provider-icon" title="${p.provider_name}">
+                    <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
+                  </a>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
 
           <div class="voting-container">
             <button class="vote-btn like-btn ${hasVoted ? 'active' : ''}" onclick="window.toggleVote('${movie.id}')">
@@ -332,9 +388,16 @@ function renderProposals() {
 function renderHistory() {
   historyGrid.innerHTML = seenMovies.map(movie => {
     const genres = movie.genres ? movie.genres.slice(0, 2) : [];
+    const providers = movie.watch_providers?.flatrate || [];
+    const providersHtml = providers.slice(0, 3).map(p => `
+      <div class="provider-icon small" title="${p.provider_name}">
+        <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
+      </div>
+    `).join('');
+
     // Admins can delete or unmark any history movie
     return `
-      <div class="movie-card" data-id="${movie.id}">
+      <div class="movie-card seen" data-id="${movie.id}">
         ${isAdmin ? `
           <button class="delete-movie-btn" onclick="window.deleteMovie('${movie.id}')" title="Remove movie">
             <i data-lucide="trash-2"></i>
@@ -346,17 +409,40 @@ function renderHistory() {
                onerror="this.onerror=null; this.src='${FALLBACK_IMAGE}'">
         </div>
         <div class="movie-info">
-          <div class="movie-title">${movie.title}</div>
-          <div class="movie-meta">${movie.release_year} • Festival Avg: ${movie.average_community_rating ? movie.average_community_rating.toFixed(1) : '0.0'}</div>
-          
-          <div class="rating-badge">
-            <i data-lucide="star" style="width:14px; height:14px; fill:#fbbf24;"></i>
-            <span class="rating-value" title="TMDB Score">(${formatScore(movie.vote_average)})</span>
+          <div class="header-main">
+            <div class="title-row">
+              <div class="movie-title">${movie.title}</div>
+              <div class="rating-badge">
+                <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
+                <span class="rating-value">${formatScore(movie.vote_average)}</span>
+              </div>
+            </div>
+            <div class="movie-meta">
+              <span>${movie.release_year} • Festival Avg: ${movie.average_community_rating ? movie.average_community_rating.toFixed(1) : '0.0'}</span>
+              ${movie.trailer_url ? `
+                <a href="${movie.trailer_url}" target="_blank" class="trailer-link-btn mini" title="Watch Trailer">
+                  <i data-lucide="play-circle"></i> Trailer
+                </a>
+              ` : ''}
+            </div>
           </div>
-
+          
           <div class="genre-tags">
             ${genres.map(g => `<span class="genre-tag">${g}</span>`).join('')}
           </div>
+
+          <!-- Watch Providers -->
+          ${providers.length > 0 ? `
+            <div class="watch-providers mini">
+              <div class="provider-list">
+                ${providers.slice(0, 4).map(p => `
+                  <a href="${movie.watch_providers.link}" target="_blank" class="provider-icon small" title="${p.provider_name}">
+                    <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
+                  </a>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
 
           <div class="synopsis">${movie.synopsis || 'No synopsis available.'}</div>
           
@@ -641,17 +727,41 @@ function renderActivityGrid(movies) {
     profileActivityGrid.innerHTML = '<div class="empty-state">Nothing to show here yet.</div>';
     return;
   }
-  profileActivityGrid.innerHTML = movies.map(movie => `
-    <div class="movie-card">
-      <div class="poster-wrapper">
-        <img src="${movie.poster_url || FALLBACK_IMAGE}">
+  profileActivityGrid.innerHTML = movies.map(movie => {
+    const providers = movie.watch_providers?.flatrate || [];
+    const providersHtml = providers.slice(0, 3).map(p => `
+      <div class="provider-icon xsmall" title="${p.provider_name}">
+        <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
       </div>
-      <div class="movie-info">
-        <div class="movie-title">${movie.title}</div>
-        <div class="movie-meta">${movie.release_year}</div>
+    `).join('');
+
+    return `
+      <div class="movie-card">
+        <div class="poster-wrapper">
+          <img src="${movie.poster_url || FALLBACK_IMAGE}">
+        </div>
+        <div class="movie-info">
+          <div class="movie-title">${movie.title}</div>
+          <div class="movie-meta">
+            ${movie.release_year}
+            ${movie.trailer_url ? `<a href="${movie.trailer_url}" target="_blank" style="color:var(--accent); font-size:0.7rem; display:flex; align-items:center; gap:3px;"><i data-lucide="play-circle" style="width:12px;"></i> Trailer</a>` : ''}
+          </div>
+          
+          ${providers.length > 0 ? `
+            <div class="watch-providers mini">
+              <div class="provider-list">
+                ${providers.slice(0, 3).map(p => `
+                  <a href="${movie.watch_providers.link}" target="_blank" class="provider-icon xsmall" title="${p.provider_name}">
+                    <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
+                  </a>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 // TMDB Search Logic
