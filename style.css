@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;600;700;800&family=Syne:wght@400;600;700;800&display=swap');
 
 :root {
   --bg-dark: #0f0f14;
@@ -40,8 +40,9 @@ body {
 }
 
 h1, h2, h3, h4 {
-  font-family: 'Outfit', sans-serif;
-  letter-spacing: -0.02em;
+  font-family: 'Inter', sans-serif;
+  letter-spacing: -0.04em; /* Compacted feel */
+  font-weight: 300; /* Fine weight */
 }
 
 .container {
@@ -82,8 +83,11 @@ nav {
 }
 
 .logo {
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-family: 'Inter', sans-serif;
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: -0.05em; /* Very tight for a compact logo feel */
+  text-transform: uppercase; /* Elegant and professional */
   background: linear-gradient(to right, #818cf8, #c084fc);
   -webkit-background-clip: text;
   background-clip: text;
@@ -94,6 +98,22 @@ nav {
   cursor: pointer;
 }
 
+@media (max-width: 768px) {
+  .logo {
+    font-size: 1rem;
+    letter-spacing: -0.04em;
+  }
+  .logo span {
+    display: block; /* Stack on very small if needed or keep inline but compact */
+    max-width: 140px;
+    line-height: 1.1;
+  }
+}
+
+.logo span {
+  display: inline-block;
+}
+
 /* Hero Section */
 .hero {
   padding: 6rem 0 3rem;
@@ -101,12 +121,14 @@ nav {
 }
 
 .hero h1 {
-  font-size: 3.5rem;
+  font-size: 4rem; /* Larger font size since Inter is less 'wide' */
+  font-weight: 200; /* Extra fine for the main banner */
   margin-bottom: 1rem;
   background: linear-gradient(to bottom, #fff 0%, #94a3b8 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+  letter-spacing: -0.05em;
 }
 
 .hero p {
@@ -178,7 +200,8 @@ nav {
   font-size: 1.25rem;
   font-weight: 600;
   margin-bottom: 0.5rem;
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Inter', sans-serif;
+  letter-spacing: -0.02em;
 }
 
 .movie-meta {

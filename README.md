@@ -9,7 +9,7 @@
 ## 💎 Premium Design Philosophy
 The application features a cutting-edge **Glassmorphism** interface with:
 - **Noir & Indigo Palette:** Deep obsidian backgrounds with vibrant indigo accents.
-- **Cinematic Textures:** Refined typography using *Outfit* and *Inter*.
+- **Cinematic Textures:** Refined typography using *Outfit* (Headings), *Syne* (Logo), and *Inter* (Body/UI).
 - **Dynamic Micro-interactions:** Smooth transitions, hover-glow effects, and glass-blur overlays.
 
 ---
