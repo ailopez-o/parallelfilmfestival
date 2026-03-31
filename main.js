@@ -66,6 +66,16 @@ async function init() {
   await refreshData();
   setupEventListeners();
   handleRouting();
+
+  // Premium Preloader dismissal
+  setTimeout(() => {
+    const preloader = document.getElementById('preloader');
+    if (preloader) {
+      preloader.classList.add('fade-out');
+      // Clean up after animation
+      setTimeout(() => preloader.remove(), 800);
+    }
+  }, 1500); 
 }
 
 async function fetchGenreMap() {
@@ -158,6 +168,16 @@ async function refreshData() {
   // Background enrichment for movies with missing data
   enrichMovieData(movies);
 
+  // 1. TEMPORARY: Sanitization of corrupted vote counts from TMDB global data
+  const corrupted = movies.filter(m => !m.is_seen && m.vote_count > 50);
+  if (corrupted.length > 0) {
+    console.log(`[Migration] Sanitizing ${corrupted.length} corrupted movie counts...`);
+    supabase.from('movies').update({ vote_count: 0 }).in('id', corrupted.map(m => m.id)).then(() => {
+      corrupted.forEach(m => m.vote_count = 0);
+      renderProposals();
+    });
+  }
+
   proposedMovies = movies.filter(m => !m.is_seen);
   seenMovies = movies.filter(m => m.is_seen);
 
@@ -198,8 +218,8 @@ async function enrichMovieData(movies) {
       // 1. Enriched Scores
       if (data.vote_average !== undefined) {
         movie.vote_average = data.vote_average;
-        updates.vote_average = data.vote_average;
         updates.average_rating = data.vote_average;
+        // Don't overwrite local vote_count with TMDB's global count
       }
       
       // 2. Trailers
@@ -292,160 +312,101 @@ function showNotification(message, type = 'success') {
   }, 3000);
 }
 
-// Rendering
-function renderProposals() {
-  if (!proposedMovies.length) {
-    movieGrid.innerHTML = '<div class="empty-state">No movies proposed yet. Be the first!</div>';
-    return;
-  }
-
-  movieGrid.innerHTML = proposedMovies.map(movie => {
-    const hasVoted = userVotes.has(movie.id);
-    const isOwner = user && movie.proposed_by === user.id;
-    const canDelete = isOwner || isAdmin;
-    const genres = movie.genres ? movie.genres.slice(0, 3) : [];
-    
-    // Watch providers logic
-    const providers = movie.watch_providers?.flatrate || [];
-    const providersHtml = providers.slice(0, 3).map(p => `
-      <div class="provider-icon" title="${p.provider_name}">
-        <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
-      </div>
-    `).join('');
-
-    return `
-      <div class="movie-card" data-id="${movie.id}">
-        ${canDelete ? `
-          <button class="delete-movie-btn" onclick="window.deleteMovie('${movie.id}')" title="Remove movie">
-            <i data-lucide="trash-2"></i>
-          </button>
-        ` : ''}
-        <div class="poster-wrapper">
-          <img src="${movie.poster_url || FALLBACK_IMAGE}" alt="${movie.title}" 
-               loading="lazy"
-               onerror="this.onerror=null; this.src='${FALLBACK_IMAGE}'">
-        </div>
-        <div class="movie-info">
-          <div class="header-main">
-            <div class="title-row">
-              <div class="movie-title">${movie.title}</div>
-              <div class="rating-badge">
-                <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
-                <span class="rating-value">${formatScore(movie.vote_average)}</span>
-              </div>
-            </div>
-            <div class="movie-meta">
-              <span>${movie.release_year} • ${movie.director || 'Unknown Director'}</span>
-              ${movie.trailer_url ? `
-                <a href="${movie.trailer_url}" target="_blank" class="trailer-link-btn" title="Watch Trailer">
-                  <i data-lucide="play-circle"></i> Trailer
-                </a>
-              ` : ''}
-            </div>
-          </div>
-          
-          <div class="genre-tags">
-            ${genres.map(g => `<span class="genre-tag">${g}</span>`).join('')}
-          </div>
-
-          <div class="synopsis">${movie.synopsis || 'No synopsis available.'}</div>
-
-          <!-- Watch Providers -->
-          ${providers.length > 0 ? `
-            <div class="watch-providers">
-              <span class="provider-label">Available on:</span>
-              <div class="provider-list">
-                ${providers.slice(0, 4).map(p => `
-                  <a href="${movie.watch_providers.link}" target="_blank" class="provider-icon" title="${p.provider_name}">
-                    <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
-                  </a>
-                `).join('')}
-              </div>
-            </div>
-          ` : ''}
-
-          <div class="voting-container">
-            <button class="vote-btn like-btn ${hasVoted ? 'active' : ''}" onclick="window.toggleVote('${movie.id}')">
-              <i data-lucide="heart"></i>
-              <span>${hasVoted ? 'Voted' : 'Vote'}</span>
-            </button>
-            <span class="vote-count">${movie.vote_count || 0} votes</span>
-          </div>
-
-          ${isAdmin ? `
-            <button class="mark-seen-btn" onclick="window.markAsSeen('${movie.id}')">
-              <i data-lucide="check-circle"></i> Mark as Seen
-            </button>
-          ` : ''}
-        </div>
-      </div>
-    `;
-  }).join('');
+// Unified Movie Component
+function createMovieCardHTML(movie, options = {}) {
+  const { context = 'proposal', showDelete = false } = options;
   
-  if (window.lucide) window.lucide.createIcons();
-}
+  const hasVoted = userVotes.has(movie.id);
+  const genres = (movie.genres || []).slice(0, 3);
+  const posterUrl = movie.poster_url || (movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : FALLBACK_IMAGE);
+  const releaseYear = movie.release_year || (movie.release_date ? movie.release_date.split('-')[0] : 'N/A');
+  
+  // Watch providers
+  const providers = movie.watch_providers?.flatrate || [];
+  const providersLink = movie.watch_providers?.link || '#';
 
-function renderHistory() {
-  historyGrid.innerHTML = seenMovies.map(movie => {
-    const genres = movie.genres ? movie.genres.slice(0, 2) : [];
-    const providers = movie.watch_providers?.flatrate || [];
-    const providersHtml = providers.slice(0, 3).map(p => `
-      <div class="provider-icon small" title="${p.provider_name}">
-        <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
-      </div>
-    `).join('');
+  const cardClass = context === 'history' ? 'movie-card seen' : 'movie-card';
 
-    // Admins can delete or unmark any history movie
-    return `
-      <div class="movie-card seen" data-id="${movie.id}">
-        ${isAdmin ? `
-          <button class="delete-movie-btn" onclick="window.deleteMovie('${movie.id}')" title="Remove movie">
-            <i data-lucide="trash-2"></i>
-          </button>
+  return `
+    <div class="${cardClass}" data-id="${movie.id || ''}">
+      <div class="poster-wrapper">
+        <img src="${posterUrl}" alt="${movie.title}" loading="lazy" onerror="this.onerror=null; this.src='${FALLBACK_IMAGE}'">
+        
+        <!-- Explore Context Overlay (Now inside poster) -->
+        ${context === 'explore' ? `
+          <div class="propose-overlay">
+            <button class="btn-propose" onclick="window.proposeMovie(${JSON.stringify(movie).replace(/"/g, '&quot;')}, this)">
+              <i data-lucide="plus"></i> Propose Movie
+            </button>
+          </div>
         ` : ''}
-        <div class="poster-wrapper">
-          <img src="${movie.poster_url || FALLBACK_IMAGE}" alt="${movie.title}" 
-               loading="lazy"
-               onerror="this.onerror=null; this.src='${FALLBACK_IMAGE}'">
+      </div>
+
+      ${showDelete ? `
+        <button class="delete-movie-btn" onclick="window.deleteMovie('${movie.id}')" title="Remove movie">
+          <i data-lucide="trash-2"></i>
+        </button>
+      ` : ''}
+
+      <div class="movie-info">
+        <div class="header-main">
+          <div class="title-row">
+            <div class="movie-title">${movie.title}</div>
+            <div class="rating-badge">
+              <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
+              <span class="rating-value">${formatScore(movie.vote_average)}</span>
+            </div>
+          </div>
+          <div class="movie-meta">
+            <span>${releaseYear} • ${movie.director || 'Unknown'}</span>
+            ${movie.trailer_url ? `
+              <a href="${movie.trailer_url}" target="_blank" class="trailer-link-btn ${context === 'history' ? 'mini' : ''}" title="Watch Trailer">
+                <i data-lucide="play-circle"></i> Trailer
+              </a>
+            ` : ''}
+          </div>
         </div>
-        <div class="movie-info">
-          <div class="header-main">
-            <div class="title-row">
-              <div class="movie-title">${movie.title}</div>
-              <div class="rating-badge">
-                <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
-                <span class="rating-value">${formatScore(movie.vote_average)}</span>
-              </div>
-            </div>
-            <div class="movie-meta">
-              <span>${movie.release_year} • Festival Avg: ${movie.average_community_rating ? movie.average_community_rating.toFixed(1) : '0.0'}</span>
-              ${movie.trailer_url ? `
-                <a href="${movie.trailer_url}" target="_blank" class="trailer-link-btn mini" title="Watch Trailer">
-                  <i data-lucide="play-circle"></i> Trailer
+
+        <div class="genre-tags">
+          ${genres.map(g => `<span class="genre-tag">${g}</span>`).join('')}
+        </div>
+
+        <div class="synopsis">${movie.synopsis || 'No synopsis available.'}</div>
+
+        <!-- Watch Providers -->
+        ${providers.length > 0 ? `
+          <div class="watch-providers ${context === 'history' || context === 'activity' ? 'mini' : ''}">
+            <span class="provider-label">Available on:</span>
+            <div class="provider-list">
+              ${providers.slice(0, 4).map(p => `
+                <a href="${providersLink}" target="_blank" class="provider-icon ${context === 'history' || context === 'activity' ? 'small' : ''}" title="${p.provider_name}">
+                  <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
                 </a>
-              ` : ''}
+              `).join('')}
             </div>
           </div>
-          
-          <div class="genre-tags">
-            ${genres.map(g => `<span class="genre-tag">${g}</span>`).join('')}
-          </div>
+        ` : ''}
 
-          <!-- Watch Providers -->
-          ${providers.length > 0 ? `
-            <div class="watch-providers mini">
-              <div class="provider-list">
-                ${providers.slice(0, 4).map(p => `
-                  <a href="${movie.watch_providers.link}" target="_blank" class="provider-icon small" title="${p.provider_name}">
-                    <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
-                  </a>
-                `).join('')}
-              </div>
+        <!-- Context Actions -->
+        ${context === 'proposal' ? `
+          <div class="voting-container">
+            <div class="vote-main-actions">
+              <button class="vote-btn like-btn ${hasVoted ? 'active' : ''}" onclick="window.toggleVote('${movie.id}')">
+                <i data-lucide="heart"></i>
+                <span>${hasVoted ? 'Voted' : 'Vote'}</span>
+              </button>
+              <span class="vote-count">${movie.vote_count || 0} votes</span>
             </div>
-          ` : ''}
 
-          <div class="synopsis">${movie.synopsis || 'No synopsis available.'}</div>
-          
+            ${isAdmin ? `
+              <button class="mark-seen-btn" onclick="window.markAsSeen('${movie.id}')">
+                <i data-lucide="check-circle"></i> Mark as Seen
+              </button>
+            ` : ''}
+          </div>
+        ` : ''}
+
+        ${context === 'history' ? `
           <div class="rating-input-wrapper">
             <div style="display:flex; justify-content:space-between; font-size: 0.8rem; margin-bottom: 0.5rem;">
               <span style="font-weight:600; color:var(--text-secondary);">Your Rating</span>
@@ -466,15 +427,49 @@ function renderHistory() {
               <span class="community-score" id="comm-avg-${movie.id}">${movie.average_community_rating ? movie.average_community_rating.toFixed(1) : '0.0'}</span>
             </div>
           </div>
+        ` : ''}
 
-          ${isAdmin ? `
-            <button class="unmark-seen-btn" onclick="window.unmarkAsSeen('${movie.id}')">
-              <i data-lucide="rotate-ccw"></i> Back to Proposals
-            </button>
-          ` : ''}
-        </div>
+        ${context === 'history' && isAdmin ? `
+          <button class="unmark-seen-btn" onclick="window.unmarkAsSeen('${movie.id}')">
+            <i data-lucide="rotate-ccw"></i> Back to Proposals
+          </button>
+        ` : ''}
       </div>
-    `;
+    </div>
+  `;
+}
+
+// Rendering
+function renderProposals() {
+  if (!proposedMovies.length) {
+    movieGrid.innerHTML = '<div class="empty-state">No movies proposed yet. Be the first!</div>';
+    return;
+  }
+
+  movieGrid.innerHTML = proposedMovies.map(movie => {
+    const isOwner = user && movie.proposed_by === user.id;
+    const canDelete = isOwner || isAdmin;
+    
+    return createMovieCardHTML(movie, { 
+      context: 'proposal', 
+      showDelete: canDelete 
+    });
+  }).join('');
+  
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function renderHistory() {
+  if (!seenMovies.length) {
+    historyGrid.innerHTML = '<div class="empty-state">No movies in history yet.</div>';
+    return;
+  }
+
+  historyGrid.innerHTML = seenMovies.map(movie => {
+    return createMovieCardHTML(movie, { 
+      context: 'history', 
+      showDelete: false // Protected from deletion
+    });
   }).join('');
   
   if (window.lucide) window.lucide.createIcons();
@@ -482,8 +477,8 @@ function renderHistory() {
 
 function updateAuthUI() {
   if (user) {
-    const avatar = userProfile?.avatar_url || user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${user.email}&background=5850ec&color=fff`;
     const name = userProfile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0];
+    const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
     userHeader.innerHTML = `
       <div class="user-profile" onclick="window.navigateTo('profile')">
         <img src="${avatar}" class="user-avatar" />
@@ -553,8 +548,10 @@ async function loadUserActivity() {
   const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
   
   const displayName = profile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0];
-  const displayAvatar = profile?.avatar_url || user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${user.email}&background=5850ec&color=fff`;
-
+  
+  // Generate high-end initial-based avatar
+  const displayAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=5850ec&color=fff&size=256&bold=true`;
+  
   profileName.textContent = displayName;
   profileEmail.textContent = user.email;
   profileAvatar.src = displayAvatar;
@@ -601,43 +598,6 @@ window.toggleEditProfile = (show) => {
   if (profileEditForm) profileEditForm.classList.toggle('page-hidden', !show);
 };
 
-window.uploadAvatar = async (input) => {
-  const file = input.files[0];
-  if (!file) return;
-
-  if (file.size > 2 * 1024 * 1024) {
-    showNotification('Image too large (max 2MB)', 'error');
-    return;
-  }
-
-  showNotification('Uploading image...', 'info');
-
-  try {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${user.id}/${Math.random()}.${fileExt}`;
-    const filePath = `${fileName}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from('avatars')
-      .upload(filePath, file, { upsert: true });
-
-    if (uploadError) throw uploadError;
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('avatars')
-      .getPublicUrl(filePath);
-
-    // Update preview immediately
-    profileAvatar.src = publicUrl;
-    // We store this in a temporary property to save it later
-    window.pendingAvatarUrl = publicUrl;
-    
-    showNotification('Image uploaded!', 'success');
-  } catch (error) {
-    console.error('Error uploading avatar:', error);
-    showNotification('Error uploading image', 'error');
-  }
-};
 
 window.saveProfile = async () => {
   const newName = editName.value.trim();
@@ -651,8 +611,7 @@ window.saveProfile = async () => {
   const { error } = await supabase
     .from('profiles')
     .update({ 
-      full_name: newName, 
-      avatar_url: newAvatar 
+      full_name: newName
     })
     .eq('id', user.id);
 
@@ -681,7 +640,8 @@ async function fetchUserList() {
 
     adminUserCount.textContent = `${profiles?.length || 0} Users`;
     adminUserList.innerHTML = profiles.map(p => {
-      const avatar = p.avatar_url || `https://ui-avatars.com/api/?name=${p.email}&background=5850ec&color=fff`;
+      const name = p.full_name || p.email.split('@')[0];
+      const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
       const date = p.created_at ? new Date(p.created_at).toLocaleDateString() : 'N/A';
       const roleLabel = p.role === 'admin' ? '<span style="color:var(--success); font-size: 0.7rem; font-weight:700;">ADMIN</span>' : '<span style="color:var(--text-secondary); font-size: 0.7rem;">USER</span>';
       
@@ -728,40 +688,13 @@ function renderActivityGrid(movies) {
     return;
   }
   profileActivityGrid.innerHTML = movies.map(movie => {
-    const providers = movie.watch_providers?.flatrate || [];
-    const providersHtml = providers.slice(0, 3).map(p => `
-      <div class="provider-icon xsmall" title="${p.provider_name}">
-        <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
-      </div>
-    `).join('');
-
-    return `
-      <div class="movie-card">
-        <div class="poster-wrapper">
-          <img src="${movie.poster_url || FALLBACK_IMAGE}">
-        </div>
-        <div class="movie-info">
-          <div class="movie-title">${movie.title}</div>
-          <div class="movie-meta">
-            ${movie.release_year}
-            ${movie.trailer_url ? `<a href="${movie.trailer_url}" target="_blank" style="color:var(--accent); font-size:0.7rem; display:flex; align-items:center; gap:3px;"><i data-lucide="play-circle" style="width:12px;"></i> Trailer</a>` : ''}
-          </div>
-          
-          ${providers.length > 0 ? `
-            <div class="watch-providers mini">
-              <div class="provider-list">
-                ${providers.slice(0, 3).map(p => `
-                  <a href="${movie.watch_providers.link}" target="_blank" class="provider-icon xsmall" title="${p.provider_name}">
-                    <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
-                  </a>
-                `).join('')}
-              </div>
-            </div>
-          ` : ''}
-        </div>
-      </div>
-    `;
+    return createMovieCardHTML(movie, { 
+      context: 'activity', 
+      showDelete: false 
+    });
   }).join('');
+  
+  if (window.lucide) window.lucide.createIcons();
 }
 
 // TMDB Search Logic
@@ -861,29 +794,34 @@ async function fetchExploreResults() {
     }
 
     // FINAL ENRICHMENT & CROSS-FILTERING
-    const movieDetails = await Promise.all(results.slice(0, 60).map(async movie => {
+    const movieDetails = await Promise.all(results.slice(0, 20).map(async movie => {
       try {
-        const creditsUrl = `https://api.themoviedb.org/3/movie/${movie.id}/credits?api_key=${tmdbApiKey}`;
-        const creditsResp = await fetch(creditsUrl);
-        const creditsData = await creditsResp.json();
+        const baseUrl = `https://api.themoviedb.org/3/movie/${movie.id}?api_key=${tmdbApiKey}`;
+        const detailUrl = `${baseUrl}&append_to_response=videos,watch/providers,credits`;
         
-        const movieDirectors = creditsData.crew.filter(p => p.job === 'Director').map(d => d.name);
-        const movieYear = movie.release_date ? parseInt(movie.release_date.split('-')[0]) : null;
-        const movieGenreIds = movie.genre_ids || [];
+        const resp = await fetch(detailUrl);
+        const detailData = await resp.json();
+        
+        const movieDirectors = detailData.credits?.crew?.filter(p => p.job === 'Director').map(d => d.name) || [];
+        const movieYear = detailData.release_date ? parseInt(detailData.release_date.split('-')[0]) : null;
+        const movieGenres = detailData.genres?.map(g => g.name) || [];
 
-        // Client-side validation for filters not supported natively in all paths
-        const matchesTitle = !query || movie.title.toLowerCase().includes(query.toLowerCase());
+        // Client-side validation for filters
+        const matchesTitle = !query || detailData.title.toLowerCase().includes(query.toLowerCase());
         const matchesDirector = !directorName || movieDirectors.some(d => d.toLowerCase().includes(directorName.toLowerCase()));
-        const matchesGenre = !genreId || movieGenreIds.includes(parseInt(genreId));
+        const matchesGenre = !genreId || detailData.genres?.some(g => g.id === parseInt(genreId));
         const matchesYearFrom = !yearFrom || (movieYear && movieYear >= parseInt(yearFrom));
         const matchesYearTo = !yearTo || (movieYear && movieYear <= parseInt(yearTo));
 
         if (matchesTitle && matchesDirector && matchesGenre && matchesYearFrom && matchesYearTo) {
+          const trailer = detailData.videos?.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube');
           return {
-            ...movie,
+            ...detailData,
             director: movieDirectors.join(', ') || 'Unknown',
-            genres: movieGenreIds.map(id => genreMap[id]).filter(Boolean),
-            synopsis: movie.overview
+            genres: movieGenres,
+            synopsis: detailData.overview,
+            trailer_url: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null,
+            watch_providers: detailData['watch/providers']?.results?.ES
           };
         }
       } catch (e) { return null; }
@@ -1004,23 +942,42 @@ async function fetchAIRecommendations() {
         if (renderedTitles.has(title.toLowerCase())) return null;
 
         try {
+          // 1. Search for ID
           const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(title)}`;
-          const resp = await fetch(searchUrl);
-          const data = await resp.json();
-          const movie = data.results[0];
-          
-          if (movie && !renderedIds.has(movie.id)) {
-            renderedIds.add(movie.id);
+          const searchResp = await fetch(searchUrl);
+          const searchData = await searchResp.json();
+          const found = searchData.results[0];
+
+          if (found && !renderedIds.has(found.id)) {
+            // 2. Fetch Rich Details
+            const baseUrl = `https://api.themoviedb.org/3/movie/${found.id}?api_key=${tmdbApiKey}`;
+            const detailUrl = `${baseUrl}&append_to_response=videos,watch/providers,credits`;
+            
+            const detailResp = await fetch(detailUrl);
+            const detailData = await detailResp.json();
+            
+            renderedIds.add(detailData.id);
             renderedTitles.add(title.toLowerCase());
             
-            const creditsUrl = `https://api.themoviedb.org/3/movie/${movie.id}/credits?api_key=${tmdbApiKey}`;
-            const creditsResp = await fetch(creditsUrl);
-            const creditsData = await creditsResp.json();
-            const directors = creditsData.crew.filter(p => p.job === 'Director').map(d => d.name).join(', ');
-            const genreNames = (movie.genre_ids || []).map(id => genreMap[id]).filter(Boolean);
-            return { ...movie, director: directors || 'Unknown', genres: genreNames, synopsis: movie.overview };
+            const directors = detailData.credits?.crew?.filter(p => p.job === 'Director').map(d => d.name).join(', ') || 'Unknown';
+            const genreNames = (detailData.genres || []).map(g => g.name);
+            
+            const trailer = detailData.videos?.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube');
+            const providers = detailData['watch/providers']?.results?.ES;
+
+            return { 
+              ...detailData, 
+              director: directors, 
+              genres: genreNames, 
+              synopsis: detailData.overview,
+              trailer_url: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null,
+              watch_providers: providers,
+              poster_path: detailData.poster_path,
+              vote_average: detailData.vote_average,
+              release_date: detailData.release_date
+            };
           }
-        } catch (e) { return null; }
+        } catch (e) { console.error('AI Detail Fetch Error:', e); return null; }
         return null;
       }));
 
@@ -1062,30 +1019,8 @@ async function fetchAIRecommendations() {
 
 function createExploreCard(movie) {
   const div = document.createElement('div');
-  div.className = 'movie-card';
-  div.innerHTML = `
-    <div class="propose-overlay">
-      <button class="btn-propose" onclick="window.proposeMovie(${JSON.stringify(movie).replace(/"/g, '&quot;')}, this)">
-        <i data-lucide="plus"></i> Propose
-      </button>
-    </div>
-    <div class="poster-wrapper">
-      <img src="${movie.poster_path ? 'https://image.tmdb.org/t/p/w500' + movie.poster_path : FALLBACK_IMAGE}" alt="${movie.title}" loading="lazy">
-    </div>
-    <div class="movie-info">
-      <div class="movie-title">${movie.title}</div>
-      <div class="movie-meta">${movie.release_date ? movie.release_date.split('-')[0] : 'N/A'} • ${movie.director}</div>
-      <div class="rating-badge">
-        <i data-lucide="star" style="width:14px; height:14px; fill:#fbbf24;"></i>
-        <span class="rating-value">(${formatScore(movie.vote_average)})</span>
-      </div>
-      <div class="genre-tags">
-        ${movie.genres.slice(0, 2).map(g => `<span class="genre-tag">${g}</span>`).join('')}
-      </div>
-      <div class="synopsis">${movie.synopsis || 'No synopsis available.'}</div>
-    </div>
-  `;
-  return div;
+  div.innerHTML = createMovieCardHTML(movie, { context: 'explore' });
+  return div.firstElementChild;
 }
 
 function renderExploreResults(results) {
@@ -1146,21 +1081,12 @@ window.proposeMovie = async (tmdbMovie, el) => {
     synopsis: tmdbMovie.synopsis
   };
 
-  // Try to add ratings if columns exist
+  // Insert logic matching actual schema
   let { data, error } = await supabase.from('movies').insert([{
     ...payload,
-    vote_average: tmdbMovie.vote_average,
-    average_rating: tmdbMovie.vote_average, // Backwards compatibility with the current column name found in research
-    vote_count: tmdbMovie.vote_count
+    average_rating: tmdbMovie.vote_average || 0,
+    vote_count: 0 // Start with zero festival votes
   }]).select();
-
-  // FALLBACK if columns missing
-  if (error && error.message.includes('column') && error.message.includes('vote_average')) {
-    console.warn("Retrying insert without ratings columns...");
-    const retry = await supabase.from('movies').insert([payload]).select();
-    data = retry.data;
-    error = retry.error;
-  }
 
   if (error) {
     if (error.code === '23505') {
