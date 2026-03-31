@@ -18,6 +18,7 @@ let proposedMovies = [];
 let seenMovies = [];
 let userVotes = new Set(); // Set of movie IDs the user voted for
 let user = null;
+let userProfile = null; // Cache for profile data (name, avatar, role)
 let isAdmin = false;
 let currentView = 'home';
 let genreMap = {}; // Map of genre ID to name
@@ -49,6 +50,12 @@ const adminDashboard = document.getElementById('adminDashboard');
 const adminUserList = document.getElementById('adminUserList');
 const adminUserCount = document.getElementById('adminUserCount');
 
+// Profile Edit Elements
+const profileDisplay = document.getElementById('profileDisplay');
+const profileEditForm = document.getElementById('profileEditForm');
+const editName = document.getElementById('editName');
+const editAvatar = document.getElementById('editAvatar');
+
 // Fallback image helper
 const FALLBACK_IMAGE = 'https://placehold.co/300x450/1a1a1f/94a3b8?text=Cinema+Poster';
 
@@ -78,24 +85,30 @@ async function fetchGenreMap() {
   }
 }
 
-async function checkUser() {
-  const { data } = await supabase.auth.getSession();
-  user = data.session?.user || null;
+async function checkUser(session) {
+  if (session === undefined) {
+    const { data } = await supabase.auth.getSession();
+    session = data.session;
+  }
+  
+  user = session?.user || null;
   
   if (user) {
     // 🛡️ Dynamic RBAC: Fetch role from profiles table
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('*')
       .eq('id', user.id)
       .single();
 
-    isAdmin = profile?.role === 'admin';
-    console.log(`[ACL] User: ${user.email} | Role: ${profile?.role || 'user'} | Admin: ${isAdmin}`);
+    userProfile = profile;
+    isAdmin = userProfile?.role === 'admin';
+    console.log(`[ACL] User: ${user.email} | Role: ${userProfile?.role || 'user'} | Admin: ${isAdmin}`);
 
     const { data: votes } = await supabase.from('votes').select('movie_id').eq('user_id', user.id);
     userVotes = new Set(votes?.map(v => v.movie_id) || []);
   } else {
+    userProfile = null;
     isAdmin = false;
     userVotes = new Set();
   }
@@ -142,8 +155,8 @@ async function refreshData() {
     }
   });
 
-  // Background enrichment for movies with missing scores
-  enrichMissingScores(movies);
+  // Background enrichment for movies with missing data
+  enrichMovieData(movies);
 
   proposedMovies = movies.filter(m => !m.is_seen);
   seenMovies = movies.filter(m => m.is_seen);
@@ -160,35 +173,59 @@ function formatScore(score) {
   return isNaN(num) ? 'N/A' : num.toFixed(1);
 }
 
-async function enrichMissingScores(movies) {
-  const moviesToEnrich = movies.filter(m => m.tmdb_id && (m.vote_average === undefined || m.vote_average === null || m.vote_average === 0));
+async function enrichMovieData(movies) {
+  // Find movies that need enrichment (missing scores, trailers, or providers)
+  const moviesToEnrich = movies.filter(m => m.tmdb_id && (
+    m.vote_average === undefined || m.vote_average === null || m.vote_average === 0 ||
+    !m.trailer_url || 
+    !m.watch_providers
+  ));
   
   if (moviesToEnrich.length === 0) return;
 
-  console.log(`[Enrichment] Found ${moviesToEnrich.length} movies needing TMDB scores.`);
+  console.log(`[Enrichment] Found ${moviesToEnrich.length} movies needing TMDB data.`);
 
   for (const movie of moviesToEnrich) {
     try {
-      const url = `https://api.themoviedb.org/3/movie/${movie.tmdb_id}?api_key=${tmdbApiKey}`;
-      const resp = await fetch(url);
+      const baseUrl = `https://api.themoviedb.org/3/movie/${movie.tmdb_id}?api_key=${tmdbApiKey}`;
+      const videosUrl = `${baseUrl}&append_to_response=videos,watch/providers`;
+      
+      const resp = await fetch(videosUrl);
       const data = await resp.json();
       
+      const updates = {};
+      
+      // 1. Enriched Scores
       if (data.vote_average !== undefined) {
         movie.vote_average = data.vote_average;
-        console.log(`[Enrichment] Updated ${movie.title} with score ${movie.vote_average}`);
-        
-        // Update DB silently for future loads
-        await supabase.from('movies').update({ 
-          vote_average: data.vote_average,
-          average_rating: data.vote_average 
-        }).eq('id', movie.id);
+        updates.vote_average = data.vote_average;
+        updates.average_rating = data.vote_average;
+      }
+      
+      // 2. Trailers
+      const trailer = data.videos?.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube');
+      if (trailer) {
+        movie.trailer_url = `https://www.youtube.com/watch?v=${trailer.key}`;
+        updates.trailer_url = movie.trailer_url;
+      }
+      
+      // 3. Watch Providers (Spain priority)
+      const providers = data['watch/providers']?.results?.ES;
+      if (providers) {
+        movie.watch_providers = providers;
+        updates.watch_providers = providers;
+      }
+      
+      if (Object.keys(updates).length > 0) {
+        console.log(`[Enrichment] Data updated for ${movie.title}`);
+        await supabase.from('movies').update(updates).eq('id', movie.id);
       }
     } catch (e) {
       console.error(`[Enrichment] Failed for ${movie.title}:`, e);
     }
   }
 
-  // Re-render if we are in a view that uses these movies
+  // Re-render
   renderProposals();
   renderHistory();
 }
@@ -268,6 +305,14 @@ function renderProposals() {
     const canDelete = isOwner || isAdmin;
     const genres = movie.genres ? movie.genres.slice(0, 3) : [];
     
+    // Watch providers logic
+    const providers = movie.watch_providers?.flatrate || [];
+    const providersHtml = providers.slice(0, 3).map(p => `
+      <div class="provider-icon" title="${p.provider_name}">
+        <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
+      </div>
+    `).join('');
+
     return `
       <div class="movie-card" data-id="${movie.id}">
         ${canDelete ? `
@@ -281,19 +326,43 @@ function renderProposals() {
                onerror="this.onerror=null; this.src='${FALLBACK_IMAGE}'">
         </div>
         <div class="movie-info">
-          <div class="movie-title">${movie.title}</div>
-          <div class="movie-meta">${movie.release_year} • ${movie.director || 'Unknown Director'}</div>
-          
-          <div class="rating-badge">
-            <i data-lucide="star" style="width:14px; height:14px; fill:#fbbf24;"></i>
-            <span class="rating-value" title="TMDB Score">(${formatScore(movie.vote_average)})</span>
+          <div class="header-main">
+            <div class="title-row">
+              <div class="movie-title">${movie.title}</div>
+              <div class="rating-badge">
+                <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
+                <span class="rating-value">${formatScore(movie.vote_average)}</span>
+              </div>
+            </div>
+            <div class="movie-meta">
+              <span>${movie.release_year} • ${movie.director || 'Unknown Director'}</span>
+              ${movie.trailer_url ? `
+                <a href="${movie.trailer_url}" target="_blank" class="trailer-link-btn" title="Watch Trailer">
+                  <i data-lucide="play-circle"></i> Trailer
+                </a>
+              ` : ''}
+            </div>
           </div>
-
+          
           <div class="genre-tags">
             ${genres.map(g => `<span class="genre-tag">${g}</span>`).join('')}
           </div>
 
           <div class="synopsis">${movie.synopsis || 'No synopsis available.'}</div>
+
+          <!-- Watch Providers -->
+          ${providers.length > 0 ? `
+            <div class="watch-providers">
+              <span class="provider-label">Available on:</span>
+              <div class="provider-list">
+                ${providers.slice(0, 4).map(p => `
+                  <a href="${movie.watch_providers.link}" target="_blank" class="provider-icon" title="${p.provider_name}">
+                    <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
+                  </a>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
 
           <div class="voting-container">
             <button class="vote-btn like-btn ${hasVoted ? 'active' : ''}" onclick="window.toggleVote('${movie.id}')">
@@ -319,9 +388,16 @@ function renderProposals() {
 function renderHistory() {
   historyGrid.innerHTML = seenMovies.map(movie => {
     const genres = movie.genres ? movie.genres.slice(0, 2) : [];
+    const providers = movie.watch_providers?.flatrate || [];
+    const providersHtml = providers.slice(0, 3).map(p => `
+      <div class="provider-icon small" title="${p.provider_name}">
+        <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
+      </div>
+    `).join('');
+
     // Admins can delete or unmark any history movie
     return `
-      <div class="movie-card" data-id="${movie.id}">
+      <div class="movie-card seen" data-id="${movie.id}">
         ${isAdmin ? `
           <button class="delete-movie-btn" onclick="window.deleteMovie('${movie.id}')" title="Remove movie">
             <i data-lucide="trash-2"></i>
@@ -333,17 +409,40 @@ function renderHistory() {
                onerror="this.onerror=null; this.src='${FALLBACK_IMAGE}'">
         </div>
         <div class="movie-info">
-          <div class="movie-title">${movie.title}</div>
-          <div class="movie-meta">${movie.release_year} • Festival Avg: ${movie.average_community_rating ? movie.average_community_rating.toFixed(1) : '0.0'}</div>
-          
-          <div class="rating-badge">
-            <i data-lucide="star" style="width:14px; height:14px; fill:#fbbf24;"></i>
-            <span class="rating-value" title="TMDB Score">(${formatScore(movie.vote_average)})</span>
+          <div class="header-main">
+            <div class="title-row">
+              <div class="movie-title">${movie.title}</div>
+              <div class="rating-badge">
+                <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
+                <span class="rating-value">${formatScore(movie.vote_average)}</span>
+              </div>
+            </div>
+            <div class="movie-meta">
+              <span>${movie.release_year} • Festival Avg: ${movie.average_community_rating ? movie.average_community_rating.toFixed(1) : '0.0'}</span>
+              ${movie.trailer_url ? `
+                <a href="${movie.trailer_url}" target="_blank" class="trailer-link-btn mini" title="Watch Trailer">
+                  <i data-lucide="play-circle"></i> Trailer
+                </a>
+              ` : ''}
+            </div>
           </div>
-
+          
           <div class="genre-tags">
             ${genres.map(g => `<span class="genre-tag">${g}</span>`).join('')}
           </div>
+
+          <!-- Watch Providers -->
+          ${providers.length > 0 ? `
+            <div class="watch-providers mini">
+              <div class="provider-list">
+                ${providers.slice(0, 4).map(p => `
+                  <a href="${movie.watch_providers.link}" target="_blank" class="provider-icon small" title="${p.provider_name}">
+                    <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
+                  </a>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
 
           <div class="synopsis">${movie.synopsis || 'No synopsis available.'}</div>
           
@@ -383,8 +482,8 @@ function renderHistory() {
 
 function updateAuthUI() {
   if (user) {
-    const avatar = user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${user.email}&background=5850ec&color=fff`;
-    const name = user.user_metadata?.full_name || user.email.split('@')[0];
+    const avatar = userProfile?.avatar_url || user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${user.email}&background=5850ec&color=fff`;
+    const name = userProfile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0];
     userHeader.innerHTML = `
       <div class="user-profile" onclick="window.navigateTo('profile')">
         <img src="${avatar}" class="user-avatar" />
@@ -441,16 +540,29 @@ window.handleSignup = async () => {
 
 window.handleLogout = async () => {
   await supabase.auth.signOut();
-  window.navigateTo('home');
+  // Clear local state instantly
+  await checkUser(null);
+  window.navigateTo('auth');
 };
 
 // Profile Logic
 async function loadUserActivity() {
   if (!user) return;
   
-  profileName.textContent = user.user_metadata?.full_name || user.email.split('@')[0];
+  // Fetch latest profile data from the DB
+  const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+  
+  const displayName = profile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0];
+  const displayAvatar = profile?.avatar_url || user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${user.email}&background=5850ec&color=fff`;
+
+  profileName.textContent = displayName;
   profileEmail.textContent = user.email;
-  profileAvatar.src = user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${user.email}&background=5850ec&color=fff`;
+  profileAvatar.src = displayAvatar;
+
+  // Pre-fill edit form
+  editName.value = displayName;
+  const displayEmailInput = document.getElementById('displayEmail');
+  if (displayEmailInput) displayEmailInput.value = user.email;
 
   const { data: proposals } = await supabase.from('movies').select('*').eq('proposed_by', user.id);
   const { data: votes } = await supabase.from('votes').select('movie_id, movies(*)').eq('user_id', user.id);
@@ -478,7 +590,88 @@ async function loadUserActivity() {
   } else {
     adminDashboard.classList.add('page-hidden');
   }
+
+  if (window.lucide) window.lucide.createIcons();
 }
+
+window.toggleEditProfile = (show) => {
+  const profileDisplay = document.getElementById('profileDisplay');
+  const profileEditForm = document.getElementById('profileEditForm');
+  if (profileDisplay) profileDisplay.classList.toggle('page-hidden', show);
+  if (profileEditForm) profileEditForm.classList.toggle('page-hidden', !show);
+};
+
+window.uploadAvatar = async (input) => {
+  const file = input.files[0];
+  if (!file) return;
+
+  if (file.size > 2 * 1024 * 1024) {
+    showNotification('Image too large (max 2MB)', 'error');
+    return;
+  }
+
+  showNotification('Uploading image...', 'info');
+
+  try {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${user.id}/${Math.random()}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, file, { upsert: true });
+
+    if (uploadError) throw uploadError;
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(filePath);
+
+    // Update preview immediately
+    profileAvatar.src = publicUrl;
+    // We store this in a temporary property to save it later
+    window.pendingAvatarUrl = publicUrl;
+    
+    showNotification('Image uploaded!', 'success');
+  } catch (error) {
+    console.error('Error uploading avatar:', error);
+    showNotification('Error uploading image', 'error');
+  }
+};
+
+window.saveProfile = async () => {
+  const newName = editName.value.trim();
+  const newAvatar = window.pendingAvatarUrl || profileAvatar.src;
+
+  if (!newName) {
+    showNotification('Name cannot be empty', 'error');
+    return;
+  }
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ 
+      full_name: newName, 
+      avatar_url: newAvatar 
+    })
+    .eq('id', user.id);
+
+  if (error) {
+    console.error('Error updating profile:', error);
+    showNotification('Failed to update profile', 'error');
+  } else {
+    showNotification('Profile updated successfully!', 'success');
+    window.toggleEditProfile(false);
+    window.pendingAvatarUrl = null;
+    
+    // Refresh local cache and UI
+    const { data: updatedProfile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    userProfile = updatedProfile;
+    
+    await loadUserActivity();
+    updateAuthUI(); // Update header too
+  }
+};
 
 async function fetchUserList() {
   try {
@@ -534,17 +727,41 @@ function renderActivityGrid(movies) {
     profileActivityGrid.innerHTML = '<div class="empty-state">Nothing to show here yet.</div>';
     return;
   }
-  profileActivityGrid.innerHTML = movies.map(movie => `
-    <div class="movie-card">
-      <div class="poster-wrapper">
-        <img src="${movie.poster_url || FALLBACK_IMAGE}">
+  profileActivityGrid.innerHTML = movies.map(movie => {
+    const providers = movie.watch_providers?.flatrate || [];
+    const providersHtml = providers.slice(0, 3).map(p => `
+      <div class="provider-icon xsmall" title="${p.provider_name}">
+        <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
       </div>
-      <div class="movie-info">
-        <div class="movie-title">${movie.title}</div>
-        <div class="movie-meta">${movie.release_year}</div>
+    `).join('');
+
+    return `
+      <div class="movie-card">
+        <div class="poster-wrapper">
+          <img src="${movie.poster_url || FALLBACK_IMAGE}">
+        </div>
+        <div class="movie-info">
+          <div class="movie-title">${movie.title}</div>
+          <div class="movie-meta">
+            ${movie.release_year}
+            ${movie.trailer_url ? `<a href="${movie.trailer_url}" target="_blank" style="color:var(--accent); font-size:0.7rem; display:flex; align-items:center; gap:3px;"><i data-lucide="play-circle" style="width:12px;"></i> Trailer</a>` : ''}
+          </div>
+          
+          ${providers.length > 0 ? `
+            <div class="watch-providers mini">
+              <div class="provider-list">
+                ${providers.slice(0, 3).map(p => `
+                  <a href="${movie.watch_providers.link}" target="_blank" class="provider-icon xsmall" title="${p.provider_name}">
+                    <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
+                  </a>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 // TMDB Search Logic
@@ -555,15 +772,14 @@ async function searchTMDB(query) {
     return;
   }
 
-  const url = `https://api.themoviedb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(query)}`;
+  const url = `https://api.themoviedb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(query)}&include_adult=false`;
   try {
     const response = await fetch(url);
     const data = await response.json();
     
 
-    // Filter and sort by popularity (desc), then enrich top 20 results
-    const results = data.results
-      .filter(m => m.popularity > 0.5) // Remove very obscure matches
+    // No restrictive filtering - just sort by popularity (desc) and take top 20
+    const results = (data.results || [])
       .sort((a, b) => b.popularity - a.popularity)
       .slice(0, 20);
 
@@ -1094,7 +1310,7 @@ async function updateCommunityAverage(movieId) {
 
 function setupEventListeners() {
   supabase.auth.onAuthStateChange(async (event, session) => {
-    await checkUser();
+    await checkUser(session);
     refreshData();
   });
 
