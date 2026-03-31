@@ -105,11 +105,28 @@ async function checkUser(session) {
   
   if (user) {
     // 🛡️ Dynamic RBAC: Fetch role from profiles table
-    const { data: profile } = await supabase
+    let { data: profile } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', user.id)
       .single();
+
+    // If no profile exists (e.g., new Google login), create one automatically
+    if (!profile) {
+      console.log('[Auth] Profile missing, creating default profile...');
+      const metadata = user.user_metadata || {};
+      const { data: newProfile, error: insertError } = await supabase
+        .from('profiles')
+        .insert([{
+          id: user.id,
+          full_name: metadata.full_name || user.email.split('@')[0],
+          role: 'user'
+        }])
+        .select()
+        .single();
+      
+      if (!insertError) profile = newProfile;
+    }
 
     userProfile = profile;
     isAdmin = userProfile?.role === 'admin';
