@@ -1,8 +1,8 @@
-# 🎬 Parallel Film Festival (PFF)
+# 🎬 Paral·lel Film Festival (PFF)
 
-![PFF Banner](https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&q=80&w=1200)
+![PFF Banner](public/og-image.png)
 
-**Parallel Film Festival** is a high-end, cinematic film proposal and voting platform. Designed with a **Noir & Indigo** aesthetic, it provides a premium space for film enthusiasts to curate their own festivals through real-time collaboration and discovery.
+**Paral·lel Film Festival** is a high-end, cinematic film proposal and voting platform. Designed with a **Noir & Indigo** aesthetic, it provides a premium space for film enthusiasts to curate their own festivals through real-time collaboration and discovery.
 
 ---
 
@@ -94,4 +94,4 @@ To enable the full feature set, ensure your Supabase instance includes the follo
 ---
 
 *“Celebrating cinema, one frame at a time.”*
-**© 2024 Parallel Film Festival**
+**© 2024 Paral·lel Film Festival**
