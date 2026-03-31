@@ -103,22 +103,73 @@
       <!-- PROFILE VIEW -->
       <section id="profileView" class="view page-hidden">
         <div class="container">
-          <div class="profile-header">
-            <div class="profile-info-main">
-              <img id="profileAvatar" src="" class="large-avatar" />
-              <div>
-                <h2 id="profileName">User Name</h2>
-                <p id="profileEmail">user@example.com</p>
+          <div class="profile-layout">
+            <div class="profile-main-card">
+              <div class="profile-header">
+                <div class="profile-photo-section">
+                  <div class="avatar-wrapper">
+                    <img id="profileAvatar" src="" class="large-avatar" />
+                    <button class="change-photo-overlay" onclick="document.getElementById('avatarUpload').click()">
+                      <i data-lucide="camera"></i>
+                    </button>
+                  </div>
+                  <input type="file" id="avatarUpload" class="page-hidden" accept="image/*" onchange="window.uploadAvatar(this)" />
+                </div>
+                
+                <div class="profile-identity">
+                  <div id="profileDisplay">
+                    <h2 id="profileName">User Name</h2>
+                    <p id="profileEmail">user@example.com</p>
+                    <div class="profile-actions">
+                      <button class="edit-profile-btn" onclick="window.toggleEditProfile(true)">
+                        <i data-lucide="settings"></i> Manage Profile
+                      </button>
+                      <button class="logout-btn secondary" onclick="window.handleLogout()">
+                        <i data-lucide="log-out"></i> Sign Out
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="profile-stats">
+                  <div class="stat-card">
+                    <div class="stat-value" id="countProposals">0</div>
+                    <div class="stat-label">Proposals</div>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-value" id="countVotes">0</div>
+                    <div class="stat-label">Votes</div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div class="profile-stats">
-              <div class="stat-card">
-                <div class="stat-value" id="countProposals">0</div>
-                <div class="stat-label">Proposals</div>
+
+            <!-- Hidden Edit Form (Spacious Settings Card) -->
+            <div id="profileEditForm" class="settings-card page-hidden">
+              <div class="settings-header">
+                <h3><i data-lucide="user-cog"></i> Profile Settings</h3>
+                <p>Customize how you appear in the festival.</p>
               </div>
-              <div class="stat-card">
-                <div class="stat-value" id="countVotes">0</div>
-                <div class="stat-label">Votes</div>
+              
+              <div class="settings-grid">
+                <div class="input-group">
+                  <label><i data-lucide="user"></i> Display Name</label>
+                  <input type="text" id="editName" placeholder="How others will call you" />
+                </div>
+                <div class="input-group muted">
+                  <label><i data-lucide="mail"></i> Email Address</label>
+                  <input type="text" id="displayEmail" disabled style="opacity: 0.5; cursor: not_allowed;" />
+                  <small>Email cannot be changed.</small>
+                </div>
+              </div>
+
+              <div class="edit-actions">
+                <button class="save-profile-btn" onclick="window.saveProfile()">
+                  <i data-lucide="save"></i> Save Changes
+                </button>
+                <button class="cancel-edit-btn" onclick="window.toggleEditProfile(false)">
+                  Cancel
+                </button>
               </div>
             </div>
           </div>
@@ -136,9 +187,6 @@
             </div>
           </div>
           
-          <div class="logout-section">
-            <button class="logout-btn" onclick="window.handleLogout()">Sign Out</button>
-          </div>
 
           <!-- ADMIN DASHBOARD -->
           <div id="adminDashboard" class="admin-dashboard page-hidden">

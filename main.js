@@ -18,6 +18,7 @@ let proposedMovies = [];
 let seenMovies = [];
 let userVotes = new Set(); // Set of movie IDs the user voted for
 let user = null;
+let userProfile = null; // Cache for profile data (name, avatar, role)
 let isAdmin = false;
 let currentView = 'home';
 let genreMap = {}; // Map of genre ID to name
@@ -49,6 +50,12 @@ const adminDashboard = document.getElementById('adminDashboard');
 const adminUserList = document.getElementById('adminUserList');
 const adminUserCount = document.getElementById('adminUserCount');
 
+// Profile Edit Elements
+const profileDisplay = document.getElementById('profileDisplay');
+const profileEditForm = document.getElementById('profileEditForm');
+const editName = document.getElementById('editName');
+const editAvatar = document.getElementById('editAvatar');
+
 // Fallback image helper
 const FALLBACK_IMAGE = 'https://placehold.co/300x450/1a1a1f/94a3b8?text=Cinema+Poster';
 
@@ -78,24 +85,30 @@ async function fetchGenreMap() {
   }
 }
 
-async function checkUser() {
-  const { data } = await supabase.auth.getSession();
-  user = data.session?.user || null;
+async function checkUser(session) {
+  if (session === undefined) {
+    const { data } = await supabase.auth.getSession();
+    session = data.session;
+  }
+  
+  user = session?.user || null;
   
   if (user) {
     // 🛡️ Dynamic RBAC: Fetch role from profiles table
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('*')
       .eq('id', user.id)
       .single();
 
-    isAdmin = profile?.role === 'admin';
-    console.log(`[ACL] User: ${user.email} | Role: ${profile?.role || 'user'} | Admin: ${isAdmin}`);
+    userProfile = profile;
+    isAdmin = userProfile?.role === 'admin';
+    console.log(`[ACL] User: ${user.email} | Role: ${userProfile?.role || 'user'} | Admin: ${isAdmin}`);
 
     const { data: votes } = await supabase.from('votes').select('movie_id').eq('user_id', user.id);
     userVotes = new Set(votes?.map(v => v.movie_id) || []);
   } else {
+    userProfile = null;
     isAdmin = false;
     userVotes = new Set();
   }
@@ -383,8 +396,8 @@ function renderHistory() {
 
 function updateAuthUI() {
   if (user) {
-    const avatar = user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${user.email}&background=5850ec&color=fff`;
-    const name = user.user_metadata?.full_name || user.email.split('@')[0];
+    const avatar = userProfile?.avatar_url || user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${user.email}&background=5850ec&color=fff`;
+    const name = userProfile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0];
     userHeader.innerHTML = `
       <div class="user-profile" onclick="window.navigateTo('profile')">
         <img src="${avatar}" class="user-avatar" />
@@ -441,16 +454,29 @@ window.handleSignup = async () => {
 
 window.handleLogout = async () => {
   await supabase.auth.signOut();
-  window.navigateTo('home');
+  // Clear local state instantly
+  await checkUser(null);
+  window.navigateTo('auth');
 };
 
 // Profile Logic
 async function loadUserActivity() {
   if (!user) return;
   
-  profileName.textContent = user.user_metadata?.full_name || user.email.split('@')[0];
+  // Fetch latest profile data from the DB
+  const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+  
+  const displayName = profile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0];
+  const displayAvatar = profile?.avatar_url || user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${user.email}&background=5850ec&color=fff`;
+
+  profileName.textContent = displayName;
   profileEmail.textContent = user.email;
-  profileAvatar.src = user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${user.email}&background=5850ec&color=fff`;
+  profileAvatar.src = displayAvatar;
+
+  // Pre-fill edit form
+  editName.value = displayName;
+  const displayEmailInput = document.getElementById('displayEmail');
+  if (displayEmailInput) displayEmailInput.value = user.email;
 
   const { data: proposals } = await supabase.from('movies').select('*').eq('proposed_by', user.id);
   const { data: votes } = await supabase.from('votes').select('movie_id, movies(*)').eq('user_id', user.id);
@@ -478,7 +504,88 @@ async function loadUserActivity() {
   } else {
     adminDashboard.classList.add('page-hidden');
   }
+
+  if (window.lucide) window.lucide.createIcons();
 }
+
+window.toggleEditProfile = (show) => {
+  const profileDisplay = document.getElementById('profileDisplay');
+  const profileEditForm = document.getElementById('profileEditForm');
+  if (profileDisplay) profileDisplay.classList.toggle('page-hidden', show);
+  if (profileEditForm) profileEditForm.classList.toggle('page-hidden', !show);
+};
+
+window.uploadAvatar = async (input) => {
+  const file = input.files[0];
+  if (!file) return;
+
+  if (file.size > 2 * 1024 * 1024) {
+    showNotification('Image too large (max 2MB)', 'error');
+    return;
+  }
+
+  showNotification('Uploading image...', 'info');
+
+  try {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${user.id}/${Math.random()}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, file, { upsert: true });
+
+    if (uploadError) throw uploadError;
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(filePath);
+
+    // Update preview immediately
+    profileAvatar.src = publicUrl;
+    // We store this in a temporary property to save it later
+    window.pendingAvatarUrl = publicUrl;
+    
+    showNotification('Image uploaded!', 'success');
+  } catch (error) {
+    console.error('Error uploading avatar:', error);
+    showNotification('Error uploading image', 'error');
+  }
+};
+
+window.saveProfile = async () => {
+  const newName = editName.value.trim();
+  const newAvatar = window.pendingAvatarUrl || profileAvatar.src;
+
+  if (!newName) {
+    showNotification('Name cannot be empty', 'error');
+    return;
+  }
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ 
+      full_name: newName, 
+      avatar_url: newAvatar 
+    })
+    .eq('id', user.id);
+
+  if (error) {
+    console.error('Error updating profile:', error);
+    showNotification('Failed to update profile', 'error');
+  } else {
+    showNotification('Profile updated successfully!', 'success');
+    window.toggleEditProfile(false);
+    window.pendingAvatarUrl = null;
+    
+    // Refresh local cache and UI
+    const { data: updatedProfile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    userProfile = updatedProfile;
+    
+    await loadUserActivity();
+    updateAuthUI(); // Update header too
+  }
+};
 
 async function fetchUserList() {
   try {
@@ -1094,7 +1201,7 @@ async function updateCommunityAverage(movieId) {
 
 function setupEventListeners() {
   supabase.auth.onAuthStateChange(async (event, session) => {
-    await checkUser();
+    await checkUser(session);
     refreshData();
   });
 
