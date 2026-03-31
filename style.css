@@ -1879,22 +1879,27 @@ nav {
   box-shadow: 0 10px 40px rgba(0,0,0,0.3);
 }
 
-.input-group label {
+.input-group label, .ai-input-wrapper label {
   font-family: 'Syne', sans-serif;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.15em;
   color: #a5b4fc;
-  margin-bottom: 0.75rem;
+  margin-bottom: 1rem; /* Aumentado para mayor separación con el marco */
   display: block;
   font-weight: 700;
+}
+
+.ai-input-wrapper {
+  margin-top: 0.5rem;
+  margin-bottom: 2rem;
 }
 
 .explore-input, #aiSearchInput {
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
-  padding: 1rem;
+  padding: 1.25rem 1rem; /* Padding superior aumentado para fijar posición del cursor */
   color: white;
   width: 100%;
   font-family: 'Outfit', sans-serif;
