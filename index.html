@@ -139,6 +139,34 @@
           <div class="logout-section">
             <button class="logout-btn" onclick="window.handleLogout()">Sign Out</button>
           </div>
+
+          <!-- ADMIN DASHBOARD -->
+          <div id="adminDashboard" class="admin-dashboard page-hidden">
+            <div class="section-title">
+              <h2><i data-lucide="shield-check" style="color:var(--success); vertical-align:middle; margin-right:0.5rem;"></i> Admin Dashboard</h2>
+            </div>
+            
+            <div class="admin-panel glass">
+              <div class="panel-header">
+                <h3>User Directory</h3>
+                <span class="user-count-badge" id="adminUserCount">0 Users</span>
+              </div>
+              <div class="user-list-container">
+                <table class="user-table">
+                  <thead>
+                    <tr>
+                      <th>User</th>
+                      <th>Email</th>
+                      <th>Joined</th>
+                    </tr>
+                  </thead>
+                  <tbody id="adminUserList">
+                    <!-- Users will be injected here -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

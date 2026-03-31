@@ -45,6 +45,9 @@ const profileAvatar = document.getElementById('profileAvatar');
 const countProposals = document.getElementById('countProposals');
 const countVotes = document.getElementById('countVotes');
 const profileActivityGrid = document.getElementById('profileActivityGrid');
+const adminDashboard = document.getElementById('adminDashboard');
+const adminUserList = document.getElementById('adminUserList');
+const adminUserCount = document.getElementById('adminUserCount');
 
 // Fallback image helper
 const FALLBACK_IMAGE = 'https://placehold.co/300x450/1a1a1f/94a3b8?text=Cinema+Poster';
@@ -79,13 +82,21 @@ async function checkUser() {
   const { data } = await supabase.auth.getSession();
   user = data.session?.user || null;
   
-  // Automated Role Assignment
-  isAdmin = user && user.email === 'aitorlpzaudikana@gmail.com';
-  
   if (user) {
+    // 🛡️ Dynamic RBAC: Fetch role from profiles table
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    isAdmin = profile?.role === 'admin';
+    console.log(`[ACL] User: ${user.email} | Role: ${profile?.role || 'user'} | Admin: ${isAdmin}`);
+
     const { data: votes } = await supabase.from('votes').select('movie_id').eq('user_id', user.id);
     userVotes = new Set(votes?.map(v => v.movie_id) || []);
   } else {
+    isAdmin = false;
     userVotes = new Set();
   }
   updateAuthUI();
@@ -254,12 +265,13 @@ function renderProposals() {
   movieGrid.innerHTML = proposedMovies.map(movie => {
     const hasVoted = userVotes.has(movie.id);
     const isOwner = user && movie.proposed_by === user.id;
+    const canDelete = isOwner || isAdmin;
     const genres = movie.genres ? movie.genres.slice(0, 3) : [];
     
     return `
       <div class="movie-card" data-id="${movie.id}">
-        ${isOwner ? `
-          <button class="delete-movie-btn" onclick="window.deleteMovie('${movie.id}')">
+        ${canDelete ? `
+          <button class="delete-movie-btn" onclick="window.deleteMovie('${movie.id}')" title="Remove movie">
             <i data-lucide="trash-2"></i>
           </button>
         ` : ''}
@@ -293,7 +305,7 @@ function renderProposals() {
 
           ${isAdmin ? `
             <button class="mark-seen-btn" onclick="window.markAsSeen('${movie.id}')">
-              Mark as Seen
+              <i data-lucide="check-circle"></i> Mark as Seen
             </button>
           ` : ''}
         </div>
@@ -307,8 +319,14 @@ function renderProposals() {
 function renderHistory() {
   historyGrid.innerHTML = seenMovies.map(movie => {
     const genres = movie.genres ? movie.genres.slice(0, 2) : [];
+    // Admins can delete or unmark any history movie
     return `
       <div class="movie-card" data-id="${movie.id}">
+        ${isAdmin ? `
+          <button class="delete-movie-btn" onclick="window.deleteMovie('${movie.id}')" title="Remove movie">
+            <i data-lucide="trash-2"></i>
+          </button>
+        ` : ''}
         <div class="poster-wrapper">
           <img src="${movie.poster_url || FALLBACK_IMAGE}" alt="${movie.title}" 
                loading="lazy"
@@ -349,6 +367,12 @@ function renderHistory() {
               <span class="community-score" id="comm-avg-${movie.id}">${movie.average_community_rating ? movie.average_community_rating.toFixed(1) : '0.0'}</span>
             </div>
           </div>
+
+          ${isAdmin ? `
+            <button class="unmark-seen-btn" onclick="window.unmarkAsSeen('${movie.id}')">
+              <i data-lucide="rotate-ccw"></i> Back to Proposals
+            </button>
+          ` : ''}
         </div>
       </div>
     `;
@@ -376,10 +400,15 @@ function updateAuthUI() {
 // Actions
 window.deleteMovie = async (movieId) => {
   if (!user) return;
-  const { error } = await supabase.from('movies').delete().eq('id', movieId).eq('proposed_by', user.id);
+  
+  // Admins can delete anything, users only their own
+  const query = supabase.from('movies').delete().eq('id', movieId);
+  if (!isAdmin) query.eq('proposed_by', user.id);
+
+  const { error } = await query;
   if (error) {
     console.error('Error deleting movie:', error);
-    showNotification('You can only delete movies you proposed.', 'error');
+    showNotification('Action failed. You might not have permission.', 'error');
   } else {
     showNotification('Movie removed from lineup', 'success');
     await refreshData();
@@ -441,7 +470,64 @@ async function loadUserActivity() {
       renderActivityGrid(view === 'myProposals' ? proposals : votes.map(v => v.movies));
     };
   });
+
+  // ADMIN DASHBOARD logic
+  if (isAdmin) {
+    adminDashboard.classList.remove('page-hidden');
+    await fetchUserList();
+  } else {
+    adminDashboard.classList.add('page-hidden');
+  }
 }
+
+async function fetchUserList() {
+  try {
+    const { data: profiles, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+    
+    if (error) throw error;
+
+    adminUserCount.textContent = `${profiles?.length || 0} Users`;
+    adminUserList.innerHTML = profiles.map(p => {
+      const avatar = p.avatar_url || `https://ui-avatars.com/api/?name=${p.email}&background=5850ec&color=fff`;
+      const date = p.created_at ? new Date(p.created_at).toLocaleDateString() : 'N/A';
+      const roleLabel = p.role === 'admin' ? '<span style="color:var(--success); font-size: 0.7rem; font-weight:700;">ADMIN</span>' : '<span style="color:var(--text-secondary); font-size: 0.7rem;">USER</span>';
+      
+      return `
+        <tr>
+          <td>
+            <div class="user-cell">
+              <img src="${avatar}" alt="${p.full_name || 'User'}">
+              <div style="display:flex; flex-direction:column;">
+                <span class="user-name">${p.full_name || 'Anonymous User'}</span>
+                ${roleLabel}
+              </div>
+            </div>
+          </td>
+          <td><span class="user-email">${p.email}</span></td>
+          <td><span class="user-date">${date}</span></td>
+        </tr>
+      `;
+    }).join('');
+
+    if (window.lucide) window.lucide.createIcons();
+
+  } catch (err) {
+    console.error('Error fetching user list:', err);
+    adminUserList.innerHTML = `<tr><td colspan="3" style="text-align:center; padding:2rem; color:var(--text-secondary);">Unable to fetch user list. Ensure a 'profiles' table exists and is accessible.</td></tr>`;
+  }
+}
+
+window.unmarkAsSeen = async (movieId) => {
+  if (!isAdmin) return;
+  const { error } = await supabase.from('movies').update({ is_seen: false }).eq('id', movieId);
+  if (error) {
+    console.error('Error unmarking as seen:', error);
+    showNotification('Failed to revert status', 'error');
+  } else {
+    showNotification('Movie moved back to proposals', 'success');
+    await refreshData();
+  }
+};
 
 function renderActivityGrid(movies) {
   if (!movies.length) {
