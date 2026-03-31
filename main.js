@@ -38,6 +38,20 @@ const searchResults = document.getElementById('searchResults');
 const userHeader = document.getElementById('userHeader');
 const exploreGrid = document.getElementById('exploreGrid');
 const exploreGenreSelect = document.getElementById('exploreGenre');
+const aiSearchInput = document.getElementById('aiSearchInput');
+const aiSearchBtn = document.getElementById('aiSearchBtn');
+const exploreSearchBtn = document.getElementById('exploreSearchBtn');
+const exploreInputs = [
+  document.getElementById('exploreTitle'),
+  document.getElementById('exploreDirector'),
+  document.getElementById('exploreGenre'),
+  document.getElementById('exploreYearFrom'),
+  document.getElementById('exploreYearTo')
+];
+const exploreButtons = [
+  document.getElementById('exploreClearBtn'),
+  document.getElementById('exploreSearchBtn')
+];
 
 // Profile Elements
 const profileName = document.getElementById('profileName');
@@ -505,6 +519,41 @@ function updateAuthUI() {
   } else {
     userHeader.innerHTML = `<button class="auth-btn" onclick="window.navigateTo('auth')">Sign In</button>`;
     searchResults.classList.remove('active');
+    
+    // 🛡️ Lock only the Proposal-specific search (Home/Header) 
+    if (searchInput) {
+      searchInput.disabled = true;
+      searchInput.placeholder = "Sign in to propose movies...";
+    }
+    
+    // ✅ Re-enable Explore/Discover features for everyone (already enabled by default)
+    if (aiSearchInput) {
+      aiSearchInput.disabled = false;
+      aiSearchInput.placeholder = "e.g. Movies about space and loneliness from the 70s similar to 2001...";
+    }
+    if (aiSearchBtn) aiSearchBtn.disabled = false;
+    
+    exploreInputs.forEach(input => {
+      if (input) {
+        input.disabled = false;
+        if (input.id === 'exploreTitle') input.placeholder = "Movie title...";
+        if (input.id === 'exploreDirector') input.placeholder = "Director name...";
+        if (input.id === 'exploreYearFrom') input.placeholder = "From";
+        if (input.id === 'exploreYearTo') input.placeholder = "To";
+      }
+    });
+    exploreButtons.forEach(btn => {
+      if (btn) btn.disabled = false;
+    });
+  }
+
+  // Restore interaction if user returns
+  if (user) {
+    if (searchInput) {
+      searchInput.disabled = false;
+      searchInput.placeholder = "Search movies to propose...";
+    }
+    // ... AI & Explore already enabled above ...
   }
 }
 

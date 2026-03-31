@@ -284,7 +284,7 @@ nav {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
-  padding: 0.25rem 1rem 0.25rem 3.2rem;
+  padding: 0.25rem 1rem; /* Padding equilibrado del marco */
   display: flex;
   align-items: center;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -302,13 +302,13 @@ nav {
   color: white;
   font-size: 1rem;
   width: 100%;
-  padding: 0.8rem 0;
+  padding: 0.8rem 1rem 0.8rem 3.5rem; /* El texto empieza a 3.5rem desde la izquierda del marco */
   outline: none;
 }
 
 .search-wrapper i[data-lucide="search"] {
   position: absolute;
-  left: 1.2rem;
+  left: 0.8rem; /* Lupa más a la izquierda */
   color: var(--text-secondary);
   pointer-events: none;
   width: 18px;
@@ -1911,6 +1911,13 @@ nav {
   border-color: var(--accent);
   background: rgba(79, 70, 229, 0.05);
   box-shadow: 0 0 20px rgba(79, 70, 229, 0.15);
+}
+
+.explore-input:disabled, #aiSearchInput:disabled, .btn-search:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.5);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 #aiSearchInput {
