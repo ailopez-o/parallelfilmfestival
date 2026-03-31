@@ -66,6 +66,16 @@ async function init() {
   await refreshData();
   setupEventListeners();
   handleRouting();
+
+  // Premium Preloader dismissal
+  setTimeout(() => {
+    const preloader = document.getElementById('preloader');
+    if (preloader) {
+      preloader.classList.add('fade-out');
+      // Clean up after animation
+      setTimeout(() => preloader.remove(), 800);
+    }
+  }, 1500); 
 }
 
 async function fetchGenreMap() {
@@ -198,8 +208,8 @@ async function enrichMovieData(movies) {
       // 1. Enriched Scores
       if (data.vote_average !== undefined) {
         movie.vote_average = data.vote_average;
-        updates.vote_average = data.vote_average;
         updates.average_rating = data.vote_average;
+        updates.vote_count = data.vote_count;
       }
       
       // 2. Trailers
@@ -1146,21 +1156,12 @@ window.proposeMovie = async (tmdbMovie, el) => {
     synopsis: tmdbMovie.synopsis
   };
 
-  // Try to add ratings if columns exist
+  // Insert logic matching actual schema
   let { data, error } = await supabase.from('movies').insert([{
     ...payload,
-    vote_average: tmdbMovie.vote_average,
-    average_rating: tmdbMovie.vote_average, // Backwards compatibility with the current column name found in research
-    vote_count: tmdbMovie.vote_count
+    average_rating: tmdbMovie.vote_average || 0,
+    vote_count: tmdbMovie.vote_count || 0
   }]).select();
-
-  // FALLBACK if columns missing
-  if (error && error.message.includes('column') && error.message.includes('vote_average')) {
-    console.warn("Retrying insert without ratings columns...");
-    const retry = await supabase.from('movies').insert([payload]).select();
-    data = retry.data;
-    error = retry.error;
-  }
 
   if (error) {
     if (error.code === '23505') {
