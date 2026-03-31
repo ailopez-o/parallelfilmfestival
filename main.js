@@ -772,15 +772,14 @@ async function searchTMDB(query) {
     return;
   }
 
-  const url = `https://api.themoviedb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(query)}`;
+  const url = `https://api.themoviedb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(query)}&include_adult=false`;
   try {
     const response = await fetch(url);
     const data = await response.json();
     
 
-    // Filter and sort by popularity (desc), then enrich top 20 results
-    const results = data.results
-      .filter(m => m.popularity > 0.5) // Remove very obscure matches
+    // No restrictive filtering - just sort by popularity (desc) and take top 20
+    const results = (data.results || [])
       .sort((a, b) => b.popularity - a.popularity)
       .slice(0, 20);
 
