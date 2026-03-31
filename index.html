@@ -4,13 +4,27 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234158d0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect width='18' height='18' x='3' y='3' rx='2'/><path d='M3 9h18'/><path d='m21 9-4.5-3'/><path d='m11 9 4.5-3'/><path d='m3 9 4.5-3'/><path d='m11 3 4.5 3'/></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Parallel Film Festival | Proposals & Voting</title>
+    <title>Paral·lel Film Festival | Proposals & Voting</title>
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Google Fonts for Arthouse -->
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
     <!-- Main Style -->
     <link id="theme-link" rel="stylesheet" href="/style.css" />
+    
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://parallelfilmfestival.com">
+    <meta property="og:title" content="Paral·lel Film Festival | Proposals & Voting">
+    <meta property="og:description" content="Propose your favorite movies and vote on the lineup for our next festival session.">
+    <meta property="og:image" content="/og-image.png">
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="https://parallelfilmfestival.com">
+    <meta name="twitter:title" content="Paral·lel Film Festival | Proposals & Voting">
+    <meta name="twitter:description" content="Propose your favorite movies and vote on the lineup for our next festival session.">
+    <meta name="twitter:image" content="/og-image.png">
   </head>
   <body>
     <!-- Premium Preloader -->
@@ -36,7 +50,7 @@
         <nav>
           <div class="logo" onclick="window.navigateTo('home')">
             <i data-lucide="clapperboard"></i>
-            <span>Parallel<span>FilmFestival</span></span>
+            <span>Paral·lel<span>FilmFestival</span></span>
           </div>
           <div id="userHeader" class="user-actions">
             <!-- Auth buttons/user info will be injected here -->
@@ -98,7 +112,7 @@
               <h2>Welcome Back</h2>
               <p>Sign in to vote and propose movies.</p>
               <button class="google-btn" onclick="window.signInWithGoogle()">
-                <img src="https://www.google.com/favicon.ico" width="20" alt="G">
+                <img src="https://www.gstatic.com/images/branding/product/1x/gsa_512dp.png" width="20" alt="G">
                 Continue with Google
               </button>
               <div class="divider">or use email</div>
@@ -110,6 +124,11 @@
             <div id="signupForm" class="auth-form-content page-hidden">
               <h2>Join the Festival</h2>
               <p>Create an account to join the community.</p>
+              <button class="google-btn" onclick="window.signInWithGoogle()">
+                <img src="https://www.gstatic.com/images/branding/product/1x/gsa_512dp.png" width="20" alt="G">
+                Continue with Google
+              </button>
+              <div class="divider">or use email</div>
               <input type="email" id="signupEmail" placeholder="Email Address" />
               <input type="password" id="signupPassword" placeholder="Password" />
               <button class="submit-btn" onclick="window.handleSignup()">Create Account</button>

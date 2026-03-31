@@ -545,9 +545,19 @@ window.handleLogin = async () => {
 window.handleSignup = async () => {
   const email = document.getElementById('signupEmail').value;
   const password = document.getElementById('signupPassword').value;
-  const { error } = await supabase.auth.signUp({ email, password });
-  if (error) alert(error.message);
-  else alert('Check your email for confirmation!');
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  
+  if (error) {
+    alert(error.message);
+    return;
+  }
+  
+  // If email confirmation is disabled, 'data.session' will be present
+  if (data?.session) {
+    window.navigateTo('home');
+  } else {
+    alert('Check your email for confirmation!');
+  }
 };
 
 window.handleLogout = async () => {
