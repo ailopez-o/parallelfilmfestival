@@ -23,6 +23,21 @@ let isAdmin = false;
 let currentView = 'home';
 let genreMap = {}; // Map of genre ID to name
 
+/**
+ * Normalizes strings for robust comparison:
+ * - Trims whitespace
+ * - Converts to lowercase
+ * - Removes diacritics (accents)
+ */
+const normalize = (str) => {
+  if (!str) return "";
+  return str
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+};
+
 // DOM Elements
 const views = {
   home: document.getElementById('homeView'),
@@ -46,7 +61,8 @@ const exploreInputs = [
   document.getElementById('exploreDirector'),
   document.getElementById('exploreGenre'),
   document.getElementById('exploreYearFrom'),
-  document.getElementById('exploreYearTo')
+  document.getElementById('exploreYearTo'),
+  document.getElementById('exploreLimit')
 ];
 const exploreButtons = [
   document.getElementById('exploreClearBtn'),
@@ -824,6 +840,8 @@ async function fetchExploreResults() {
   const genreId = exploreGenreSelect.value;
   const yearFrom = document.getElementById('exploreYearFrom').value;
   const yearTo = document.getElementById('exploreYearTo').value;
+  const limitValue = document.getElementById('exploreLimit').value;
+  const limit = parseInt(limitValue) || 20;
 
   exploreGrid.innerHTML = '<div class="loading-state">Scanning the cinematic multiverse...</div>';
 
@@ -839,15 +857,43 @@ async function fetchExploreResults() {
 
   try {
     let results = [];
+    let directorMatchedId = null;
     
     // PATH A: Director-led pivot (Most accurate for Author + Title)
     if (directorName) {
-      const personUrl = `https://api.themoviedb.org/3/search/person?api_key=${tmdbApiKey}&query=${encodeURIComponent(directorName)}`;
-      const personResp = await fetch(personUrl);
-      const personData = await personResp.json();
-      const director = personData.results.find(p => p.known_for_department === 'Directing');
+      // Fetch Page 1 and 2 to broaden the pool for common surnames (like Bayona)
+      const personPages = await Promise.all([
+        fetch(`https://api.themoviedb.org/3/search/person?api_key=${tmdbApiKey}&query=${encodeURIComponent(directorName)}&page=1`).then(r => r.json()),
+        fetch(`https://api.themoviedb.org/3/search/person?api_key=${tmdbApiKey}&query=${encodeURIComponent(directorName)}&page=2`).then(r => r.json())
+      ]);
+      
+      const allMatches = personPages.flatMap(p => p.results || []);
+      const directingMatches = allMatches.filter(p => p.known_for_department === 'Directing');
+      
+      // Robust ranking: Prioritize someone in 'Directing' with the highest popularity.
+      // If no 'Directing' match, fallback to the overall most popular (covers multi-discipline famous people).
+      let director = directingMatches.sort((a, b) => b.popularity - a.popularity)[0] || 
+                     allMatches.sort((a, b) => b.popularity - a.popularity)[0];
+
+      // SMART FALLBACK: If popularity is suspiciously low (common surname issue), 
+      // search for movies with the name and find the actual director in the credits.
+      if (!director || director.popularity < 2) {
+        const movieUrl = `https://api.themoviedb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(directorName)}`;
+        const movieResp = await fetch(movieUrl);
+        const movieData = await movieResp.json();
+        
+        if (movieData.results && movieData.results.length > 0) {
+          const topMovie = movieData.results[0];
+          const creditsUrl = `https://api.themoviedb.org/3/movie/${topMovie.id}/credits?api_key=${tmdbApiKey}`;
+          const creditsResp = await fetch(creditsUrl);
+          const creditsData = await creditsResp.json();
+          const foundDirector = creditsData.crew?.find(p => p.job === 'Director' && normalize(p.name).includes(normalize(directorName)));
+          if (foundDirector) director = { ...foundDirector, id: foundDirector.id };
+        }
+      }
       
       if (director) {
+        directorMatchedId = director.id;
         discoverParams.append('with_crew', director.id);
         const url = `https://api.themoviedb.org/3/discover/movie?${discoverParams.toString()}`;
         const resp = await fetch(url);
@@ -869,8 +915,8 @@ async function fetchExploreResults() {
       results = data.results || [];
     }
 
-    // FINAL ENRICHMENT & CROSS-FILTERING
-    const movieDetails = await Promise.all(results.slice(0, 20).map(async movie => {
+    // FINAL ENRICHMENT & CROSS-FILTERING (Dynamic limit from UI)
+    const movieDetails = await Promise.all(results.slice(0, limit).map(async movie => {
       try {
         const baseUrl = `https://api.themoviedb.org/3/movie/${movie.id}?api_key=${tmdbApiKey}`;
         const detailUrl = `${baseUrl}&append_to_response=videos,watch/providers,credits`;
@@ -882,9 +928,20 @@ async function fetchExploreResults() {
         const movieYear = detailData.release_date ? parseInt(detailData.release_date.split('-')[0]) : null;
         const movieGenres = detailData.genres?.map(g => g.name) || [];
 
-        // Client-side validation for filters
-        const matchesTitle = !query || detailData.title.toLowerCase().includes(query.toLowerCase());
-        const matchesDirector = !directorName || movieDirectors.some(d => d.toLowerCase().includes(directorName.toLowerCase()));
+        // Client-side validation for filters (Enhanced Robustness)
+        const normQuery = normalize(query);
+        const normDirectorQuery = normalize(directorName);
+        
+        const matchesTitle = !query || normalize(detailData.title).includes(normQuery);
+        
+        // Match logic: If we entered via Director Search, trust the ID. 
+        // Otherwise, fallback to permissive string matching.
+        const matchesDirector = !directorName || (
+          directorMatchedId 
+            ? detailData.credits?.crew?.some(p => p.id === directorMatchedId && p.job === 'Director')
+            : movieDirectors.some(d => normalize(d).includes(normDirectorQuery) || normDirectorQuery.includes(normalize(d)))
+        );
+        
         const matchesGenre = !genreId || detailData.genres?.some(g => g.id === parseInt(genreId));
         const matchesYearFrom = !yearFrom || (movieYear && movieYear >= parseInt(yearFrom));
         const matchesYearTo = !yearTo || (movieYear && movieYear <= parseInt(yearTo));
