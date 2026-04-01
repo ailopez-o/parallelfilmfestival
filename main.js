@@ -1433,11 +1433,13 @@ function setupEventListeners() {
   });
 
   document.getElementById('exploreClearBtn').onclick = () => {
-    document.getElementById('exploreTitle').value = '';
-    document.getElementById('exploreDirector').value = '';
-    exploreGenreSelect.value = '';
-    document.getElementById('exploreYearFrom').value = '';
-    document.getElementById('exploreYearTo').value = '';
+    exploreInputs.forEach(input => {
+      if (input.id === 'exploreLimit') {
+        input.value = '20';
+      } else {
+        input.value = '';
+      }
+    });
     exploreGrid.innerHTML = '<div class="empty-state">Start searching to discover films.</div>';
   };
 }
