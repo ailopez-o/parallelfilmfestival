@@ -63,7 +63,9 @@ const exploreInputs = [
   document.getElementById('exploreYearFrom'),
   document.getElementById('exploreYearTo'),
   document.getElementById('exploreLimit'),
-  document.getElementById('exploreActor')
+  document.getElementById('exploreActor'),
+  document.getElementById('exploreSort'),
+  document.getElementById('exploreProvider')
 ];
 const exploreButtons = [
   document.getElementById('exploreClearBtn'),
@@ -843,19 +845,27 @@ async function fetchExploreResults() {
   const yearTo = document.getElementById('exploreYearTo').value;
   const limitValue = document.getElementById('exploreLimit').value;
   const actorName = document.getElementById('exploreActor').value;
+  const sortValue = document.getElementById('exploreSort').value;
+  const providerId = document.getElementById('exploreProvider').value;
   const limit = parseInt(limitValue) || 20;
 
   exploreGrid.innerHTML = '<div class="loading-state">Scanning the cinematic multiverse...</div>';
 
   let discoverParams = new URLSearchParams({
     api_key: tmdbApiKey,
-    sort_by: 'popularity.desc',
+    sort_by: sortValue || 'popularity.desc',
     include_adult: 'false'
   });
 
   if (genreId) discoverParams.append('with_genres', genreId);
   if (yearFrom) discoverParams.append('primary_release_date.gte', `${yearFrom}-01-01`);
   if (yearTo) discoverParams.append('primary_release_date.lte', `${yearTo}-12-31`);
+  
+  if (providerId) {
+    discoverParams.append('with_watch_providers', providerId);
+    discoverParams.append('watch_region', 'ES');
+    discoverParams.append('with_watch_monetization_types', 'flatrate|free|ads');
+  }
 
   try {
     let results = [];
@@ -1436,6 +1446,8 @@ function setupEventListeners() {
     exploreInputs.forEach(input => {
       if (input.id === 'exploreLimit') {
         input.value = '20';
+      } else if (input.id === 'exploreSort') {
+        input.value = 'popularity.desc';
       } else {
         input.value = '';
       }
