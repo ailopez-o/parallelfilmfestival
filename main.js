@@ -1,17 +1,19 @@
 import { createClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Configuration
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const tmdbApiKey = import.meta.env.VITE_TMDB_API_KEY;
-const geminiKey = import.meta.env.VITE_GEMINI_KEY;
-const openaiKey = import.meta.env.VITE_OPENAI_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
-const openai = new OpenAI({ apiKey: openaiKey, dangerouslyAllowBrowser: true });
-const genAI = geminiKey ? new GoogleGenerativeAI(geminiKey, { apiVersion: "v1" }) : null;
+
+// Edge Function Proxy Helper
+async function invokeTMDBCall(path, params = {}) {
+  const { data, error } = await supabase.functions.invoke('tmdb-proxy', {
+    body: { path, params }
+  });
+  if (error) throw new Error(`TMDB Proxy Error: ${error.message}`);
+  return data;
+}
 
 // State
 let proposedMovies = [];
@@ -113,16 +115,16 @@ async function init() {
 
 async function fetchGenreMap() {
   try {
-    const url = `https://api.themoviedb.org/3/genre/movie/list?api_key=${tmdbApiKey}`;
-    const resp = await fetch(url);
-    const data = await resp.json();
-    data.genres.forEach(g => {
-      genreMap[g.id] = g.name;
-      const option = document.createElement('option');
-      option.value = g.id;
-      option.textContent = g.name;
-      exploreGenreSelect.appendChild(option);
-    });
+    const data = await invokeTMDBCall('/genre/movie/list');
+    if (data.genres) {
+      data.genres.forEach(g => {
+        genreMap[g.id] = g.name;
+        const option = document.createElement('option');
+        option.value = g.id;
+        option.textContent = g.name;
+        exploreGenreSelect.appendChild(option);
+      });
+    }
   } catch (e) {
     console.error('Error fetching genre map:', e);
   }
@@ -257,11 +259,9 @@ async function enrichMovieData(movies) {
 
   for (const movie of moviesToEnrich) {
     try {
-      const baseUrl = `https://api.themoviedb.org/3/movie/${movie.tmdb_id}?api_key=${tmdbApiKey}`;
-      const videosUrl = `${baseUrl}&append_to_response=videos,watch/providers`;
-      
-      const resp = await fetch(videosUrl);
-      const data = await resp.json();
+      const data = await invokeTMDBCall(`/movie/${movie.tmdb_id}`, {
+        append_to_response: 'videos,watch/providers'
+      });
       
       const updates = {};
       
@@ -800,10 +800,8 @@ async function searchTMDB(query) {
     return;
   }
 
-  const url = `https://api.themoviedb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(query)}&include_adult=false`;
   try {
-    const response = await fetch(url);
-    const data = await response.json();
+    const data = await invokeTMDBCall('/search/movie', { query, include_adult: 'false' });
     
 
     // No restrictive filtering - just sort by popularity (desc) and take top 20
@@ -812,10 +810,8 @@ async function searchTMDB(query) {
       .slice(0, 20);
 
     const enrichedResults = await Promise.all(results.map(async movie => {
-      const creditsUrl = `https://api.themoviedb.org/3/movie/${movie.id}/credits?api_key=${tmdbApiKey}`;
       try {
-        const creditsResp = await fetch(creditsUrl);
-        const creditsData = await creditsResp.json();
+        const creditsData = await invokeTMDBCall(`/movie/${movie.id}/credits`);
         const directors = creditsData.crew
           .filter(person => person.job === 'Director')
           .map(d => d.name)
@@ -851,20 +847,19 @@ async function fetchExploreResults() {
 
   exploreGrid.innerHTML = '<div class="loading-state">Scanning the cinematic multiverse...</div>';
 
-  let discoverParams = new URLSearchParams({
-    api_key: tmdbApiKey,
+  let discoverParams = {
     sort_by: sortValue || 'popularity.desc',
     include_adult: 'false'
-  });
+  };
 
-  if (genreId) discoverParams.append('with_genres', genreId);
-  if (yearFrom) discoverParams.append('primary_release_date.gte', `${yearFrom}-01-01`);
-  if (yearTo) discoverParams.append('primary_release_date.lte', `${yearTo}-12-31`);
+  if (genreId) discoverParams.with_genres = genreId;
+  if (yearFrom) discoverParams['primary_release_date.gte'] = `${yearFrom}-01-01`;
+  if (yearTo) discoverParams['primary_release_date.lte'] = `${yearTo}-12-31`;
   
   if (providerId) {
-    discoverParams.append('with_watch_providers', providerId);
-    discoverParams.append('watch_region', 'ES');
-    discoverParams.append('with_watch_monetization_types', 'flatrate|free|ads');
+    discoverParams.with_watch_providers = providerId;
+    discoverParams.watch_region = 'ES';
+    discoverParams.with_watch_monetization_types = 'flatrate|free|ads';
   }
 
   try {
@@ -877,8 +872,8 @@ async function fetchExploreResults() {
       // 1. Resolve Director if provided
       if (directorName) {
         const personPages = await Promise.all([
-          fetch(`https://api.themoviedb.org/3/search/person?api_key=${tmdbApiKey}&query=${encodeURIComponent(directorName)}&page=1`).then(r => r.json()),
-          fetch(`https://api.themoviedb.org/3/search/person?api_key=${tmdbApiKey}&query=${encodeURIComponent(directorName)}&page=2`).then(r => r.json())
+          invokeTMDBCall('/search/person', { query: directorName, page: 1 }),
+          invokeTMDBCall('/search/person', { query: directorName, page: 2 })
         ]);
         const allMatches = personPages.flatMap(p => p.results || []);
         const directingMatches = allMatches.filter(p => p.known_for_department === 'Directing');
@@ -886,28 +881,23 @@ async function fetchExploreResults() {
                        allMatches.sort((a, b) => b.popularity - a.popularity)[0];
 
         if (!director || director.popularity < 2) {
-          const movieUrl = `https://api.themoviedb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(directorName)}`;
-          const movieResp = await fetch(movieUrl);
-          const movieData = await movieResp.json();
+          const movieData = await invokeTMDBCall('/search/movie', { query: directorName });
           if (movieData.results?.length > 0) {
             const topMovie = movieData.results[0];
-            const creditsUrl = `https://api.themoviedb.org/3/movie/${topMovie.id}/credits?api_key=${tmdbApiKey}`;
-            const creditsResp = await fetch(creditsUrl);
-            const creditsData = await creditsResp.json();
+            const creditsData = await invokeTMDBCall(`/movie/${topMovie.id}/credits`);
             const foundDirector = creditsData.crew?.find(p => p.job === 'Director' && normalize(p.name).includes(normalize(directorName)));
             if (foundDirector) director = foundDirector;
           }
         }
         if (director) {
           directorMatchedId = director.id;
-          discoverParams.append('with_crew', director.id);
+          discoverParams.with_crew = director.id;
         }
       }
 
       // 2. Resolve Actor if provided
       if (actorName) {
-        const actorResp = await fetch(`https://api.themoviedb.org/3/search/person?api_key=${tmdbApiKey}&query=${encodeURIComponent(actorName)}`);
-        const actorData = await actorResp.json();
+        const actorData = await invokeTMDBCall('/search/person', { query: actorName });
         const allActorMatches = actorData.results || [];
         const actingMatches = allActorMatches.filter(p => p.known_for_department === 'Acting');
         const actor = actingMatches.sort((a, b) => b.popularity - a.popularity)[0] || 
@@ -915,38 +905,32 @@ async function fetchExploreResults() {
         
         if (actor) {
           actorMatchedId = actor.id;
-          discoverParams.append('with_cast', actor.id);
+          discoverParams.with_cast = actor.id;
         }
       }
 
-      const url = `https://api.themoviedb.org/3/discover/movie?${discoverParams.toString()}`;
-      const resp = await fetch(url);
-      const data = await resp.json();
+      const data = await invokeTMDBCall('/discover/movie', discoverParams);
       results = data.results || [];
 
     } else if (query) {
-      // PATH B: Multipage Title Search (Best for Broad Keywords)
+      // PATH B: Multipage Title Search (Proxy Assisted)
       const pagesToFetch = 3;
       const pages = await Promise.all(Array.from({ length: pagesToFetch }, (_, i) => 
-        fetch(`https://api.themoviedb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(query)}&page=${i+1}`).then(r => r.json())
+        invokeTMDBCall('/search/movie', { query, page: i + 1 })
       ));
       results = pages.flatMap(p => p.results || []);
     } else {
       // PATH C: Direct Filter Discovery
-      const url = `https://api.themoviedb.org/3/discover/movie?${discoverParams.toString()}`;
-      const resp = await fetch(url);
-      const data = await resp.json();
+      const data = await invokeTMDBCall('/discover/movie', discoverParams);
       results = data.results || [];
     }
 
     // FINAL ENRICHMENT & CROSS-FILTERING (Dynamic limit from UI)
     const movieDetails = await Promise.all(results.slice(0, limit).map(async movie => {
       try {
-        const baseUrl = `https://api.themoviedb.org/3/movie/${movie.id}?api_key=${tmdbApiKey}`;
-        const detailUrl = `${baseUrl}&append_to_response=videos,watch/providers,credits`;
-        
-        const resp = await fetch(detailUrl);
-        const detailData = await resp.json();
+        const detailData = await invokeTMDBCall(`/movie/${movie.id}`, {
+          append_to_response: 'videos,watch/providers,credits'
+        });
         
         const movieDirectors = detailData.credits?.crew?.filter(p => p.job === 'Director').map(d => d.name) || [];
         const movieYear = detailData.release_date ? parseInt(detailData.release_date.split('-')[0]) : null;
@@ -1045,51 +1029,15 @@ async function fetchAIRecommendations() {
     FORMAT: Return MANDATORY a JSON array of strings: ["Title 1", "Title 2", ..., "Title 50"]
     USER REQUEST: "${query}"`;
 
-    updateStatus(useWeb ? "Activating Satellite Search (Web Guided)..." : "Reasoning with Cinematic Bible (Fast Mode)...");
+    updateStatus(useWeb ? "Activating Satellite Search..." : "Reasoning with Cinematic Bible...");
     
-    let text = "";
-    if (useWeb) {
-      // --- GPT-5 RESPONSES API (Supports web_search) ---
-      const resp = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${openaiKey}`
-        },
-        body: JSON.stringify({
-          model: "gpt-5",
-          tools: [{ type: "web_search" }],
-          input: prompt
-        }),
-        signal: controller.signal
-      });
-      if (!resp.ok) throw new Error(`OpenAI Responses Error: ${resp.status}`);
-      const data = await resp.json();
-      
-      console.group('%c 🕵️ AI Scout: GPT-5 Response Deck ', 'background: #312e81; color: #fff; border-radius: 4px; padding: 4px;');
-      console.log('Raw Data:', data);
-      text = data.output_text || "";
-      console.log('Extracted Text:', text);
-      console.groupEnd();
-    } else {
-      // --- GPT-4O-MINI CHAT API (Standard fast logic) ---
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }]
-      }, { signal: controller.signal });
-      
-      console.group('%c 🕵️ AI Scout: Fast Reasoning Deck ', 'background: #1e1b4b; color: #fff; border-radius: 4px; padding: 4px;');
-      text = completion.choices[0].message.content || "";
-      console.log('Extracted Content:', text);
-      console.groupEnd();
-    }
+    // Call Secure AI Edge Function
+    const { data: aiData, error: aiError } = await supabase.functions.invoke('ai-scout', {
+      body: { query, useWeb }
+    });
 
-    const jsonMatch = text.match(/\[.*\]/s);
-    if (!jsonMatch) {
-      console.error('Regex Fail: No JSON structure found in content.');
-      throw new Error("Could not find movie list in AI response. See console for details.");
-    }
-    const titles = JSON.parse(jsonMatch[0]);
+    if (aiError) throw new Error(`AI Scout Mission Failed: ${aiError.message}`);
+    const titles = aiData.titles || [];
 
     updateStatus("Distilling cinematic knowledge...");
     if (apertureOverlay) apertureOverlay.classList.remove('active');
@@ -1105,19 +1053,15 @@ async function fetchAIRecommendations() {
         if (renderedTitles.has(title.toLowerCase())) return null;
 
         try {
-          // 1. Search for ID
-          const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${tmdbApiKey}&query=${encodeURIComponent(title)}`;
-          const searchResp = await fetch(searchUrl);
-          const searchData = await searchResp.json();
-          const found = searchData.results[0];
+          // 1. Search for ID via Proxy
+          const searchData = await invokeTMDBCall('/search/movie', { query: title });
+          const found = searchData.results?.[0];
 
           if (found && !renderedIds.has(found.id)) {
-            // 2. Fetch Rich Details
-            const baseUrl = `https://api.themoviedb.org/3/movie/${found.id}?api_key=${tmdbApiKey}`;
-            const detailUrl = `${baseUrl}&append_to_response=videos,watch/providers,credits`;
-            
-            const detailResp = await fetch(detailUrl);
-            const detailData = await detailResp.json();
+            // 2. Fetch Rich Details via Proxy
+            const detailData = await invokeTMDBCall(`/movie/${found.id}`, {
+              append_to_response: 'videos,watch/providers,credits'
+            });
             
             renderedIds.add(detailData.id);
             renderedTitles.add(title.toLowerCase());
