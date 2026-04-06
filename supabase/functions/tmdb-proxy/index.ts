@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
-const TMDB_API_KEY = Deno.env.get("TMDB_API_KEY")
+const TMDB_API_KEY = Deno.env.get("TMDB_API_KEY") || Deno.env.get("VITE_TMDB_API_KEY")
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -37,7 +37,10 @@ serve(async (req) => {
 
   } catch (err) {
     console.error(`[TMDB Proxy Error]: ${err.message}`)
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ 
+      error: err.message,
+      details: "Ensure TMDB_API_KEY is set in Supabase Secrets (Dashboard -> Edge Functions)."
+    }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })

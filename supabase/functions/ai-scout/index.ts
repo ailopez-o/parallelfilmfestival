@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || Deno.env.get("VITE_OPENAI_KEY")
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -70,7 +70,10 @@ serve(async (req) => {
 
   } catch (err) {
     console.error(`[AI Scout Error]: ${err.message}`)
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ 
+      error: err.message,
+      details: "Ensure OPENAI_API_KEY is set in Supabase Secrets (Dashboard -> Edge Functions)."
+    }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })

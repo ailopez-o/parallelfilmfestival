@@ -11,7 +11,19 @@ async function invokeTMDBCall(path, params = {}) {
   const { data, error } = await supabase.functions.invoke('tmdb-proxy', {
     body: { path, params }
   });
-  if (error) throw new Error(`TMDB Proxy Error: ${error.message}`);
+  
+  if (error) {
+    // If it's a non-2xx status, find the error message in the payload
+    const msg = error.message || "Unknown Proxy Error";
+    console.error(`[TMDB Proxy Error]: ${msg}`, error);
+    throw new Error(`TMDB Proxy Error: ${msg}`);
+  }
+  
+  if (data && data.error) {
+    console.error(`[TMDB Proxy Logic Error]: ${data.error}`, data.details);
+    throw new Error(data.error);
+  }
+
   return data;
 }
 
@@ -24,6 +36,7 @@ let userProfile = null; // Cache for profile data (name, avatar, role)
 let isAdmin = false;
 let currentView = 'home';
 let genreMap = {}; // Map of genre ID to name
+let providerMap = {}; // Map of provider ID to data (name, logo)
 
 /**
  * Normalizes strings for robust comparison:
@@ -97,6 +110,7 @@ const FALLBACK_IMAGE = 'https://placehold.co/300x450/1a1a1f/94a3b8?text=Cinema+P
 // Initialization
 async function init() {
   await fetchGenreMap();
+  await fetchProvidersMap();
   await checkUser();
   await refreshData();
   setupEventListeners();
@@ -117,6 +131,7 @@ async function fetchGenreMap() {
   try {
     const data = await invokeTMDBCall('/genre/movie/list');
     if (data.genres) {
+      exploreGenreSelect.innerHTML = '<option value="">All Genres</option>';
       data.genres.forEach(g => {
         genreMap[g.id] = g.name;
         const option = document.createElement('option');
@@ -127,6 +142,27 @@ async function fetchGenreMap() {
     }
   } catch (e) {
     console.error('Error fetching genre map:', e);
+  }
+}
+
+async function fetchProvidersMap() {
+  try {
+    const data = await invokeTMDBCall('/watch/providers/movie', { watch_region: 'ES' });
+    const select = document.getElementById('exploreProvider');
+    if (data.results && select) {
+      select.innerHTML = '<option value="">Any Platform</option>';
+      // Sort and take top providers or specific ones
+      const topProviders = data.results.slice(0, 50); 
+      topProviders.forEach(p => {
+        providerMap[p.provider_id] = p;
+        const option = document.createElement('option');
+        option.value = p.provider_id;
+        option.textContent = p.provider_name;
+        select.appendChild(option);
+      });
+    }
+  } catch (e) {
+    console.error('Error fetching providers map:', e);
   }
 }
 
@@ -835,12 +871,12 @@ async function searchTMDB(query) {
 // Explore Logic
 async function fetchExploreResults() {
   const query = document.getElementById('exploreTitle').value.trim();
-  const directorName = document.getElementById('exploreDirector').value.trim().toLowerCase();
+  const directorName = document.getElementById('exploreDirector').value.trim();
+  const actorName = document.getElementById('exploreActor').value.trim();
   const genreId = exploreGenreSelect.value;
   const yearFrom = document.getElementById('exploreYearFrom').value;
   const yearTo = document.getElementById('exploreYearTo').value;
   const limitValue = document.getElementById('exploreLimit').value;
-  const actorName = document.getElementById('exploreActor').value;
   const sortValue = document.getElementById('exploreSort').value;
   const providerId = document.getElementById('exploreProvider').value;
   const limit = parseInt(limitValue) || 20;
@@ -849,7 +885,8 @@ async function fetchExploreResults() {
 
   let discoverParams = {
     sort_by: sortValue || 'popularity.desc',
-    include_adult: 'false'
+    include_adult: 'false',
+    'vote_count.gte': 10 
   };
 
   if (genreId) discoverParams.with_genres = genreId;
@@ -864,121 +901,93 @@ async function fetchExploreResults() {
 
   try {
     let results = [];
-    let directorMatchedId = null;
-    let actorMatchedId = null;
+    let directorId = null;
+    let actorId = null;
     
-    // PATH A: Person-led pivot (Director or Actor)
+    // 1. Resolve Person IDs
     if (directorName || actorName) {
-      // 1. Resolve Director if provided
-      if (directorName) {
-        const personPages = await Promise.all([
-          invokeTMDBCall('/search/person', { query: directorName, page: 1 }),
-          invokeTMDBCall('/search/person', { query: directorName, page: 2 })
-        ]);
-        const allMatches = personPages.flatMap(p => p.results || []);
-        const directingMatches = allMatches.filter(p => p.known_for_department === 'Directing');
-        let director = directingMatches.sort((a, b) => b.popularity - a.popularity)[0] || 
-                       allMatches.sort((a, b) => b.popularity - a.popularity)[0];
+      const personRequests = [];
+      if (directorName) personRequests.push(invokeTMDBCall('/search/person', { query: directorName }));
+      if (actorName) personRequests.push(invokeTMDBCall('/search/person', { query: actorName }));
+      
+      const [directorRes, actorRes] = await Promise.all([
+        directorName ? invokeTMDBCall('/search/person', { query: directorName }) : null,
+        actorName ? invokeTMDBCall('/search/person', { query: actorName }) : null
+      ]);
 
-        if (!director || director.popularity < 2) {
-          const movieData = await invokeTMDBCall('/search/movie', { query: directorName });
-          if (movieData.results?.length > 0) {
-            const topMovie = movieData.results[0];
-            const creditsData = await invokeTMDBCall(`/movie/${topMovie.id}/credits`);
-            const foundDirector = creditsData.crew?.find(p => p.job === 'Director' && normalize(p.name).includes(normalize(directorName)));
-            if (foundDirector) director = foundDirector;
-          }
-        }
-        if (director) {
-          directorMatchedId = director.id;
-          discoverParams.with_crew = director.id;
-        }
+      if (directorRes?.results?.length > 0) {
+        // Prioritize people in the 'Directing' department
+        let directors = directorRes.results.filter(p => p.known_for_department === 'Directing');
+        let bestDirector = directors.length > 0 ? directors : directorRes.results;
+        directorId = bestDirector.sort((a,b) => b.popularity - a.popularity)[0].id;
+        discoverParams.with_crew = directorId;
       }
-
-      // 2. Resolve Actor if provided
-      if (actorName) {
-        const actorData = await invokeTMDBCall('/search/person', { query: actorName });
-        const allActorMatches = actorData.results || [];
-        const actingMatches = allActorMatches.filter(p => p.known_for_department === 'Acting');
-        const actor = actingMatches.sort((a, b) => b.popularity - a.popularity)[0] || 
-                      allActorMatches.sort((a, b) => b.popularity - a.popularity)[0];
-        
-        if (actor) {
-          actorMatchedId = actor.id;
-          discoverParams.with_cast = actor.id;
-        }
+      if (actorRes?.results?.length > 0) {
+        // Prioritize people in the 'Acting' department
+        let actors = actorRes.results.filter(p => p.known_for_department === 'Acting');
+        let bestActor = actors.length > 0 ? actors : actorRes.results;
+        actorId = bestActor.sort((a,b) => b.popularity - a.popularity)[0].id;
+        discoverParams.with_cast = actorId;
       }
-
-      const data = await invokeTMDBCall('/discover/movie', discoverParams);
-      results = data.results || [];
-
-    } else if (query) {
-      // PATH B: Multipage Title Search (Proxy Assisted)
-      const pagesToFetch = 3;
-      const pages = await Promise.all(Array.from({ length: pagesToFetch }, (_, i) => 
-        invokeTMDBCall('/search/movie', { query, page: i + 1 })
-      ));
-      results = pages.flatMap(p => p.results || []);
-    } else {
-      // PATH C: Direct Filter Discovery
-      const data = await invokeTMDBCall('/discover/movie', discoverParams);
-      results = data.results || [];
     }
 
-    // FINAL ENRICHMENT & CROSS-FILTERING (Dynamic limit from UI)
-    const movieDetails = await Promise.all(results.slice(0, limit).map(async movie => {
+    // 2. Fetch Results
+    if (query && !directorId && !actorId) {
+      // Title search only
+      const pagesToFetch = Math.max(1, Math.ceil(limit / 20));
+      const pages = await Promise.all(
+        Array.from({ length: pagesToFetch }, (_, i) => 
+          invokeTMDBCall('/search/movie', { query, page: i + 1 })
+        )
+      );
+      results = pages.flatMap(p => p.results || []);
+    } else {
+      // Discover (supports combinations of Director, Actor, Genre, Year, Provider)
+      const pagesToFetch = Math.max(1, Math.min(5, Math.ceil(limit / 20)));
+      const responses = await Promise.all(
+        Array.from({ length: pagesToFetch }, (_, i) => 
+          invokeTMDBCall('/discover/movie', { ...discoverParams, page: i + 1 })
+        )
+      );
+      results = responses.flatMap(r => r.results || []);
+    }
+
+    // Secondary client-side title filter if Title + Person were provided
+    if (query && (directorId || actorId)) {
+      results = results.filter(m => normalize(m.title).includes(normalize(query)));
+    }
+
+    // 3. Final Enrichment & Detail Fetching
+    const finalResults = results.slice(0, limit);
+    const enriched = await Promise.all(finalResults.map(async movie => {
       try {
-        const detailData = await invokeTMDBCall(`/movie/${movie.id}`, {
+        const details = await invokeTMDBCall(`/movie/${movie.id}`, {
           append_to_response: 'videos,watch/providers,credits'
         });
         
-        const movieDirectors = detailData.credits?.crew?.filter(p => p.job === 'Director').map(d => d.name) || [];
-        const movieYear = detailData.release_date ? parseInt(detailData.release_date.split('-')[0]) : null;
-        const movieGenres = detailData.genres?.map(g => g.name) || [];
-
-        // Client-side validation for filters (Enhanced Robustness)
-        const normQuery = normalize(query);
-        const normDirectorQuery = normalize(directorName);
-        const normActorQuery = normalize(actorName);
+        const directors = details.credits?.crew
+          ?.filter(p => p.job === 'Director')
+          .map(d => d.name) || [];
+        const movieGenres = details.genres?.map(g => g.name) || [];
+        const trailer = details.videos?.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube');
         
-        const matchesTitle = !query || normalize(detailData.title).includes(normQuery);
-        
-        // Match logic: If we resolved by ID, trust the ID. Otherwise, permissive string match.
-        const matchesDirector = !directorName || (
-          directorMatchedId 
-            ? detailData.credits?.crew?.some(p => p.id === directorMatchedId && p.job === 'Director')
-            : movieDirectors.some(d => normalize(d).includes(normDirectorQuery) || normDirectorQuery.includes(normalize(d)))
-        );
-
-        const matchesActor = !actorName || (
-          actorMatchedId
-            ? detailData.credits?.cast?.some(p => p.id === actorMatchedId)
-            : detailData.credits?.cast?.some(p => normalize(p.name).includes(normActorQuery) || normActorQuery.includes(normalize(p.name)))
-        );
-        
-        const matchesGenre = !genreId || detailData.genres?.some(g => g.id === parseInt(genreId));
-        const matchesYearFrom = !yearFrom || (movieYear && movieYear >= parseInt(yearFrom));
-        const matchesYearTo = !yearTo || (movieYear && movieYear <= parseInt(yearTo));
-
-        if (matchesTitle && matchesDirector && matchesActor && matchesGenre && matchesYearFrom && matchesYearTo) {
-          const trailer = detailData.videos?.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube');
-          return {
-            ...detailData,
-            director: movieDirectors.join(', ') || 'Unknown',
-            genres: movieGenres,
-            synopsis: detailData.overview,
-            trailer_url: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null,
-            watch_providers: detailData['watch/providers']?.results?.ES
-          };
-        }
-      } catch (e) { return null; }
-      return null;
+        return {
+          ...details,
+          director: directors.join(', ') || 'Unknown Director',
+          genres: movieGenres,
+          synopsis: details.overview,
+          trailer_url: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null,
+          watch_providers: details['watch/providers']?.results?.ES
+        };
+      } catch (e) {
+        return { ...movie, director: 'Unknown', genres: [], synopsis: movie.overview };
+      }
     }));
 
-    renderExploreResults(movieDetails.filter(Boolean).slice(0, 50));
+    renderExploreResults(enriched);
   } catch (err) {
     console.error('Explore error:', err);
-    exploreGrid.innerHTML = '<div class="empty-state">Error scanning the multiverse. Please try again.</div>';
+    exploreGrid.innerHTML = '<div class="empty-state">Discovery session failed. Try adjusting your filters.</div>';
   }
 }
 
