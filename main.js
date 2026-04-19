@@ -59,7 +59,8 @@ const views = {
   home: document.getElementById('homeView'),
   auth: document.getElementById('authView'),
   profile: document.getElementById('profileView'),
-  ranking: document.getElementById('rankingView')
+  ranking: document.getElementById('rankingView'),
+  explore: document.getElementById('exploreView')
 };
 const rankingList = document.getElementById('rankingList');
 const movieGrid = document.getElementById('movieGrid');
