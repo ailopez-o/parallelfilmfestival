@@ -34,6 +34,7 @@ let userVotes = new Set(); // Set of movie IDs the user voted for
 let user = null;
 let userProfile = null; // Cache for profile data (name, avatar, role)
 let isAdmin = false;
+let rankedUsers = []; // Global leaderboard data
 let currentView = 'home';
 let genreMap = {}; // Map of genre ID to name
 let providerMap = {}; // Map of provider ID to data (name, logo)
@@ -58,8 +59,9 @@ const views = {
   home: document.getElementById('homeView'),
   auth: document.getElementById('authView'),
   profile: document.getElementById('profileView'),
-  explore: document.getElementById('exploreView')
+  ranking: document.getElementById('rankingView')
 };
+const rankingList = document.getElementById('rankingList');
 const movieGrid = document.getElementById('movieGrid');
 const historyGrid = document.getElementById('historyGrid');
 const adminToggle = document.getElementById('adminToggle');
@@ -97,6 +99,9 @@ const profileActivityGrid = document.getElementById('profileActivityGrid');
 const adminDashboard = document.getElementById('adminDashboard');
 const adminUserList = document.getElementById('adminUserList');
 const adminUserCount = document.getElementById('adminUserCount');
+const adminParticipationLog = document.getElementById('adminParticipationLog');
+const homeLeaderboard = document.getElementById('homeLeaderboard');
+const homeLeaderboardSection = document.getElementById('homeLeaderboardSection');
 
 // Profile Edit Elements
 const profileDisplay = document.getElementById('profileDisplay');
@@ -113,6 +118,7 @@ async function init() {
   await fetchProvidersMap();
   await checkUser();
   await refreshData();
+  await updateGlobalRanking();
   setupEventListeners();
   handleRouting();
 
@@ -272,6 +278,9 @@ async function refreshData() {
   renderProposals();
   renderHistory();
   if (currentView === 'profile') loadUserActivity();
+  
+  // Also refresh ranking on any state change
+  updateGlobalRanking();
 }
 
 // Rendering Helpers
@@ -356,9 +365,7 @@ function handleRouting() {
   }
 
   if (hash === 'profile') loadUserActivity();
-  if (hash === 'explore') {
-    // Initial icons check for explore view markers
-  }
+  if (hash === 'ranking') renderRankingView();
   
   if (window.lucide) window.lucide.createIcons();
 }
@@ -565,14 +572,26 @@ function updateAuthUI() {
   if (user) {
     const name = userProfile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0];
     const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
+    const myScore = userProfile?.score || 0;
+    
     userHeader.innerHTML = `
-      <div class="user-profile" onclick="window.navigateTo('profile')">
-        <img src="${avatar}" class="user-avatar" />
-        <span>${name}</span>
+      <div class="user-profile">
+        <div class="score-badge header-score" onclick="event.stopPropagation(); window.navigateTo('ranking')" title="View Global Ranking">
+          <i data-lucide="award" style="width:12px; height:12px; margin-right:4px;"></i>
+          ${myScore}
+        </div>
+        <div class="user-profile-info" onclick="window.navigateTo('profile')">
+          <img src="${avatar}" class="user-avatar" />
+          <div style="display:flex; flex-direction:column; line-height: 1.2;">
+            <span style="font-weight:700;">${name}</span>
+            ${userProfile?.rank ? `<span style="font-size: 0.7rem; color:var(--warning); font-weight:800;">RANK #${userProfile.rank}</span>` : ''}
+          </div>
+        </div>
       </div>
     `;
   } else {
     userHeader.innerHTML = `<button class="auth-btn" onclick="window.navigateTo('auth')">Sign In</button>`;
+    
     searchResults.classList.remove('active');
     
     // 🛡️ Lock only the Proposal-specific search (Home/Header) 
@@ -715,6 +734,7 @@ async function loadUserActivity() {
   if (isAdmin) {
     adminDashboard.classList.remove('page-hidden');
     await fetchUserList();
+    await fetchParticipationLog();
   } else {
     adminDashboard.classList.add('page-hidden');
   }
@@ -763,23 +783,222 @@ window.saveProfile = async () => {
   }
 };
 
+async function fetchParticipationLog() {
+  if (!isAdmin) return;
+  
+  try {
+    // Fetch everything in parallel since automatic joins are failing due to missing schema FKs
+    const [proposalsRes, votesRes, ratingsRes, profilesRes] = await Promise.all([
+      supabase.from('movies').select('title, created_at, proposed_by, tmdb_id').order('created_at', { ascending: false }).limit(30),
+      supabase.from('votes').select('created_at, user_id, movie_id').order('created_at', { ascending: false }).limit(30),
+      supabase.from('user_ratings').select('created_at, rating, user_id, movie_id').order('created_at', { ascending: false }).limit(30),
+      supabase.from('profiles').select('id, full_name, email')
+    ]);
+
+    if (profilesRes.error) throw profilesRes.error;
+
+    // Create a quick lookup map for profiles and movies
+    const profileMap = {};
+    profilesRes.data.forEach(p => profileMap[p.id] = p);
+
+    // We also need movie data for lookup
+    const allMovies = [...proposedMovies, ...seenMovies];
+    const movieLookup = {};
+    allMovies.forEach(m => movieLookup[m.id] = { title: m.title, tmdb_id: m.tmdb_id });
+
+    let logItems = [];
+
+    // Process Proposals
+    if (proposalsRes.data) {
+      proposalsRes.data.forEach(p => {
+        const prof = profileMap[p.proposed_by];
+        logItems.push({
+          user: prof?.full_name || prof?.email?.split('@')[0] || 'Unknown User',
+          email: prof?.email || 'N/A',
+          action: '<span class="action-tag proposal">Proposed</span>',
+          movieTitle: p.title,
+          tmdbId: p.tmdb_id,
+          date: new Date(p.created_at)
+        });
+      });
+    }
+
+    // Process Votes
+    if (votesRes.data) {
+      votesRes.data.forEach(v => {
+        const prof = profileMap[v.user_id];
+        const mData = movieLookup[v.movie_id];
+        logItems.push({
+          user: prof?.full_name || prof?.email?.split('@')[0] || 'Unknown User',
+          email: prof?.email || 'N/A',
+          action: '<span class="action-tag vote">Voted</span>',
+          movieTitle: mData?.title || 'Unknown Movie',
+          tmdbId: mData?.tmdb_id,
+          date: new Date(v.created_at)
+        });
+      });
+    }
+
+    // Process Ratings
+    if (ratingsRes.data) {
+      ratingsRes.data.forEach(r => {
+        const prof = profileMap[r.user_id];
+        const mData = movieLookup[r.movie_id];
+        logItems.push({
+          user: prof?.full_name || prof?.email?.split('@')[0] || 'Unknown User',
+          email: prof?.email || 'N/A',
+          action: `<span class="action-tag rating">Rated (${r.rating}/10)</span>`,
+          movieTitle: mData?.title || 'Unknown Movie',
+          tmdbId: mData?.tmdb_id,
+          date: new Date(r.created_at)
+        });
+      });
+    }
+
+    // Sort combined log by date descending
+    logItems.sort((a, b) => b.date - a.date);
+    
+    // Take top 40 recent actions
+    const recentItems = logItems.slice(0, 40);
+
+    if (recentItems.length === 0) {
+      adminParticipationLog.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--text-secondary);">No recent activity recorded.</td></tr>`;
+      return;
+    }
+
+    adminParticipationLog.innerHTML = recentItems.map(item => {
+      const name = item.user;
+      const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
+      const movieLink = item.tmdbId ? `https://www.themoviedb.org/movie/${item.tmdbId}` : null;
+      
+      const movieDisplay = movieLink 
+        ? `<a href="${movieLink}" target="_blank" class="movie-title-cell link">${item.movieTitle}</a>`
+        : `<span class="movie-title-cell">${item.movieTitle}</span>`;
+
+      return `
+        <tr>
+          <td>
+            <div class="user-cell">
+              <img src="${avatar}" alt="${name}">
+              <span class="user-name">${name}</span>
+            </div>
+          </td>
+          <td>${item.action}</td>
+          <td>${movieDisplay}</td>
+          <td><span class="user-date">${item.date.toLocaleString()}</span></td>
+        </tr>
+      `;
+    }).join('');
+
+  } catch (err) {
+    adminParticipationLog.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--error);">Failed to load participation log. Check console for details.</td></tr>`;
+  }
+}
+
+async function updateGlobalRanking() {
+  try {
+    const [profilesRes, votesRes, moviesRes] = await Promise.all([
+      supabase.from('profiles').select('*'),
+      supabase.from('votes').select('user_id'),
+      supabase.from('movies').select('proposed_by')
+    ]);
+    
+    if (profilesRes.error) throw profilesRes.error;
+    const profiles = profilesRes.data || [];
+    const votes = votesRes.data || [];
+    const movies = moviesRes.data || [];
+
+    // Calculate counts
+    const activityCounts = {};
+    votes.forEach(v => {
+      if (!activityCounts[v.user_id]) activityCounts[v.user_id] = { votes: 0, proposals: 0 };
+      activityCounts[v.user_id].votes++;
+    });
+    movies.forEach(m => {
+      if (!activityCounts[m.proposed_by]) activityCounts[m.proposed_by] = { votes: 0, proposals: 0 };
+      activityCounts[m.proposed_by].proposals++;
+    });
+
+    // Attach scores to profiles
+    profiles.forEach(p => {
+      const activity = activityCounts[p.id] || { votes: 0, proposals: 0 };
+      p.score = (activity.proposals * 5) + (activity.votes * 1);
+    });
+
+    // Sort by score descending
+    profiles.sort((a, b) => b.score - a.score);
+    
+    // Assign Rank
+    profiles.forEach((p, idx) => {
+      p.rank = idx + 1;
+    });
+
+    rankedUsers = profiles;
+    
+    // Update current user profile cache with new rank and score
+    if (user && userProfile) {
+      const me = rankedUsers.find(u => u.id === user.id);
+      if (me) {
+        userProfile.rank = me.rank;
+        userProfile.score = me.score;
+        updateAuthUI(); // Keep header in sync
+      }
+    }
+
+    renderRankingView();
+  } catch (err) {
+    console.error('Error updating global ranking:', err);
+  }
+}
+
+function renderRankingView() {
+  if (!rankingList) return;
+  
+  rankingList.innerHTML = rankedUsers.map(p => {
+    const name = p.full_name || p.email.split('@')[0];
+    const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
+    const rankClass = p.rank <= 3 ? `top-${p.rank}` : '';
+    
+    return `
+      <tr>
+        <td><span class="user-rank ${rankClass}">#${p.rank}</span></td>
+        <td>
+          <div class="user-cell">
+            <img src="${avatar}" alt="${name}">
+            <span class="user-name">${name}</span>
+          </div>
+        </td>
+        <td>
+          <div class="score-badge" onclick="window.navigateTo('ranking')" title="View Global Ranking">
+            <i data-lucide="award" style="width:12px; height:12px; margin-right:4px;"></i>
+            ${p.score}
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+  
+  if (window.lucide) window.lucide.createIcons();
+}
+
 async function fetchUserList() {
   try {
-    const { data: profiles, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-    
-    if (error) throw error;
+    // ranking is already updated by updateGlobalRanking() called in refreshData()
+    const profiles = rankedUsers;
 
-    adminUserCount.textContent = `${profiles?.length || 0} Users`;
+    adminUserCount.textContent = `${profiles.length} Users`;
     adminUserList.innerHTML = profiles.map(p => {
       const name = p.full_name || p.email.split('@')[0];
       const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
       const date = p.created_at ? new Date(p.created_at).toLocaleDateString() : 'N/A';
       const roleLabel = p.role === 'admin' ? '<span style="color:var(--success); font-size: 0.7rem; font-weight:700;">ADMIN</span>' : '<span style="color:var(--text-secondary); font-size: 0.7rem;">USER</span>';
-      
+      const rankClass = p.rank <= 3 ? `top-${p.rank}` : '';
+
       return `
         <tr>
           <td>
             <div class="user-cell">
+              <span class="user-rank ${rankClass}">#${p.rank}</span>
               <img src="${avatar}" alt="${p.full_name || 'User'}">
               <div style="display:flex; flex-direction:column;">
                 <span class="user-name">${p.full_name || 'Anonymous User'}</span>
@@ -788,6 +1007,12 @@ async function fetchUserList() {
             </div>
           </td>
           <td><span class="user-email">${p.email}</span></td>
+          <td>
+            <div class="score-badge" onclick="window.navigateTo('ranking')" title="View Global Ranking">
+              <i data-lucide="award" style="width:12px; height:12px; margin-right:4px;"></i>
+              ${p.score}
+            </div>
+          </td>
           <td><span class="user-date">${date}</span></td>
         </tr>
       `;

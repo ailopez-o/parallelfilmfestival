@@ -52,6 +52,7 @@
             <i data-lucide="clapperboard"></i>
             <span>Paral·lel Film Festival</span>
           </div>
+
           <div id="userHeader" class="user-actions">
             <!-- Auth buttons/user info will be injected here -->
           </div>
@@ -97,6 +98,33 @@
             </div>
           </div>
         </section>
+      </section>
+
+      <!-- RANKING VIEW -->
+      <section id="rankingView" class="view page-hidden">
+        <div class="container" style="padding-top: 4rem;">
+          <div class="section-title">
+            <h2><i data-lucide="trophy" style="color:#fbbf24; vertical-align:middle; margin-right:0.5rem;"></i> Festival Leaderboard</h2>
+            <p style="color:var(--text-secondary); margin-top: 0.5rem;">The most active film lovers in our community.</p>
+          </div>
+          
+          <div class="admin-panel glass">
+            <div class="user-list-container">
+              <table class="user-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>User</th>
+                    <th>Score</th>
+                  </tr>
+                </thead>
+                <tbody id="rankingList">
+                  <!-- Leaderboard items will be injected here -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- AUTH VIEW -->
@@ -238,11 +266,34 @@
                     <tr>
                       <th>User</th>
                       <th>Email</th>
+                      <th>Score</th>
                       <th>Joined</th>
                     </tr>
                   </thead>
                   <tbody id="adminUserList">
                     <!-- Users will be injected here -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="admin-panel glass" style="margin-top: 2rem;">
+              <div class="panel-header">
+                <h3>Participation Log</h3>
+                <span class="status-badge">Recent Activity</span>
+              </div>
+              <div class="user-list-container">
+                <table class="user-table">
+                  <thead>
+                    <tr>
+                      <th>User</th>
+                      <th>Action</th>
+                      <th>Movie</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody id="adminParticipationLog">
+                    <tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--text-secondary);">Loading activity log...</td></tr>
                   </tbody>
                 </table>
               </div>
