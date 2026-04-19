@@ -51,6 +51,19 @@ h1, h2, h3, h4 {
   padding: 0 2rem;
   width: 100%;
   box-sizing: border-box;
+  transition: max-width 0.3s ease;
+}
+
+@media (min-width: 1440px) {
+  .container {
+    max-width: 1400px;
+  }
+}
+
+@media (min-width: 1600px) {
+  .container {
+    max-width: 1550px;
+  }
 }
 
 /* Header & Glassmorphism */
@@ -191,8 +204,8 @@ nav {
 
 .movie-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 2rem;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 2.5rem;
   margin-bottom: 4rem;
 }
 

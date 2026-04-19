@@ -635,6 +635,9 @@ function updateAuthUI() {
 window.deleteMovie = async (movieId) => {
   if (!user) return;
   
+  const confirmed = window.confirm('Are you sure you want to remove this movie proposal?');
+  if (!confirmed) return;
+
   // Admins can delete anything, users only their own
   const query = supabase.from('movies').delete().eq('id', movieId);
   if (!isAdmin) query.eq('proposed_by', user.id);
