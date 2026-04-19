@@ -1017,6 +1017,13 @@ async function fetchUserList() {
             </div>
           </td>
           <td><span class="user-date">${date}</span></td>
+          <td>
+            ${p.id !== user?.id ? `
+              <button class="delete-user-btn" onclick="window.deleteUser('${p.id}', '${name}')" title="Delete User">
+                <i data-lucide="user-minus"></i>
+              </button>
+            ` : '<span style="color:var(--text-secondary); font-size:0.7rem; font-style:italic;">(You)</span>'}
+          </td>
         </tr>
       `;
     }).join('');
@@ -1025,9 +1032,41 @@ async function fetchUserList() {
 
   } catch (err) {
     console.error('Error fetching user list:', err);
-    adminUserList.innerHTML = `<tr><td colspan="3" style="text-align:center; padding:2rem; color:var(--text-secondary);">Unable to fetch user list. Ensure a 'profiles' table exists and is accessible.</td></tr>`;
+    adminUserList.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--text-secondary);">Unable to fetch user list.</td></tr>`;
   }
 }
+
+window.deleteUser = async (userId, userName) => {
+  if (!isAdmin) return;
+  
+  const confirmed = window.confirm(`⚠️ DANGER ZONE: Are you sure you want to delete user "${userName}"? \n\nThis will also remove all their movie proposals and votes. This action cannot be undone.`);
+  if (!confirmed) return;
+
+  try {
+    showNotification(`Deleting user ${userName}...`, 'warning');
+
+    // 1. Delete user's votes
+    await supabase.from('votes').delete().eq('user_id', userId);
+    
+    // 2. Delete user's movie proposals
+    await supabase.from('movies').delete().eq('proposed_by', userId);
+    
+    // 3. Delete user's profile
+    const { error: profileError } = await supabase.from('profiles').delete().eq('id', userId);
+    
+    if (profileError) throw profileError;
+
+    showNotification(`User ${userName} has been removed.`, 'success');
+    
+    // Refresh ranking and user list
+    await updateGlobalRanking();
+    await fetchUserList();
+    await refreshData();
+  } catch (err) {
+    console.error('Error deleting user:', err);
+    showNotification('System error deleting user', 'error');
+  }
+};
 
 window.unmarkAsSeen = async (movieId) => {
   if (!isAdmin) return;
