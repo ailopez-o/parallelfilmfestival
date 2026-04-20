@@ -1704,6 +1704,19 @@ nav {
   border: 1px solid rgba(251, 191, 36, 0.3);
 }
 
+.points-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 6px;
+  font-weight: 800;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.85rem;
+  letter-spacing: -0.02em;
+}
+
 .movie-title-cell {
   color: var(--text-primary);
   font-weight: 600;

@@ -820,6 +820,7 @@ async function fetchParticipationLog() {
           user: prof?.full_name || prof?.email?.split('@')[0] || 'Unknown User',
           email: prof?.email || 'N/A',
           action: '<span class="action-tag proposal">Proposed</span>',
+          points: '+5',
           movieTitle: p.title,
           tmdbId: p.tmdb_id,
           date: new Date(p.created_at)
@@ -836,6 +837,7 @@ async function fetchParticipationLog() {
           user: prof?.full_name || prof?.email?.split('@')[0] || 'Unknown User',
           email: prof?.email || 'N/A',
           action: '<span class="action-tag vote">Voted</span>',
+          points: '+1',
           movieTitle: mData?.title || 'Unknown Movie',
           tmdbId: mData?.tmdb_id,
           date: new Date(v.created_at)
@@ -852,6 +854,7 @@ async function fetchParticipationLog() {
           user: prof?.full_name || prof?.email?.split('@')[0] || 'Unknown User',
           email: prof?.email || 'N/A',
           action: `<span class="action-tag rating">Rated (${r.rating}/10)</span>`,
+          points: '+3',
           movieTitle: mData?.title || 'Unknown Movie',
           tmdbId: mData?.tmdb_id,
           date: new Date(r.created_at)
@@ -866,7 +869,7 @@ async function fetchParticipationLog() {
     const recentItems = logItems.slice(0, 40);
 
     if (recentItems.length === 0) {
-      adminParticipationLog.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--text-secondary);">No recent activity recorded.</td></tr>`;
+      adminParticipationLog.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--text-secondary);">No recent activity recorded.</td></tr>`;
       return;
     }
 
@@ -889,44 +892,51 @@ async function fetchParticipationLog() {
           </td>
           <td>${item.action}</td>
           <td>${movieDisplay}</td>
+          <td><span class="points-badge">${item.points}</span></td>
           <td><span class="user-date">${item.date.toLocaleString()}</span></td>
         </tr>
       `;
     }).join('');
 
   } catch (err) {
-    adminParticipationLog.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--error);">Failed to load participation log. Check console for details.</td></tr>`;
+    adminParticipationLog.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--error);">Failed to load participation log. Check console for details.</td></tr>`;
   }
 }
 
 async function updateGlobalRanking() {
   try {
-    const [profilesRes, votesRes, moviesRes] = await Promise.all([
+    const [profilesRes, votesRes, moviesRes, ratingsRes] = await Promise.all([
       supabase.from('profiles').select('*'),
       supabase.from('votes').select('user_id'),
-      supabase.from('movies').select('proposed_by')
+      supabase.from('movies').select('proposed_by'),
+      supabase.from('user_ratings').select('user_id')
     ]);
     
     if (profilesRes.error) throw profilesRes.error;
     const profiles = profilesRes.data || [];
     const votes = votesRes.data || [];
     const movies = moviesRes.data || [];
+    const ratings = ratingsRes.data || [];
 
     // Calculate counts
     const activityCounts = {};
     votes.forEach(v => {
-      if (!activityCounts[v.user_id]) activityCounts[v.user_id] = { votes: 0, proposals: 0 };
+      if (!activityCounts[v.user_id]) activityCounts[v.user_id] = { votes: 0, proposals: 0, ratings: 0 };
       activityCounts[v.user_id].votes++;
     });
     movies.forEach(m => {
-      if (!activityCounts[m.proposed_by]) activityCounts[m.proposed_by] = { votes: 0, proposals: 0 };
+      if (!activityCounts[m.proposed_by]) activityCounts[m.proposed_by] = { votes: 0, proposals: 0, ratings: 0 };
       activityCounts[m.proposed_by].proposals++;
+    });
+    ratings.forEach(r => {
+      if (!activityCounts[r.user_id]) activityCounts[r.user_id] = { votes: 0, proposals: 0, ratings: 0 };
+      activityCounts[r.user_id].ratings++;
     });
 
     // Attach scores to profiles
     profiles.forEach(p => {
-      const activity = activityCounts[p.id] || { votes: 0, proposals: 0 };
-      p.score = (activity.proposals * 5) + (activity.votes * 1);
+      const activity = activityCounts[p.id] || { votes: 0, proposals: 0, ratings: 0 };
+      p.score = (activity.proposals * 5) + (activity.votes * 1) + (activity.ratings * 3);
     });
 
     // Sort by score descending
