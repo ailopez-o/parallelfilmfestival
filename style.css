@@ -3294,6 +3294,20 @@ nav {
   .logo span {
     display: none;
   }
+  .hide-mobile {
+    display: none !important;
+  }
+  .user-profile {
+    gap: 0.5rem;
+  }
+  .header-score {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+  }
+  .user-avatar {
+    width: 28px;
+    height: 28px;
+  }
   .next-session-hero {
     flex-direction: column;
     text-align: center;

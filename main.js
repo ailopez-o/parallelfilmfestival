@@ -717,22 +717,22 @@ function updateAuthUI() {
     userHeader.innerHTML = `
       <div class="user-profile">
         <div class="score-badge header-score" style="background:rgba(0, 212, 255, 0.1); color:#00d4ff; border: 1px solid rgba(0, 212, 255, 0.3);" title="Your available votes">
-          <i data-lucide="check-square" style="width:12px; height:12px; margin-right:4px;"></i>
-          ${votesLeft > 0 ? votesLeft : 0} Votes Left
+          <i data-lucide="check-square" style="width:14px; height:14px; margin-right:4px;"></i>
+          <span class="header-label">${votesLeft > 0 ? votesLeft : 0} <span class="hide-mobile">Votes Left</span></span>
         </div>
         <div class="score-badge header-score" style="background:rgba(255,255,255,0.05); cursor:pointer;" onclick="event.stopPropagation(); window.navigateTo('sessions')" title="View Cinema Sessions">
-          <i data-lucide="calendar" style="width:12px; height:12px; margin-right:4px;"></i>
-          Sessions
+          <i data-lucide="calendar" style="width:14px; height:14px; margin-right:4px;"></i>
+          <span class="header-label hide-mobile">Sessions</span>
         </div>
         <div class="score-badge header-score" onclick="event.stopPropagation(); window.navigateTo('ranking')" title="View Global Ranking">
-          <i data-lucide="award" style="width:12px; height:12px; margin-right:4px;"></i>
-          ${myScore}
+          <i data-lucide="award" style="width:14px; height:14px; margin-right:4px;"></i>
+          <span class="header-label">${myScore}</span>
         </div>
         <div class="user-profile-info" onclick="window.navigateTo('profile')">
           <img src="${avatar}" class="user-avatar" />
-          <div style="display:flex; flex-direction:column; line-height: 1.2;">
+          <div class="user-name-wrapper hide-mobile" style="display:flex; flex-direction:column; line-height: 1.2;">
             <span style="font-weight:700;">${name}</span>
-            ${userProfile?.rank ? `<span style="font-size: 0.7rem; color:var(--warning); font-weight:800;">RANK #${userProfile.rank}</span>` : ""}
+            ${userProfile?.rank ? `<span style="font-size: 0.7rem; color:var(--warning); font-weight:800;">#${userProfile.rank}</span>` : ""}
           </div>
         </div>
       </div>
