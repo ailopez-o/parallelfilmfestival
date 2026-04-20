@@ -2361,80 +2361,126 @@ function timeAgo(date) {
 }
 
 /**
- * Fetches recent community milestones
+ * Fetches recent achievement events
  */
 async function fetchRecentAchievementEvents() {
   const events = [];
   try {
-    // 1. Get New Members (Join events)
-    const { data: profiles } = await supabase.from('profiles').select('full_name, email, created_at').order('created_at', { ascending: false }).limit(5);
-    profiles?.forEach(p => {
+    // Fetch all necessary data to calculate achievements globally
+    const [profiles, allRatings, allAttendance, allMovies] = await Promise.all([
+      supabase.from('profiles').select('id, full_name, email, created_at').order('created_at', { ascending: false }).limit(20),
+      supabase.from('user_ratings').select('user_id, created_at').order('created_at', { ascending: true }),
+      supabase.from('session_attendance').select('user_id, created_at').order('created_at', { ascending: true }),
+      supabase.from('movies').select('proposed_by, is_seen, title, updated_at').eq('is_seen', true).order('updated_at', { ascending: true })
+    ]);
+
+    if (profiles.error) return;
+
+    // 1. Join Events (Festival Member)
+    profiles.data?.forEach(p => {
       events.push({
         type: 'miembro',
+        icon: 'user-check',
         name: p.full_name || p.email.split('@')[0],
         date: new Date(p.created_at),
-        text: 'joined the community'
+        text: 'earned the <span class="event-medal-name">Festival Member</span> medal'
       });
     });
 
-    // 2. Get Milestones (5 and 10 ratings)
-    const { data: allRatings } = await supabase.from('user_ratings').select('user_id, created_at').order('created_at', { ascending: true });
-    
-    // Fetch profile names for these users
-    const userIds = [...new Set(allRatings?.map(r => r.user_id) || [])];
-    const { data: ratingProfiles } = await supabase.from('profiles').select('id, full_name, email').in('id', userIds);
-    const profileMap = {};
-    ratingProfiles?.forEach(p => profileMap[p.id] = p);
-    
-    const userRatings = {};
-    allRatings?.forEach(r => {
-      if (!userRatings[r.user_id]) userRatings[r.user_id] = [];
-      userRatings[r.user_id].push(r);
+    // 2. Ratings Milestones (Feroz, Oro)
+    const ratingStats = {};
+    allRatings.data?.forEach(r => {
+      if (!ratingStats[r.user_id]) ratingStats[r.user_id] = 0;
+      ratingStats[r.user_id]++;
       
-      const count = userRatings[r.user_id].length;
-      if (count === 5 || count === 10) {
-        const p = profileMap[r.user_id];
+      if (ratingStats[r.user_id] === 5 || ratingStats[r.user_id] === 10) {
+        const isOro = ratingStats[r.user_id] === 10;
         events.push({
-          type: count === 5 ? 'feroz' : 'oro',
-          name: p?.full_name || p?.email?.split('@')[0] || 'A cinephile',
+          type: isOro ? 'oro' : 'feroz',
+          icon: isOro ? 'award' : 'clapperboard',
+          userId: r.user_id,
           date: new Date(r.created_at),
-          text: `earned the <span class="event-medal-name">${count === 5 ? 'Fierce Critic' : 'Golden Cinephile'}</span> medal`
+          text: `earned the <span class="event-medal-name">${isOro ? 'Golden Cinephile' : 'Fierce Critic'}</span> medal`
         });
       }
     });
 
-    // Sort all by date desc and take top 5
-    return events.sort((a, b) => b.date - a.date).slice(0, 5);
-  } catch (e) {
-    console.error('Error fetching timeline events:', e);
-    return [];
+    // 3. Attendance Milestones (Grand Premiere, Regular, Legend)
+    const attendanceStats = {};
+    allAttendance.data?.forEach(a => {
+      if (!attendanceStats[a.user_id]) attendanceStats[a.user_id] = 0;
+      attendanceStats[a.user_id]++;
+
+      if (attendanceStats[a.user_id] === 1 || attendanceStats[a.user_id] === 3 || attendanceStats[a.user_id] === 5) {
+        let medal = '';
+        let icon = '';
+        if (attendanceStats[a.user_id] === 1) { medal = 'Grand Premiere'; icon = 'ticket'; }
+        else if (attendanceStats[a.user_id] === 3) { medal = 'Festival Regular'; icon = 'calendar'; }
+        else if (attendanceStats[a.user_id] === 5) { medal = 'Cinema Legend'; icon = 'crown'; }
+
+        events.push({
+          type: 'asistencia',
+          icon: icon,
+          userId: a.user_id,
+          date: new Date(a.created_at),
+          text: `earned the <span class="event-medal-name">${medal}</span> medal`
+        });
+      }
+    });
+
+    // 4. Visionary Milestones
+    const visionaryStats = {};
+    allMovies.data?.forEach(m => {
+      if (!visionaryStats[m.proposed_by]) visionaryStats[m.proposed_by] = 0;
+      visionaryStats[m.proposed_by]++;
+
+      if (visionaryStats[m.proposed_by] === 1 || visionaryStats[m.proposed_by] === 3) {
+        const isOracle = visionaryStats[m.proposed_by] === 3;
+        events.push({
+          type: 'visionary',
+          icon: isOracle ? 'sparkles' : 'eye',
+          userId: m.proposed_by,
+          date: new Date(m.updated_at),
+          text: `earned the <span class="event-medal-name">${isOracle ? 'The Oracle' : 'The Visionary'}</span> medal`
+        });
+      }
+    });
+
+    // Enrich names for non-profile events
+    const eventUserIds = [...new Set(events.filter(e => e.userId).map(e => e.userId))];
+    if (eventUserIds.length > 0) {
+      const { data: eventProfiles } = await supabase.from('profiles').select('id, full_name, email').in('id', eventUserIds);
+      const nameMap = {};
+      eventProfiles?.forEach(p => nameMap[p.id] = p.full_name || p.email.split('@')[0]);
+      events.forEach(e => {
+        if (e.userId && !e.name) e.name = nameMap[e.userId] || 'A cinephile';
+      });
+    }
+
+    // Sort all by date descending and take top 5
+    events.sort((a, b) => b.date - a.date);
+    renderAchievementTimeline(events.slice(0, 5));
+
+  } catch (err) {
+    console.error('Error fetching achievement events:', err);
   }
 }
 
-async function renderAchievementTimeline() {
+async function renderAchievementTimeline(events) {
   const body = document.getElementById('timelineBody');
   if (!body) return;
 
-  const events = await fetchRecentAchievementEvents();
-  
   if (events.length === 0) {
     body.innerHTML = `<tr><td colspan="2" style="text-align:center; padding: 2rem; color: var(--text-secondary);">No recent activity yet.</td></tr>`;
     return;
   }
-
-  const icons = {
-    miembro: 'user-plus',
-    feroz: 'clapperboard',
-    oro: 'award',
-    trend: 'trending-up'
-  };
 
   body.innerHTML = events.map(e => `
     <tr class="timeline-row event-${e.type}">
       <td>
         <div class="event-user-cell">
           <div class="event-icon-circle">
-            <i data-lucide="${icons[e.type] || 'star'}"></i>
+            <i data-lucide="${e.icon || 'star'}"></i>
           </div>
           <div class="event-text">
             <span class="event-name">${e.name}</span> ${e.text}
@@ -2447,7 +2493,9 @@ async function renderAchievementTimeline() {
     </tr>
   `).join('');
 
-  if (window.lucide) window.lucide.createIcons();
+  if (window.lucide) {
+    setTimeout(() => window.lucide.createIcons(), 100);
+  }
 }
 
 // Intercept lifecycle to render achievements - REMOVED WRAPPING
