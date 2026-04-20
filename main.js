@@ -505,10 +505,12 @@ function createMovieCardHTML(movie, options = {}) {
             <i data-lucide="x-circle"></i>
           </button>
         </div>
-      ` : (showDelete ? `
-        <button class="delete-movie-btn drop-only" onclick="window.dropMovie('${movie.id}')" title="Move to Cemetery">
-          <i data-lucide="trash-2"></i>
-        </button>
+      ` : ((showDelete || (user && movie.proposed_by === user.id)) && !movie.is_seen && context !== 'cemetery' ? `
+        <div class="admin-actions-overlay user-only">
+          <button class="delete-movie-btn drop-only" onclick="window.dropMovie('${movie.id}')" title="Move to Cemetery">
+            <i data-lucide="trash-2"></i>
+          </button>
+        </div>
       ` : '')}
 
       <div class="movie-info">
@@ -1408,7 +1410,7 @@ function renderActivityGrid(movies) {
   profileActivityGrid.innerHTML = movies.map(movie => {
     return createMovieCardHTML(movie, { 
       context: 'activity', 
-      showDelete: false 
+      showDelete: true 
     });
   }).join('');
   
