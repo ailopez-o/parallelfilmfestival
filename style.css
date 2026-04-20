@@ -3291,6 +3291,9 @@ nav {
 
 /* Responsive */
 @media (max-width: 768px) {
+  .logo span {
+    display: none;
+  }
   .next-session-hero {
     flex-direction: column;
     text-align: center;
