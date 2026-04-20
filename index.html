@@ -53,6 +53,7 @@
             <span>Paral·lel Film Festival</span>
           </div>
 
+
           <div id="userHeader" class="user-actions">
             <!-- Auth buttons/user info will be injected here -->
           </div>
@@ -67,7 +68,13 @@
           <h1>Vote for your <br/>Next Favorite Film</h1>
           <p>Propose your favorite movies and vote on the lineup for our next festival session.</p>
           
-          <div id="searchContainer" class="main-search-container">
+          <!-- NEXT SESSION FEATURE -->
+          <div id="nextSessionHero" class="next-session-hero page-hidden">
+            <!-- Injected by JS -->
+          </div>
+
+          <div id="proposalsCountLabel" style="max-width: 800px; margin: 3rem auto 0.5rem; text-align: left; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; opacity: 0; padding-left: 0.5rem;"></div>
+          <div id="searchContainer" class="main-search-container" style="margin-top: 0;">
             <div class="search-wrapper">
               <i data-lucide="search"></i>
               <input type="text" id="movieSearch" placeholder="Search for movies to propose..." />
@@ -134,6 +141,35 @@
             </div>
           </div>
         </section>
+
+        <!-- DROPPED FILMS (CEMETERY) -->
+        <section class="history-section cemetery-section">
+          <div class="container">
+            <div class="section-title">
+              <h2>🪦 Dropped Films Cemetery</h2>
+              <p style="color:var(--text-secondary); font-size: 0.85rem;">These movies were proposed but didn't make it... for now.</p>
+            </div>
+            <div id="cemeteryGrid" class="movie-grid cemetery-grid">
+              <!-- Dropped movies injected here -->
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- SESSIONS VIEW -->
+      <section id="sessionsView" class="view page-hidden">
+        <div class="container" style="padding-top: 4rem;">
+          <div class="section-title">
+            <div>
+              <h2>Cinema Sessions</h2>
+              <p style="color:var(--text-secondary); margin-top: 0.5rem;">Relive our past screenings and join the next one.</p>
+            </div>
+          </div>
+
+          <div id="sessionsGrid" class="sessions-grid">
+            <!-- Sessions injected here -->
+          </div>
+        </div>
       </section>
 
       <!-- RANKING VIEW -->
@@ -300,52 +336,79 @@
           <div id="adminDashboard" class="admin-dashboard page-hidden">
             <div class="section-title">
               <h2><i data-lucide="shield-check" style="color:var(--success); vertical-align:middle; margin-right:0.5rem;"></i> Admin Dashboard</h2>
+              <div class="admin-top-actions" style="margin-top: 1rem; display: flex; gap: 1rem; align-items: center;">
+                <div class="admin-tabs" style="margin: 0;">
+                  <button class="admin-tab-btn active" data-tab="users">Users</button>
+                  <button class="admin-tab-btn" data-tab="sessions">Sessions</button>
+                </div>
+                <div style="flex-grow: 1;"></div>
+                <button class="admin-btn-action" onclick="window.cleanupInactiveMovies()" style="background: var(--warning); color: black; border: none; padding: 0.5rem 1rem; border-radius: 8px; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; cursor: pointer;" title="Move movies with no votes in 15 days to cemetery">
+                  <i data-lucide="wind"></i> Cleanup Inactive (15d)
+                </button>
+              </div>
             </div>
             
-            <div class="admin-panel glass">
-              <div class="panel-header">
-                <h3>User Directory</h3>
-                <span class="user-count-badge" id="adminUserCount">0 Users</span>
+            <div id="adminUsersTab" class="admin-tab-content">
+              <div class="admin-panel glass">
+                <div class="panel-header">
+                  <h3>User Directory</h3>
+                  <span class="user-count-badge" id="adminUserCount">0 Users</span>
+                </div>
+                <div class="user-list-container">
+                  <table class="user-table">
+                    <thead>
+                      <tr>
+                        <th>User</th>
+                        <th>Email</th>
+                        <th>Score</th>
+                        <th>Joined</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="adminUserList">
+                      <!-- Users will be injected here -->
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <div class="user-list-container">
-                <table class="user-table">
-                  <thead>
-                    <tr>
-                      <th>User</th>
-                      <th>Email</th>
-                      <th>Score</th>
-                      <th>Joined</th>
-                      <th>Attendance</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody id="adminUserList">
-                    <!-- Users will be injected here -->
-                  </tbody>
-                </table>
+
+              <div class="admin-panel glass" style="margin-top: 2rem;">
+                <div class="panel-header">
+                  <h3>Participation Log</h3>
+                  <span class="status-badge">Recent Activity</span>
+                </div>
+                <div class="user-list-container">
+                  <table class="user-table">
+                    <thead>
+                      <tr>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>Movie</th>
+                        <th>Points</th>
+                        <th>Date</th>
+                      </tr>
+                    </thead>
+                    <tbody id="adminParticipationLog">
+                      <tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--text-secondary);">Loading activity log...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
-            <div class="admin-panel glass" style="margin-top: 2rem;">
-              <div class="panel-header">
-                <h3>Participation Log</h3>
-                <span class="status-badge">Recent Activity</span>
-              </div>
-              <div class="user-list-container">
-                <table class="user-table">
-                  <thead>
-                    <tr>
-                      <th>User</th>
-                      <th>Action</th>
-                      <th>Movie</th>
-                      <th>Points</th>
-                      <th>Date</th>
-                    </tr>
-                  </thead>
-                  <tbody id="adminParticipationLog">
-                    <tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--text-secondary);">Loading activity log...</td></tr>
-                  </tbody>
-                </table>
+            <!-- ADMIN SESSIONS TAB -->
+            <div id="adminSessionsTab" class="admin-tab-content page-hidden">
+              <div class="admin-panel glass">
+                <div class="panel-header">
+                  <h3>Session Management</h3>
+                  <button class="btn-create-session" onclick="window.showCreateSessionModal()">
+                    <i data-lucide="plus"></i> New Session
+                  </button>
+                </div>
+                
+                <div id="adminSessionsList" class="admin-sessions-list">
+                  <!-- Sessions with management tools injected here -->
+                </div>
               </div>
             </div>
           </div>
@@ -459,6 +522,49 @@
         </div>
       </section>
     </main>
+
+    <!-- SESSION DETAIL MODAL -->
+    <div id="sessionModal" class="modal page-hidden">
+      <div class="modal-overlay" onclick="window.closeSessionModal()"></div>
+      <div class="modal-content session-modal-content">
+        <button class="close-modal-btn" onclick="window.closeSessionModal()">
+          <i data-lucide="x"></i>
+        </button>
+        <div id="sessionModalBody">
+          <!-- Injected by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- CREATE SESSION MODAL -->
+    <div id="createSessionModal" class="modal page-hidden">
+      <div class="modal-overlay" onclick="window.closeCreateSessionModal()"></div>
+      <div class="modal-content glass auth-card" style="max-width: 600px;">
+        <div class="auth-form-content">
+          <h2>Create Session</h2>
+          <p>Schedule a new screening.</p>
+          
+          <div class="input-group">
+            <label>Select Movie</label>
+            <select id="sessionMovieSelect" class="explore-input" style="margin-bottom: 1.5rem;">
+              <!-- Movies injected here -->
+            </select>
+          </div>
+
+          <div class="input-group">
+            <label>Session Date</label>
+            <input type="datetime-local" id="sessionDate" class="explore-input" style="margin-bottom: 1.5rem;" />
+          </div>
+
+          <div class="input-group">
+            <label>Description</label>
+            <textarea id="sessionDescription" class="explore-input" placeholder="What's special about this session?" rows="3" style="margin-bottom: 1.5rem;"></textarea>
+          </div>
+
+          <button class="submit-btn" onclick="window.handleCreateSession()">Create Session</button>
+        </div>
+      </div>
+    </div>
 
     <script type="module" src="/main.js"></script>
     <script>

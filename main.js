@@ -28,6 +28,7 @@ async function invokeTMDBCall(path, params = {}) {
 }
 
 // State
+let allMovies = [];
 let proposedMovies = [];
 let seenMovies = [];
 let userVotes = new Set(); // Set of movie IDs the user voted for
@@ -38,6 +39,8 @@ let rankedUsers = []; // Global leaderboard data
 let currentView = 'home';
 let genreMap = {}; // Map of genre ID to name
 let providerMap = {}; // Map of provider ID to data (name, logo)
+let sessions = [];
+let currentSession = null;
 
 /**
  * Normalizes strings for robust comparison:
@@ -60,7 +63,8 @@ const views = {
   auth: document.getElementById('authView'),
   profile: document.getElementById('profileView'),
   ranking: document.getElementById('rankingView'),
-  explore: document.getElementById('exploreView')
+  explore: document.getElementById('exploreView'),
+  sessions: document.getElementById('sessionsView')
 };
 const rankingList = document.getElementById('rankingList');
 const movieGrid = document.getElementById('movieGrid');
@@ -103,6 +107,13 @@ const adminUserCount = document.getElementById('adminUserCount');
 const adminParticipationLog = document.getElementById('adminParticipationLog');
 const homeLeaderboard = document.getElementById('homeLeaderboard');
 const homeLeaderboardSection = document.getElementById('homeLeaderboardSection');
+const nextSessionHero = document.getElementById('nextSessionHero');
+const sessionsGrid = document.getElementById('sessionsGrid');
+const sessionModal = document.getElementById('sessionModal');
+const sessionModalBody = document.getElementById('sessionModalBody');
+const createSessionModal = document.getElementById('createSessionModal');
+const sessionMovieSelect = document.getElementById('sessionMovieSelect');
+const adminSessionsList = document.getElementById('adminSessionsList');
 
 // Profile Edit Elements
 const profileDisplay = document.getElementById('profileDisplay');
@@ -112,26 +123,48 @@ const editAvatar = document.getElementById('editAvatar');
 
 // Fallback image helper
 const FALLBACK_IMAGE = 'https://placehold.co/300x450/1a1a1f/94a3b8?text=Cinema+Poster';
+const TBD_POSTER = '/coming-soon.png';
+
+// Limits configuration
+const MAX_PROPOSALS = 3;
+const MAX_VOTES = 5;
 
 // Initialization
 async function init() {
-  await fetchGenreMap();
-  await fetchProvidersMap();
-  await checkUser();
-  await refreshData();
-  await updateGlobalRanking();
-  setupEventListeners();
-  handleRouting();
-
-  // Premium Preloader dismissal
-  setTimeout(() => {
+  const dismissPreloader = () => {
     const preloader = document.getElementById('preloader');
-    if (preloader) {
+    if (preloader && !preloader.classList.contains('fade-out')) {
       preloader.classList.add('fade-out');
-      // Clean up after animation
       setTimeout(() => preloader.remove(), 800);
     }
-  }, 1500); 
+  };
+
+  try {
+    // 1. Critical path: User and Genre/Provider maps (Parallel)
+    await Promise.all([
+      fetchGenreMap(),
+      fetchProvidersMap(),
+      checkUser()
+    ]);
+
+    // 2. Essential data: First batch of movies
+    await refreshData();
+
+    // 3. Dismiss preloader NOW - user can see movies
+    dismissPreloader();
+
+    // 4. Background tasks: Ranking and Sessions (don't block the UI)
+    updateGlobalRanking();
+    fetchSessions().then(() => renderSessions());
+    fetchRecentAchievementEvents();
+
+  } catch (err) {
+    console.error('Initialization error:', err);
+    dismissPreloader(); // Dismiss anyway to show error state or partial content
+  }
+
+  setupEventListeners();
+  handleRouting();
 }
 
 async function fetchGenreMap() {
@@ -218,13 +251,18 @@ async function checkUser(session) {
     userVotes = new Set();
   }
   updateAuthUI();
+  if (isAdmin) {
+    window.cleanupInactiveMovies(true);
+  }
 }
 
 async function refreshData() {
-  const { data: movies, error } = await supabase
+  const { data, error } = await supabase
     .from('movies')
     .select('*')
     .order('created_at', { ascending: false });
+
+  if (!error) allMovies = data || [];
 
   if (error) {
     console.error('Error fetching movies:', error);
@@ -243,7 +281,7 @@ async function refreshData() {
   const { data: globalRatings } = await supabase.from('user_ratings').select('movie_id, rating');
   allRatings = globalRatings || [];
 
-  movies.forEach(m => {
+  allMovies.forEach(m => {
     const userV = individualRatings.find(r => r.movie_id === m.id);
     m.user_rating = userV ? userV.rating : 0;
     
@@ -261,10 +299,10 @@ async function refreshData() {
   });
 
   // Background enrichment for movies with missing data
-  enrichMovieData(movies);
+  enrichMovieData(allMovies);
 
   // 1. TEMPORARY: Sanitization of corrupted vote counts from TMDB global data
-  const corrupted = movies.filter(m => !m.is_seen && m.vote_count > 50);
+  const corrupted = allMovies.filter(m => !m.is_seen && m.vote_count > 50);
   if (corrupted.length > 0) {
     console.log(`[Migration] Sanitizing ${corrupted.length} corrupted movie counts...`);
     supabase.from('movies').update({ vote_count: 0 }).in('id', corrupted.map(m => m.id)).then(() => {
@@ -273,11 +311,13 @@ async function refreshData() {
     });
   }
 
-  proposedMovies = movies.filter(m => !m.is_seen);
-  seenMovies = movies.filter(m => m.is_seen);
+  proposedMovies = allMovies.filter(m => !m.is_seen && !m.is_dropped);
+  seenMovies = allMovies.filter(m => m.is_seen);
+  const droppedMovies = allMovies.filter(m => m.is_dropped);
 
   renderProposals();
   renderHistory();
+  renderCemetery(droppedMovies);
   if (currentView === 'profile') loadUserActivity();
   
   // Also refresh ranking on any state change
@@ -288,6 +328,13 @@ async function refreshData() {
   renderTopVotedShowcase();
   renderAchievementTimeline();
   if (currentView === 'profile') renderProfileAchievements();
+
+  // Sessions rendering
+  await fetchSessions();
+  renderSessions();
+  renderNextSessionHero();
+  updateAuthUI();
+  updateAdminSessions();
 }
 
 // Rendering Helpers
@@ -426,7 +473,8 @@ function createMovieCardHTML(movie, options = {}) {
   const providersLink = movie.watch_providers?.link || '#';
 
   const cardClass = context === 'history' ? 'movie-card seen' : 
-                   context === 'showcase' ? 'movie-card top-highlight-card' : 'movie-card';
+                   context === 'showcase' ? 'movie-card top-highlight-card' : 
+                   context === 'cemetery' ? 'movie-card dropped' : 'movie-card';
 
   return `
     <div class="${cardClass}" data-id="${movie.id || ''}">
@@ -448,11 +496,20 @@ function createMovieCardHTML(movie, options = {}) {
         ` : ''}
       </div>
 
-      ${showDelete ? `
-        <button class="delete-movie-btn" onclick="window.deleteMovie('${movie.id}')" title="Remove movie">
+      ${isAdmin ? `
+        <div class="admin-actions-overlay">
+          <button class="delete-movie-btn drop-only" onclick="window.dropMovie('${movie.id}')" title="Move to Cemetery">
+            <i data-lucide="trash-2"></i>
+          </button>
+          <button class="delete-movie-btn perm-delete" onclick="window.deleteMovie('${movie.id}')" title="Delete Permanently">
+            <i data-lucide="x-circle"></i>
+          </button>
+        </div>
+      ` : (showDelete ? `
+        <button class="delete-movie-btn drop-only" onclick="window.dropMovie('${movie.id}')" title="Move to Cemetery">
           <i data-lucide="trash-2"></i>
         </button>
-      ` : ''}
+      ` : '')}
 
       <div class="movie-info">
         <div class="header-main">
@@ -540,6 +597,12 @@ function createMovieCardHTML(movie, options = {}) {
             <i data-lucide="rotate-ccw"></i> Back to Proposals
           </button>
         ` : ''}
+        ${context === "cemetery" ? `
+          <div class="cemetery-status">
+            <i data-lucide="skull"></i>
+            <span>Dropped Film</span>
+          </div>
+        ` : ""}
       </div>
     </div>
   `;
@@ -612,8 +675,53 @@ function updateAuthUI() {
     const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
     const myScore = userProfile?.score || 0;
     
+    // Calculate current usage
+    const myProposalsCount = proposedMovies.filter(m => m.proposed_by === user.id).length;
+    const votesLeft = MAX_VOTES - userVotes.size;
+    const proposalsLeft = MAX_PROPOSALS - myProposalsCount;
+
+    if (isAdmin) {
+      userHeader.innerHTML = `
+        <div class="user-profile">
+          <div class="score-badge header-score" style="background:rgba(255,165,0,0.1); color:#ffa500; border: 1px solid rgba(255,165,0,0.3);">
+            <i data-lucide="shield-check" style="width:12px; height:12px; margin-right:4px;"></i>
+            ADMIN MODE
+          </div>
+          <div class="score-badge header-score" style="background:rgba(255,255,255,0.05); cursor:pointer;" onclick="event.stopPropagation(); window.navigateTo('sessions')" title="View Cinema Sessions">
+            <i data-lucide="calendar" style="width:12px; height:12px; margin-right:4px;"></i>
+            Sessions
+          </div>
+          <div class="user-profile-info" onclick="window.navigateTo('profile')">
+            <img src="${avatar}" class="user-avatar" />
+            <div style="display:flex; flex-direction:column; line-height: 1.2;">
+              <span style="font-weight:700;">${name}</span>
+              <span style="font-size: 0.7rem; color:var(--success); font-weight:800;">ADMINISTRATOR</span>
+            </div>
+          </div>
+        </div>
+      `;
+      if (searchInput) {
+        searchInput.disabled = false;
+        searchInput.style.opacity = '1';
+        searchInput.style.cursor = 'text';
+        searchInput.placeholder = "Search movies (Admin Mode)...";
+      }
+      const proposalsLabel = document.getElementById('proposalsCountLabel');
+      if (proposalsLabel) proposalsLabel.style.opacity = '0';
+      if (window.lucide) window.lucide.createIcons();
+      return;
+    }
+
     userHeader.innerHTML = `
       <div class="user-profile">
+        <div class="score-badge header-score" style="background:rgba(0, 212, 255, 0.1); color:#00d4ff; border: 1px solid rgba(0, 212, 255, 0.3);" title="Your available votes">
+          <i data-lucide="check-square" style="width:12px; height:12px; margin-right:4px;"></i>
+          ${votesLeft > 0 ? votesLeft : 0} Votes Left
+        </div>
+        <div class="score-badge header-score" style="background:rgba(255,255,255,0.05); cursor:pointer;" onclick="event.stopPropagation(); window.navigateTo('sessions')" title="View Cinema Sessions">
+          <i data-lucide="calendar" style="width:12px; height:12px; margin-right:4px;"></i>
+          Sessions
+        </div>
         <div class="score-badge header-score" onclick="event.stopPropagation(); window.navigateTo('ranking')" title="View Global Ranking">
           <i data-lucide="award" style="width:12px; height:12px; margin-right:4px;"></i>
           ${myScore}
@@ -622,12 +730,36 @@ function updateAuthUI() {
           <img src="${avatar}" class="user-avatar" />
           <div style="display:flex; flex-direction:column; line-height: 1.2;">
             <span style="font-weight:700;">${name}</span>
-            ${userProfile?.rank ? `<span style="font-size: 0.7rem; color:var(--warning); font-weight:800;">RANK #${userProfile.rank}</span>` : ''}
+            ${userProfile?.rank ? `<span style="font-size: 0.7rem; color:var(--warning); font-weight:800;">RANK #${userProfile.rank}</span>` : ""}
           </div>
         </div>
       </div>
     `;
+
+    if (searchInput) {
+      const isLimitReached = proposalsLeft <= 0;
+      searchInput.disabled = isLimitReached;
+      searchInput.style.opacity = isLimitReached ? '0.5' : '1';
+      searchInput.style.cursor = isLimitReached ? 'not-allowed' : 'text';
+      searchInput.placeholder = proposalsLeft > 0 
+        ? `Search for movies to propose...`
+        : "Max proposals reached (3/3)";
+    }
+
+    const proposalsLabel = document.getElementById('proposalsCountLabel');
+    if (proposalsLabel) {
+      proposalsLabel.style.opacity = '1';
+      const green = '#10b981';
+      const red = '#ef4444';
+      proposalsLabel.innerHTML = `
+        <span style="color:${proposalsLeft > 0 ? green : red}">
+          ${proposalsLeft > 0 ? `Available Proposals: ${proposalsLeft} / 3` : 'Limit Reached: 3 / 3 Proposals Used'}
+        </span>
+      `;
+    }
   } else {
+    const proposalsLabel = document.getElementById('proposalsCountLabel');
+    if (proposalsLabel) proposalsLabel.style.opacity = '0';
     userHeader.innerHTML = `<button class="auth-btn" onclick="window.navigateTo('auth')">Sign In</button>`;
     
     searchResults.classList.remove('active');
@@ -671,22 +803,31 @@ function updateAuthUI() {
 
 // Actions
 window.deleteMovie = async (movieId) => {
-  if (!user) return;
-  
-  const confirmed = window.confirm('Are you sure you want to remove this movie proposal?');
-  if (!confirmed) return;
-
-  // Admins can delete anything, users only their own
-  const query = supabase.from('movies').delete().eq('id', movieId);
-  if (!isAdmin) query.eq('proposed_by', user.id);
-
-  const { error } = await query;
+  if (!isAdmin) {
+    return window.dropMovie(movieId);
+  }
+  const movie = allMovies.find(m => m.id === movieId);
+  const title = movie ? movie.title : "this movie";
+  if (!confirm(`ADMIN ACTION: Permanently delete "${title}"? This cannot be undone.`)) return;
+  const { error } = await supabase.from("movies").delete().eq("id", movieId);
   if (error) {
-    console.error('Error deleting movie:', error);
-    showNotification('Action failed. You might not have permission.', 'error');
+    showNotification("Error deleting movie", "error");
   } else {
-    showNotification('Movie removed from lineup', 'success');
-    await refreshData();
+    showNotification("Movie permanently deleted", "success");
+    refreshData();
+  }
+};
+
+window.dropMovie = async (movieId) => {
+  const movie = allMovies.find(m => m.id === movieId);
+  if (!movie) return;
+  if (!confirm(`Move "${movie.title}" to the Cemetery? It will no longer be an active proposal.`)) return;
+  const { error } = await supabase.from("movies").update({ is_dropped: true }).eq("id", movieId);
+  if (error) {
+    showNotification("Error dropping movie", "error");
+  } else {
+    showNotification("Movie moved to the Cemetery", "info");
+    refreshData();
   }
 };
 
@@ -752,7 +893,12 @@ async function loadUserActivity() {
   const displayEmailInput = document.getElementById('displayEmail');
   if (displayEmailInput) displayEmailInput.value = user.email;
 
-  const { data: proposals } = await supabase.from('movies').select('*').eq('proposed_by', user.id);
+  const { data: proposals } = await supabase
+    .from('movies')
+    .select('*')
+    .eq('proposed_by', user.id)
+    .eq('is_dropped', false);
+    
   const { data: votes } = await supabase.from('votes').select('movie_id, movies(*)').eq('user_id', user.id);
 
   countProposals.textContent = proposals?.length || 0;
@@ -945,38 +1091,89 @@ async function fetchParticipationLog() {
 
 async function updateGlobalRanking() {
   try {
-    const [profilesRes, votesRes, moviesRes, ratingsRes] = await Promise.all([
+    const [profilesRes, votesRes, moviesRes, ratingsRes, attendanceRes] = await Promise.all([
       supabase.from('profiles').select('*'),
-      supabase.from('votes').select('user_id'),
-      supabase.from('movies').select('proposed_by'),
-      supabase.from('user_ratings').select('user_id')
+      supabase.from('votes').select('user_id, movie_id, movies(is_seen)'),
+      supabase.from('movies').select('proposed_by, is_dropped, is_seen'),
+      supabase.from('user_ratings').select('user_id'),
+      supabase.from('session_attendance').select('user_id')
     ]);
     
     if (profilesRes.error) throw profilesRes.error;
-    const profiles = profilesRes.data || [];
+    // Exclude admins from the competitive ranking
+    const profiles = (profilesRes.data || []).filter(p => p.role !== 'admin');
     const votes = votesRes.data || [];
-    const movies = moviesRes.data || [];
+    const allMoviesList = moviesRes.data || [];
     const ratings = ratingsRes.data || [];
+    const attendance = attendanceRes.data || [];
 
-    // Calculate counts
-    const activityCounts = {};
-    votes.forEach(v => {
-      if (!activityCounts[v.user_id]) activityCounts[v.user_id] = { votes: 0, proposals: 0, ratings: 0 };
-      activityCounts[v.user_id].votes++;
-    });
-    movies.forEach(m => {
-      if (!activityCounts[m.proposed_by]) activityCounts[m.proposed_by] = { votes: 0, proposals: 0, ratings: 0 };
-      activityCounts[m.proposed_by].proposals++;
-    });
-    ratings.forEach(r => {
-      if (!activityCounts[r.user_id]) activityCounts[r.user_id] = { votes: 0, proposals: 0, ratings: 0 };
-      activityCounts[r.user_id].ratings++;
-    });
-
-    // Attach scores to profiles
+    // Calculate activity per user
+    const userStats = {};
     profiles.forEach(p => {
-      const activity = activityCounts[p.id] || { votes: 0, proposals: 0, ratings: 0 };
-      p.score = (activity.proposals * 5) + (activity.votes * 1) + (activity.ratings * 3);
+      userStats[p.id] = { 
+        votesNormal: 0, 
+        votesSeen: 0, 
+        proposalsActive: 0, 
+        proposalsDropped: 0, 
+        seenProposals: 0,
+        ratings: 0,
+        sessionsCount: 0,
+        achievementsCount: 0,
+        achievementPoints: 0
+      };
+    });
+
+    votes.forEach(v => {
+      if (!userStats[v.user_id]) return;
+      if (v.movies?.is_seen) userStats[v.user_id].votesSeen++;
+      else userStats[v.user_id].votesNormal++;
+    });
+
+    allMoviesList.forEach(m => {
+      if (!userStats[m.proposed_by]) return;
+      if (m.is_dropped) {
+        userStats[m.proposed_by].proposalsDropped++;
+      } else {
+        userStats[m.proposed_by].proposalsActive++;
+        if (m.is_seen) userStats[m.proposed_by].seenProposals++;
+      }
+    });
+
+    ratings.forEach(r => {
+      if (userStats[r.user_id]) userStats[r.user_id].ratings++;
+    });
+
+    attendance.forEach(a => {
+      if (userStats[a.user_id]) userStats[a.user_id].sessionsCount++;
+    });
+
+    // Calculate Achievements for each user to get their achievement points
+    profiles.forEach(p => {
+      const stats = userStats[p.id];
+      const earnedAchievements = ACHIEVEMENT_LIST.filter(def => {
+        // Simple condition mapping for ranking
+        if (def.type === 'static') return true;
+        if (def.type === 'ratings') return stats.ratings >= def.target;
+        if (def.type === 'attendance') return stats.sessionsCount >= def.target;
+        if (def.type === 'visionary') return stats.seenProposals >= def.target;
+        // Streak and Trend are harder in global ranking, so we skip or simplify
+        if (def.type === 'streak') return stats.sessionsCount >= 3; 
+        if (def.type === 'trend') return false; // Needs vote ranking context
+        return false;
+      });
+      stats.achievementsCount = earnedAchievements.length;
+      stats.achievementPoints = earnedAchievements.reduce((sum, ach) => sum + (ach.points || 0), 0);
+    });
+
+    // Final Score Calculation
+    profiles.forEach(p => {
+      const s = userStats[p.id];
+      p.score = (s.proposalsActive * 5) + 
+                (s.proposalsDropped * 1) + 
+                (s.votesNormal * 1) + 
+                (s.votesSeen * 2) + 
+                (s.ratings * 3) + 
+                (s.achievementPoints);
     });
 
     // Sort by score descending
@@ -1068,16 +1265,6 @@ async function fetchUserList() {
             </div>
           </td>
           <td><span class="user-date">${date}</span></td>
-          <td>
-            <div class="checkin-container">
-              <button class="btn-checkin" onclick="window.toggleCheckinDropdown('${p.id}')">
-                <i data-lucide="map-pin"></i> Check-in
-              </button>
-              <div id="checkin-${p.id}" class="checkin-dropdown">
-                <!-- Session options will be injected here -->
-              </div>
-            </div>
-          </td>
           <td>
             ${p.id !== user?.id ? `
               <button class="delete-user-btn" onclick="window.deleteUser('${p.id}', '${name}')" title="Delete User">
@@ -1583,7 +1770,38 @@ window.proposeMovie = async (tmdbMovie, el) => {
     return;
   }
 
+  // Check limits
+  const userProposals = proposedMovies.filter(m => m.proposed_by === user.id);
+  if (userProposals.length >= MAX_PROPOSALS && !isAdmin) {
+    showNotification(`Limit reached! You can only have ${MAX_PROPOSALS} active proposals.`, 'warning');
+    return;
+  }
+
   const card = el?.closest('.movie-card');
+
+  // 🪦 RESURRECTION LOGIC: Check if movie is in the cemetery
+  const { data: existing, error: checkError } = await supabase
+    .from('movies')
+    .select('*')
+    .eq('tmdb_id', tmdbMovie.id)
+    .single();
+
+  if (existing && existing.is_dropped) {
+    if (confirm(`"${tmdbMovie.id}" is currently in the Cinema Cemetery. Do you want to rescue it and bring it back to active proposals?`)) {
+      const { error: rescueError } = await supabase
+        .from('movies')
+        .update({ is_dropped: false, proposed_by: user.id })
+        .eq('id', existing.id);
+      
+      if (!rescueError) {
+        showNotification(`"${tmdbMovie.title}" has been rescued from the cemetery!`, 'success');
+        refreshData();
+        return;
+      }
+    } else {
+      return; // User cancelled rescue
+    }
+  }
 
   // SAFE INSERT LOGIC
   const payload = {
@@ -1654,7 +1872,7 @@ window.toggleVote = async (movieId) => {
   const countEl = document.querySelector(`.movie-card[data-id="${movieId}"] .vote-count`);
 
   if (userVotes.has(movieId)) {
-    // Unvote
+    // Unvote is ALWAYS allowed
     const { error } = await supabase.from('votes').delete().match({ user_id: user.id, movie_id: movieId });
     if (!error) {
       userVotes.delete(movieId);
@@ -1663,6 +1881,14 @@ window.toggleVote = async (movieId) => {
       if (countEl) countEl.textContent = `${movie.vote_count} votes`;
     }
   } else {
+    // Check vote limits
+    console.log(`[Vote] User Votes: ${userVotes.size} / ${MAX_VOTES} | Admin: ${isAdmin}`);
+    
+    if (userVotes.size >= MAX_VOTES && !isAdmin) {
+      showNotification(`Limit reached! You have already used your ${MAX_VOTES} votes.`, 'warning');
+      return;
+    }
+
     // Vote
     const { error } = await supabase.from('votes').insert([{ user_id: user.id, movie_id: movieId }]);
     if (!error) {
@@ -1672,6 +1898,7 @@ window.toggleVote = async (movieId) => {
       if (countEl) countEl.textContent = `${movie.vote_count} votes`;
     }
   }
+  updateAuthUI();
 };
 
 window.markAsSeen = async (movieId) => {
@@ -1805,6 +2032,17 @@ function setupEventListeners() {
     };
   });
 
+  // Admin Tabs
+  document.querySelectorAll('.admin-tab-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelector('.admin-tab-btn.active').classList.remove('active');
+      btn.classList.add('active');
+      const tab = btn.dataset.tab;
+      document.getElementById('adminUsersTab').classList.toggle('page-hidden', tab !== 'users');
+      document.getElementById('adminSessionsTab').classList.toggle('page-hidden', tab !== 'sessions');
+    };
+  });
+
   document.getElementById('exploreClearBtn').onclick = () => {
     exploreInputs.forEach(input => {
       if (input.id === 'exploreLimit') {
@@ -1822,13 +2060,34 @@ function setupEventListeners() {
 /* --- Achievements System Logic --- */
 const ACHIEVEMENT_LIST = [
   {
+    id: 'oracle',
+    name: 'The Oracle',
+    desc: 'You have shaped the festival: 3 of your proposals have been screened!',
+    icon: 'sparkles',
+    target: 3,
+    type: 'visionary',
+    class: 'medal-oracle',
+    points: 50
+  },
+  {
+    id: 'visionary',
+    name: 'The Visionary',
+    desc: 'One of your proposed movies has been screened!',
+    icon: 'eye',
+    target: 1,
+    type: 'visionary',
+    class: 'medal-visionary',
+    points: 20
+  },
+  {
     id: 'miembro',
     name: 'Festival Member',
     desc: 'You have joined our cinephile community.',
     icon: 'user-check',
     target: 1,
     type: 'static',
-    class: 'medal-miembro'
+    class: 'medal-miembro',
+    points: 5
   },
   {
     id: 'streak',
@@ -1837,7 +2096,8 @@ const ACHIEVEMENT_LIST = [
     icon: 'zap',
     target: 1,
     type: 'streak',
-    class: 'medal-streak'
+    class: 'medal-streak',
+    points: 20
   },
   {
     id: 'debut',
@@ -1846,7 +2106,8 @@ const ACHIEVEMENT_LIST = [
     icon: 'ticket',
     target: 1,
     type: 'attendance',
-    class: 'medal-attendance'
+    class: 'medal-attendance',
+    points: 10
   },
   {
     id: 'regular',
@@ -1855,7 +2116,8 @@ const ACHIEVEMENT_LIST = [
     icon: 'calendar',
     target: 3,
     type: 'attendance',
-    class: 'medal-attendance'
+    class: 'medal-attendance',
+    points: 15
   },
   {
     id: 'legend',
@@ -1864,7 +2126,8 @@ const ACHIEVEMENT_LIST = [
     icon: 'crown',
     target: 5,
     type: 'attendance',
-    class: 'medal-attendance'
+    class: 'medal-attendance',
+    points: 25
   },
   {
     id: 'feroz',
@@ -1873,7 +2136,8 @@ const ACHIEVEMENT_LIST = [
     icon: 'clapperboard',
     target: 5,
     type: 'ratings',
-    class: 'medal-feroz'
+    class: 'medal-feroz',
+    points: 10
   },
   {
     id: 'oro',
@@ -1882,7 +2146,8 @@ const ACHIEVEMENT_LIST = [
     icon: 'award',
     target: 10,
     type: 'ratings',
-    class: 'medal-oro'
+    class: 'medal-oro',
+    points: 15
   },
   {
     id: 'trend',
@@ -1891,7 +2156,8 @@ const ACHIEVEMENT_LIST = [
     icon: 'trending-up',
     target: 1,
     type: 'trend',
-    class: 'medal-trend'
+    class: 'medal-trend',
+    points: 10
   }
 ];
 
@@ -1924,6 +2190,13 @@ async function calculateUserAchievements(userId) {
     const attendanceCount = attendanceLogs?.length || 0;
     const attendedMovieIds = new Set(attendanceLogs?.map(l => l.movie_id) || []);
 
+    // Visionary Logic: One of your proposals is marked as seen
+    const { count: seenCount } = await supabase
+      .from('movies')
+      .select('*', { count: 'exact', head: true })
+      .eq('proposed_by', userId)
+      .eq('is_seen', true);
+
     // Streak Logic: Attended the last 3 "seen" movies
     const last3Seen = [...seenMovies]
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
@@ -1950,9 +2223,13 @@ async function calculateUserAchievements(userId) {
       } else if (achievement.type === 'trend') {
         current = hasTop3 ? 1 : 0;
         completed = hasTop3;
+      } else if (achievement.type === 'visionary') {
+        current = seenCount || 0;
+        completed = current >= achievement.target;
       }
 
       const progress = Math.min(100, (current / achievement.target) * 100);
+      if (completed) current = achievement.target;
 
       return { ...achievement, current, completed, progress };
     });
@@ -2099,7 +2376,13 @@ async function fetchRecentAchievementEvents() {
     });
 
     // 2. Get Milestones (5 and 10 ratings)
-    const { data: allRatings } = await supabase.from('user_ratings').select('user_id, created_at, profiles(full_name, email)').order('created_at', { ascending: true });
+    const { data: allRatings } = await supabase.from('user_ratings').select('user_id, created_at').order('created_at', { ascending: true });
+    
+    // Fetch profile names for these users
+    const userIds = [...new Set(allRatings?.map(r => r.user_id) || [])];
+    const { data: ratingProfiles } = await supabase.from('profiles').select('id, full_name, email').in('id', userIds);
+    const profileMap = {};
+    ratingProfiles?.forEach(p => profileMap[p.id] = p);
     
     const userRatings = {};
     allRatings?.forEach(r => {
@@ -2108,9 +2391,10 @@ async function fetchRecentAchievementEvents() {
       
       const count = userRatings[r.user_id].length;
       if (count === 5 || count === 10) {
+        const p = profileMap[r.user_id];
         events.push({
           type: count === 5 ? 'feroz' : 'oro',
-          name: r.profiles?.full_name || r.profiles?.email?.split('@')[0] || 'A cinephile',
+          name: p?.full_name || p?.email?.split('@')[0] || 'A cinephile',
           date: new Date(r.created_at),
           text: `earned the <span class="event-medal-name">${count === 5 ? 'Fierce Critic' : 'Golden Cinephile'}</span> medal`
         });
@@ -2168,6 +2452,590 @@ async function renderAchievementTimeline() {
 
 // Direct calls added to refreshData and loadUserActivity
 
+
+
+
+
+/* --- Session System Logic --- */
+
+async function fetchSessions() {
+  const { data, error } = await supabase
+    .from('sessions')
+    .select('*, movies(*), session_signups(user_id, profiles(full_name))')
+    .order('session_date', { ascending: false });
+
+  if (!error) {
+    sessions = data || [];
+  }
+}
+
+function renderAvatarStack(signups) {
+  if (!signups || signups.length === 0) return '';
+  
+  const limit = 3;
+  const displayed = signups.slice(0, limit);
+  const moreCount = signups.length - limit;
+  const allNames = signups.map(s => s.profiles?.full_name || 'Anonymous').join('\n');
+
+  return `
+    <div class="avatar-stack" data-tooltip="Interested:\n${allNames}">
+      ${moreCount > 0 ? `<div class="more-count">+${moreCount}</div>` : ''}
+      ${displayed.reverse().map(s => `
+        <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(s.profiles?.full_name || 'A')}&background=random" alt="Avatar">
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderSessions() {
+  if (!sessionsGrid) return;
+  
+  if (sessions.length === 0) {
+    sessionsGrid.innerHTML = '<div class="empty-state">No sessions scheduled yet.</div>';
+    return;
+  }
+
+  sessionsGrid.innerHTML = sessions.map(session => {
+    const poster = session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER;
+    const title = session.movie_id ? session.movies?.title : 'Film To Be Decided';
+    
+    return `
+      <div class="session-card" onclick="window.openSessionDetail('${session.id}')">
+        <div class="session-card-poster">
+          <img src="${poster}" alt="${title}">
+        </div>
+        <div class="session-card-content">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.5rem;">
+            <div class="session-date-badge">
+              ${new Date(session.session_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </div>
+            ${renderAvatarStack(session.session_signups)}
+          </div>
+          <div class="session-card-title">${title}</div>
+          <p style="color:var(--text-secondary); font-size: 0.9rem; line-height: 1.4; margin-top: 0.5rem;">
+            ${session.description || 'Join us for this special screening!'}
+          </p>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderNextSessionHero() {
+  if (!nextSessionHero) return;
+
+  const upcoming = sessions
+    .filter(s => s.is_upcoming && new Date(s.session_date) > new Date())
+    .sort((a, b) => new Date(a.session_date) - new Date(b.session_date))[0];
+
+  if (!upcoming) {
+    nextSessionHero.classList.add('page-hidden');
+    return;
+  }
+
+  const poster = upcoming.movie_id ? (upcoming.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER;
+  const title = upcoming.movie_id ? upcoming.movies?.title : 'Film To Be Decided';
+  const isSignedUp = user && upcoming.session_signups?.some(s => s.user_id === user.id);
+  const signupCount = upcoming.session_signups?.length || 0;
+
+  nextSessionHero.classList.remove('page-hidden');
+  nextSessionHero.innerHTML = `
+    <img src="${poster}" class="next-session-poster" alt="${title}">
+    <div class="next-session-info">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.5rem;">
+         <div class="session-date-badge">NEXT SESSION</div>
+         ${renderAvatarStack(upcoming.session_signups)}
+      </div>
+      <h3 style="margin-top:0.5rem;">${title}</h3>
+      <div class="next-session-meta">
+        <span><i data-lucide="calendar"></i> ${new Date(upcoming.session_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}</span>
+        <span><i data-lucide="clock"></i> ${new Date(upcoming.session_date).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</span>
+      </div>
+      <p style="color:var(--text-secondary); margin-bottom: 1.5rem;">${upcoming.description || 'No description available.'}</p>
+      <button class="btn-signup-hero ${isSignedUp ? 'success' : ''}" onclick="window.signupForSession('${upcoming.id}')">
+        <i data-lucide="${isSignedUp ? 'user-check' : 'user-plus'}"></i> 
+        ${isSignedUp ? 'Already Signed Up' : 'Sign Up Now'}
+      </button>
+    </div>
+  `;
+  if (window.lucide) window.lucide.createIcons();
+}
+
+window.openSessionDetail = async (sessionId) => {
+  const session = sessions.find(s => s.id === sessionId);
+  if (!session) return;
+
+  currentSession = session;
+  sessionModal.classList.remove('page-hidden');
+  document.body.style.overflow = 'hidden';
+
+  // Load comments, photos, signups
+  const [comments, photos, signups, attendance] = await Promise.all([
+    supabase.from('session_comments').select('*, profiles(full_name)').eq('session_id', sessionId).order('created_at', { ascending: false }),
+    supabase.from('session_photos').select('*, profiles(full_name)').eq('session_id', sessionId).order('created_at', { ascending: false }),
+    supabase.from('session_signups').select('*, profiles(full_name, id)').eq('session_id', sessionId),
+    supabase.from('session_attendance').select('*, profiles(full_name, id)').eq('session_id', sessionId)
+  ]);
+
+  const isSignedUp = user && signups.data?.some(s => s.user_id === user.id);
+  const isAttended = user && attendance.data?.some(a => a.user_id === user.id);
+  const signupCount = signups.data?.length || 0;
+
+  const poster = session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER;
+  const title = session.movie_id ? session.movies?.title : 'Film To Be Decided';
+
+  sessionModalBody.innerHTML = `
+    <div class="session-detail-layout">
+      <div class="session-sidebar">
+        <img src="${poster}" style="width:100%; border-radius:1.5rem; box-shadow:0 10px 30px rgba(0,0,0,0.5);" />
+        <div style="margin-top: 2rem;">
+          <h4 style="margin-bottom: 0.5rem; color:var(--text-secondary);">SESSION INFO</h4>
+          <p><i data-lucide="calendar" style="width:14px; margin-right:5px;"></i> ${new Date(session.session_date).toLocaleDateString()}</p>
+          <p><i data-lucide="map-pin" style="width:14px; margin-right:5px;"></i> ${session.location || 'Paral·lel Cinema'}</p>
+        </div>
+        
+        <div style="margin-top: 2rem;">
+          ${session.is_upcoming ? `
+            <button class="submit-btn ${isSignedUp ? 'success' : ''}" onclick="window.signupForSession('${session.id}')">
+              <i data-lucide="${isSignedUp ? 'user-check' : 'user-plus'}"></i> 
+              ${isSignedUp ? 'Already Signed Up' : 'Sign Up for Session'}
+            </button>
+            <p style="text-align:center; margin-top:1rem; font-size:0.8rem; color:var(--text-secondary);">
+              <i data-lucide="users" style="width:12px; height:12px; vertical-align:middle;"></i> ${signupCount} people interested
+            </p>
+          ` : `
+            <div class="badge ${isAttended ? 'success' : 'muted'}" style="padding: 1rem; text-align:center; border-radius:1rem; background:rgba(255,255,255,0.05);">
+              <i data-lucide="${isAttended ? 'check-circle' : 'info'}"></i>
+              ${isAttended ? 'You Attended This Session' : 'This session has passed'}
+            </div>
+          `}
+        </div>
+      </div>
+
+      <div class="session-main-info">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+          <h2>${title}</h2>
+          ${isAdmin ? `
+            <button class="edit-profile-btn" onclick="window.showEditSessionModal('${session.id}')">
+              <i data-lucide="edit"></i> Edit Session
+            </button>
+          ` : ''}
+        </div>
+        <p style="font-size: 1.1rem; color:var(--text-secondary); margin-bottom: 2rem;">${session.description || ''}</p>
+
+        <div class="session-tabs">
+          <button class="session-tab-btn active" onclick="window.switchSessionTab('comments')">Comments (${comments.data?.length || 0})</button>
+          <button class="session-tab-btn" onclick="window.switchSessionTab('photos')">Gallery (${photos.data?.length || 0})</button>
+          <button class="session-tab-btn" onclick="window.switchSessionTab('participants')">
+            ${session.is_upcoming ? 'Interested' : 'Participants'} (${session.is_upcoming ? signupCount : attendance.data?.length || 0})
+          </button>
+        </div>
+
+        <div id="sessionTabContent">
+          <!-- Comments by default -->
+          ${renderCommentsHTML(comments.data || [])}
+        </div>
+      </div>
+    </div>
+  `;
+  
+  if (window.lucide) window.lucide.createIcons();
+};
+
+window.closeSessionModal = () => {
+  sessionModal.classList.add('page-hidden');
+  document.body.style.overflow = '';
+};
+
+window.switchSessionTab = async (tab) => {
+  const btns = document.querySelectorAll('.session-tab-btn');
+  btns.forEach(b => b.classList.toggle('active', b.textContent.toLowerCase().includes(tab)));
+
+  const content = document.getElementById('sessionTabContent');
+  
+  if (tab === 'comments') {
+    const { data } = await supabase.from('session_comments').select('*, profiles(full_name)').eq('session_id', currentSession.id).order('created_at', { ascending: false });
+    content.innerHTML = renderCommentsHTML(data || []);
+  } else if (tab === 'photos') {
+    const { data } = await supabase.from('session_photos').select('*, profiles(full_name)').eq('session_id', currentSession.id).order('created_at', { ascending: false });
+    content.innerHTML = renderGalleryHTML(data || []);
+  } else if (tab === 'participants') {
+    const isUpcoming = currentSession.is_upcoming;
+    const table = isUpcoming ? 'session_signups' : 'session_attendance';
+    const { data } = await supabase.from(table).select('*, profiles(full_name)').eq('session_id', currentSession.id);
+    
+    content.innerHTML = `
+      <div class="participants-list" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem;">
+        ${data?.length ? data.map(p => `
+          <div class="participant-card" style="background:rgba(255,255,255,0.05); padding:1rem; border-radius:1rem; text-align:center;">
+            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(p.profiles.full_name)}&background=random" style="width:50px; height:50px; border-radius:50%; margin-bottom:0.5rem;" />
+            <div style="font-weight:600; font-size:0.8rem;">${p.profiles.full_name}</div>
+            ${isUpcoming ? '<div style="font-size:0.6rem; color:var(--text-secondary); margin-top:0.2rem;">Interested</div>' : ''}
+          </div>
+        `).join('') : `<div class="empty-state">No ${isUpcoming ? 'interest recorded' : 'participants'} yet.</div>`}
+      </div>
+    `;
+  }
+  if (window.lucide) window.lucide.createIcons();
+};
+
+function renderCommentsHTML(comments) {
+  return `
+    <div class="comments-section">
+      ${user ? `
+        <div class="comment-input-wrapper">
+          <textarea id="newCommentText" placeholder="Share your thoughts about this movie..." rows="2"></textarea>
+          <button class="submit-btn" style="width:auto; padding:0 1.5rem;" onclick="window.postComment()">
+            <i data-lucide="send"></i>
+          </button>
+        </div>
+      ` : '<p style="text-align:center; color:var(--text-secondary);">Sign in to leave a comment.</p>'}
+      
+      <div class="comments-list">
+        ${comments.length ? comments.map(c => `
+          <div class="comment-card">
+            <div class="comment-header">
+              <span class="comment-user">${c.profiles?.full_name || 'Anonymous'}</span>
+              <span style="opacity:0.5;">${new Date(c.created_at).toLocaleDateString()}</span>
+            </div>
+            <div class="comment-body">${c.content}</div>
+          </div>
+        `).join('') : '<div class="empty-state">No comments yet.</div>'}
+      </div>
+    </div>
+  `;
+}
+
+function renderGalleryHTML(photos) {
+  return `
+    <div class="gallery-section">
+      <div class="photo-gallery">
+        ${user ? `
+          <div class="upload-photo-btn" onclick="window.triggerPhotoUpload()">
+            <i data-lucide="camera" style="width:32px; height:32px;"></i>
+            <span>Add Photo</span>
+          </div>
+        ` : ''}
+        ${photos.map(p => `
+          <div class="gallery-item" onclick="window.openFullPhoto('${p.photo_url}')">
+            <img src="${p.photo_url}" loading="lazy" />
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+window.signupForSession = async (sessionId) => {
+  if (!user) {
+    window.navigateTo('auth');
+    return;
+  }
+
+  const { data: existing } = await supabase.from('session_signups').select('*').match({ session_id: sessionId, user_id: user.id }).single();
+
+  if (existing) {
+    await supabase.from('session_signups').delete().match({ session_id: sessionId, user_id: user.id });
+    showNotification('Sign up cancelled', 'warning');
+  } else {
+    await supabase.from('session_signups').insert([{ session_id: sessionId, user_id: user.id }]);
+    showNotification('Signed up for the session!', 'success');
+  }
+  refreshData();
+};
+
+window.postComment = async () => {
+  const text = document.getElementById('newCommentText').value.trim();
+  if (!text) return;
+
+  const { error } = await supabase.from('session_comments').insert([{
+    session_id: currentSession.id,
+    user_id: user.id,
+    content: text
+  }]);
+
+  if (!error) {
+    showNotification('Comment posted!');
+    window.switchSessionTab('comments');
+  }
+};
+
+window.triggerPhotoUpload = async () => {
+  const url = window.prompt("Enter photo URL (implementing full upload in Supabase Storage requires more setup, so for now we use URLs):");
+  if (!url) return;
+
+  const { error } = await supabase.from('session_photos').insert([{
+    session_id: currentSession.id,
+    user_id: user.id,
+    photo_url: url
+  }]);
+
+  if (!error) {
+    showNotification('Photo added to gallery!');
+    window.switchSessionTab('photos');
+  }
+};
+
+/* --- Admin Session Logic --- */
+
+window.showCreateSessionModal = () => {
+  createSessionModal.classList.remove('page-hidden');
+  
+  // Reset form
+  document.getElementById('sessionMovieSelect').value = "";
+  document.getElementById('sessionDate').value = "";
+  document.getElementById('sessionDescription').value = "";
+
+  // Fill movie select with proposed movies
+  sessionMovieSelect.innerHTML = `
+    <option value="">-- To Be Decided --</option>
+    ${proposedMovies.map(m => `
+      <option value="${m.id}">${m.title}</option>
+    `).join('')}
+  `;
+};
+
+window.closeCreateSessionModal = () => {
+  createSessionModal.classList.add('page-hidden');
+};
+
+window.handleCreateSession = async () => {
+  const movieId = sessionMovieSelect.value;
+  const date = document.getElementById('sessionDate').value;
+  const desc = document.getElementById('sessionDescription').value;
+
+  if (!date) {
+    showNotification('Date is required', 'error');
+    return;
+  }
+
+  const { error } = await supabase.from('sessions').insert([{
+    movie_id: movieId || null,
+    session_date: new Date(date).toISOString(),
+    description: desc,
+    is_upcoming: true
+  }]);
+
+  if (!error) {
+    showNotification('Session created successfully!');
+    window.closeCreateSessionModal();
+    refreshData();
+  } else {
+    showNotification('Error creating session', 'error');
+  }
+};
+
+async function updateAdminSessions() {
+  if (!isAdmin || !adminSessionsList) return;
+
+  adminSessionsList.innerHTML = sessions.map(session => {
+    const title = session.movie_id ? session.movies?.title : 'TBD';
+    
+    return `
+      <div class="admin-session-item">
+        <div>
+          <div style="font-weight:700;">${title}</div>
+          <div style="font-size:0.8rem; opacity:0.6;">${new Date(session.session_date).toLocaleString()}</div>
+        </div>
+        <div class="admin-session-actions">
+          <button class="btn-admin-action" onclick="window.showEditSessionModal('${session.id}')" title="Edit Session">
+            <i data-lucide="edit"></i>
+          </button>
+          <button class="btn-admin-action" onclick="window.manageAttendance('${session.id}')" title="Mark Attendance">
+            <i data-lucide="users"></i>
+          </button>
+          <button class="btn-admin-action delete" onclick="window.handleDeleteSession('${session.id}')" title="Delete Session">
+            <i data-lucide="trash-2"></i>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+  if (window.lucide) window.lucide.createIcons();
+}
+
+window.handleDeleteSession = async (sessionId) => {
+  if (!confirm('Are you sure you want to delete this session?')) return;
+
+  const { error } = await supabase.from('sessions').delete().eq('id', sessionId);
+  if (!error) {
+    showNotification('Session deleted');
+    refreshData();
+  }
+};
+
+window.manageAttendance = async (sessionId) => {
+  const session = sessions.find(s => s.id === sessionId);
+  const { data: signups } = await supabase.from('session_signups').select('*, profiles(full_name, id)').eq('session_id', sessionId);
+  const { data: attendance } = await supabase.from('session_attendance').select('user_id').eq('session_id', sessionId);
+  
+  const attendedSet = new Set(attendance?.map(a => a.user_id) || []);
+
+  const html = `
+    <div style="padding: 2rem;">
+      <h3>Attendance: ${session.movies?.title}</h3>
+      <p style="margin-bottom: 2rem;">Confirm who actually attended the session.</p>
+      
+      <div style="display:grid; gap:1rem;">
+        ${signups?.length ? signups.map(s => `
+          <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:1rem; border-radius:1rem;">
+            <span>${s.profiles.full_name}</span>
+            <button class="btn-signup-hero ${attendedSet.has(s.user_id) ? 'success' : 'secondary'}" 
+                    style="padding:0.5rem 1rem; font-size:0.8rem;"
+                    onclick="window.toggleAttendance('${sessionId}', '${s.user_id}', this)">
+              ${attendedSet.has(s.user_id) ? 'Confirmed' : 'Confirm Attendance'}
+            </button>
+          </div>
+        `).join('') : '<p>No signups for this session yet.</p>'}
+      </div>
+      
+      <button class="submit-btn" style="margin-top:2rem;" onclick="window.closeSessionModal()">Done</button>
+    </div>
+  `;
+
+  sessionModalBody.innerHTML = html;
+  sessionModal.classList.remove('page-hidden');
+};
+
+window.toggleAttendance = async (sessionId, userId, btn) => {
+  const isConfirmed = btn.classList.contains('success');
+
+  if (isConfirmed) {
+    await supabase.from('session_attendance').delete().match({ session_id: sessionId, user_id: userId });
+    btn.classList.remove('success');
+    btn.classList.add('secondary');
+    btn.textContent = 'Confirm Attendance';
+  } else {
+    await supabase.from('session_attendance').insert([{ session_id: sessionId, user_id: userId }]);
+    btn.classList.remove('secondary');
+    btn.classList.add('success');
+    btn.textContent = 'Confirmed';
+    
+    const session = sessions.find(s => s.id === sessionId);
+    const logData = {
+      user_id: userId,
+      action_type: "attendance",
+      points: 50
+    };
+    if (session.movie_id) logData.movie_id = session.movie_id;
+    await supabase.from("participation_log").insert([logData]);
+  }
+};
+window.showEditSessionModal = (sessionId) => {
+  const session = sessions.find(s => s.id === sessionId);
+  if (!session) return;
+
+  currentSession = session;
+  createSessionModal.classList.remove('page-hidden');
+  
+  // Fill movie select
+  sessionMovieSelect.innerHTML = `
+    <option value="">-- To Be Decided --</option>
+    ${proposedMovies.map(m => `
+      <option value="${m.id}" ${m.id === session.movie_id ? 'selected' : ''}>${m.title}</option>
+    `).join('')}
+    ${session.movie_id && !proposedMovies.some(m => m.id === session.movie_id) ? `
+      <option value="${session.movie_id}" selected>${session.movies?.title}</option>
+    ` : ''}
+  `;
+
+  // Pre-fill date (convert ISO to datetime-local format)
+  const date = new Date(session.session_date);
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  document.getElementById('sessionDate').value = localDate;
+  
+  document.getElementById('sessionDescription').value = session.description || '';
+  
+  // Update button text
+  const submitBtn = createSessionModal.querySelector('.submit-btn');
+  submitBtn.textContent = 'Update Session';
+  submitBtn.onclick = () => window.handleUpdateSession(sessionId);
+  
+  createSessionModal.querySelector('h2').textContent = 'Edit Session';
+};
+
+window.handleUpdateSession = async (sessionId) => {
+  const movieId = sessionMovieSelect.value;
+  const date = document.getElementById('sessionDate').value;
+  const desc = document.getElementById('sessionDescription').value;
+
+  if (!date) {
+    showNotification('Date is required', 'error');
+    return;
+  }
+
+  const { error } = await supabase.from('sessions').update({
+    movie_id: movieId || null,
+    session_date: new Date(date).toISOString(),
+    description: desc
+  }).eq('id', sessionId);
+
+  if (!error) {
+    showNotification('Session updated successfully!');
+    window.closeCreateSessionModal();
+    refreshData();
+  } else {
+    showNotification('Error updating session', 'error');
+  }
+};
+
 init();
 
+function renderCemetery(droppedMovies) {
+  const cemeteryGrid = document.getElementById('cemeteryGrid');
+  if (!cemeteryGrid) return;
+  
+  if (droppedMovies.length === 0) {
+    cemeteryGrid.innerHTML = '<div class="empty-state">The cemetery is empty. All proposed movies are still fighting!</div>';
+    return;
+  }
 
+  cemeteryGrid.innerHTML = droppedMovies.map(movie => {
+    return createMovieCardHTML(movie, { 
+      context: 'cemetery', 
+      showDelete: isAdmin // Only admins can truly delete from cemetery
+    });
+  }).join('');
+  
+  if (window.lucide) window.lucide.createIcons();
+}
+
+window.cleanupInactiveMovies = async (silent = false) => {
+  if (!isAdmin) return;
+  if (!silent) showNotification('Checking for inactive movies...', 'info');
+  const fifteenDaysAgo = new Date();
+  fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
+  const { data: moviesToClean, error: fetchErr } = await supabase
+    .from('movies')
+    .select('id, title, created_at, vote_count, is_dropped, is_seen')
+    .eq('is_dropped', false)
+    .eq('is_seen', false);
+  if (fetchErr || !moviesToClean) return;
+  const { data: allVotes, error: votesErr } = await supabase
+    .from('votes')
+    .select('movie_id, created_at');
+  if (votesErr) return;
+  const toDrop = moviesToClean.filter(m => {
+    const proposalDate = new Date(m.created_at);
+    const movieVotes = (allVotes || []).filter(v => v.movie_id === m.id);
+    if (movieVotes.length === 0) {
+      return proposalDate < fifteenDaysAgo;
+    } else {
+      const lastVoteDate = new Date(Math.max(...movieVotes.map(v => new Date(v.created_at))));
+      return lastVoteDate < fifteenDaysAgo;
+    }
+  });
+  if (toDrop.length === 0) {
+    if (!silent) showNotification('All movies are active!', 'success');
+    return;
+  }
+  const ids = toDrop.map(m => m.id);
+  const { error: updateErr } = await supabase
+    .from('movies')
+    .update({ is_dropped: true })
+    .in('id', ids);
+  if (!updateErr) {
+    if (!silent) showNotification(`Cleaned up ${toDrop.length} inactive movies`, 'success');
+    refreshData();
+  }
+};

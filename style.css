@@ -2883,3 +2883,606 @@ nav {
 }
 
 
+
+/* Sessions & Modals */
+.next-session-hero {
+  margin: 3rem auto;
+  max-width: 900px;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.2) 0%, rgba(192, 132, 252, 0.2) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 2rem;
+  padding: 2.5rem;
+  display: flex;
+  gap: 2.5rem;
+  align-items: center;
+  backdrop-filter: blur(20px);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 30px 60px rgba(0,0,0,0.4);
+}
+.next-session-poster {
+  width: 280px;
+  height: 420px;
+  object-fit: cover;
+  border-radius: 1.5rem;
+  box-shadow: 0 15px 40px rgba(0,0,0,0.5);
+}
+
+
+.next-session-info {
+  text-align: left;
+  flex: 1;
+}
+
+.next-session-info h3 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  font-family: 'Outfit', sans-serif;
+}
+
+.next-session-meta {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.next-session-meta span {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-signup-hero {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 1rem 2rem;
+  border-radius: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.btn-signup-hero.success, .submit-btn.success {
+  background: #10b981 !important;
+  border-color: #10b981 !important;
+  box-shadow: 0 5px 15px rgba(16, 185, 129, 0.3) !important;
+}
+
+.btn-signup-hero:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 25px rgba(79, 70, 229, 0.4);
+}
+
+.sessions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 2.5rem;
+  margin-top: 2rem;
+}
+
+.session-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 2rem;
+  overflow: hidden;
+  transition: all 0.4s ease;
+  cursor: pointer;
+}
+
+.session-card:hover {
+  transform: translateY(-8px);
+  border-color: var(--accent);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+}
+
+.session-card-poster {
+  height: 200px;
+  position: relative;
+}
+
+.session-card-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.6;
+}
+
+.session-card-content {
+  padding: 1.5rem;
+}
+
+.session-date-badge {
+  background: var(--accent);
+  color: white;
+  padding: 0.4rem 0.8rem;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: inline-block;
+  margin-bottom: 1rem;
+}
+
+.session-card-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+/* Modals */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.85);
+  backdrop-filter: blur(10px);
+}
+
+.modal-content {
+  position: relative;
+  z-index: 10;
+  max-height: 90vh;
+  overflow-y: auto;
+  width: 95%;
+}
+
+.session-modal-content {
+  max-width: 1000px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: 2.5rem;
+  padding: 3rem;
+}
+
+.close-modal-btn {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  background: rgba(255,255,255,0.05);
+  border: none;
+  color: white;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.close-modal-btn:hover {
+  background: rgba(255,255,255,0.1);
+  transform: rotate(90deg);
+}
+
+/* Session Details inside Modal */
+.session-detail-layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 3rem;
+}
+
+.session-main-info h2 {
+  font-size: 3rem;
+  font-weight: 800;
+  margin-bottom: 1rem;
+}
+
+.session-tabs {
+  display: flex;
+  gap: 1.5rem;
+  border-bottom: 1px solid var(--border);
+  margin: 2rem 0;
+}
+
+.session-tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  padding: 1rem 0;
+  font-weight: 600;
+  cursor: pointer;
+  position: relative;
+}
+
+.session-tab-btn.active {
+  color: var(--accent);
+}
+
+.session-tab-btn.active::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--accent);
+}
+
+/* Comments */
+.comments-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.comment-input-wrapper {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.comment-input-wrapper textarea {
+  flex: 1;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  padding: 1rem;
+  color: white;
+  resize: none;
+}
+
+.comment-card {
+  background: rgba(255,255,255,0.03);
+  padding: 1.5rem;
+  border-radius: 1.5rem;
+  border: 1px solid var(--border);
+}
+
+.comment-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.comment-user {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* Gallery */
+.photo-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.gallery-item {
+  aspect-ratio: 1;
+  border-radius: 1rem;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.gallery-item:hover img {
+  transform: scale(1.1);
+}
+
+.upload-photo-btn {
+  background: rgba(255,255,255,0.05);
+  border: 2px dashed var(--border);
+  aspect-ratio: 1;
+  border-radius: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.upload-photo-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(79, 70, 229, 0.05);
+}
+
+/* Admin Tabs */
+.admin-tabs {
+  display: flex;
+  gap: 1rem;
+  background: rgba(0,0,0,0.2);
+  padding: 0.4rem;
+  border-radius: 0.75rem;
+}
+
+.admin-tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.admin-tab-btn.active {
+  background: var(--accent);
+  color: white;
+}
+
+.btn-create-session {
+  background: var(--success);
+  color: white;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-sessions-list {
+  margin-top: 1.5rem;
+}
+
+.admin-session-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  background: rgba(255,255,255,0.03);
+  border-radius: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--border);
+}
+
+.admin-session-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.btn-admin-action {
+  background: rgba(255,255,255,0.05);
+  border: none;
+  color: white;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-admin-action:hover {
+  background: var(--accent);
+}
+
+.btn-admin-action.delete:hover {
+  background: #ef4444;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .next-session-hero {
+    flex-direction: column;
+    text-align: center;
+  }
+  .next-session-info {
+    text-align: center;
+  }
+  .next-session-meta {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .session-detail-layout {
+    grid-template-columns: 1fr;
+  }
+  .session-modal-content {
+    padding: 1.5rem;
+  }
+}
+
+/* Avatar Stack & Tooltips */
+.avatar-stack {
+  display: flex;
+  align-items: center;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  margin-left: 0.5rem;
+}
+
+.avatar-stack img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid #1a1a1f;
+  margin-left: -10px;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  background: var(--bg-card);
+}
+
+.avatar-stack img:hover {
+  transform: translateY(-5px);
+  z-index: 10;
+  border-color: var(--accent);
+}
+
+.avatar-stack .more-count {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid #1a1a1f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-left: -10px;
+  color: var(--text-secondary);
+  cursor: help;
+  position: relative;
+}
+
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%) translateY(10px);
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 0.5rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  width: max-content;
+  max-width: 200px;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+[data-tooltip]:hover::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Cemetery Styles */
+.cemetery-section {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 4rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.movie-card.dropped {
+  filter: grayscale(0.8) contrast(0.8);
+  opacity: 0.7;
+  transition: all 0.4s ease;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.movie-card.dropped:hover {
+  filter: grayscale(0.3) contrast(1);
+  opacity: 1;
+  transform: translateY(-5px);
+}
+
+.cemetery-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.cemetery-status i {
+  width: 14px;
+  height: 14px;
+}
+
+/* Admin Actions Overlay */
+.admin-actions-overlay {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 20;
+}
+
+.admin-actions-overlay .delete-movie-btn {
+  position: static;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.admin-actions-overlay .perm-delete:hover {
+  background: var(--error);
+  color: white;
+  transform: scale(1.1);
+}
+
+.admin-actions-overlay .drop-only:hover {
+  background: var(--warning);
+  color: white;
+  transform: scale(1.1);
+}
+
+/* Improved Admin & User Delete Styles */
+.delete-movie-btn.drop-only {
+  color: white !important;
+  opacity: 0.8;
+}
+
+.delete-movie-btn.drop-only:hover {
+  background: rgba(255, 255, 255, 0.2);
+  opacity: 1;
+  color: white !important;
+}
+
+.delete-movie-btn.perm-delete {
+  color: var(--error) !important;
+}
+
+.delete-movie-btn.perm-delete:hover {
+  background: var(--error) !important;
+  color: white !important;
+}
+
+.admin-actions-overlay .delete-movie-btn i {
+  width: 16px;
+  height: 16px;
+}
