@@ -282,6 +282,12 @@ async function refreshData() {
   
   // Also refresh ranking on any state change
   updateGlobalRanking();
+
+  // Achievements rendering
+  renderHomeAchievements();
+  renderTopVotedShowcase();
+  renderAchievementTimeline();
+  if (currentView === 'profile') renderProfileAchievements();
 }
 
 // Rendering Helpers
@@ -419,10 +425,16 @@ function createMovieCardHTML(movie, options = {}) {
   const providers = movie.watch_providers?.flatrate || [];
   const providersLink = movie.watch_providers?.link || '#';
 
-  const cardClass = context === 'history' ? 'movie-card seen' : 'movie-card';
+  const cardClass = context === 'history' ? 'movie-card seen' : 
+                   context === 'showcase' ? 'movie-card top-highlight-card' : 'movie-card';
 
   return `
     <div class="${cardClass}" data-id="${movie.id || ''}">
+      ${context === 'showcase' ? `
+        <div class="top-badge">
+          <i data-lucide="award"></i> #${options.rank} MOST WANTED
+        </div>
+      ` : ''}
       <div class="poster-wrapper">
         <img src="${posterUrl}" alt="${movie.title}" loading="lazy" onerror="this.onerror=null; this.src='${FALLBACK_IMAGE}'">
         
@@ -550,6 +562,31 @@ function renderProposals() {
     });
   }).join('');
   
+  if (window.lucide) window.lucide.createIcons();
+  if (window.lucide) window.lucide.createIcons();
+}
+
+async function renderTopVotedShowcase() {
+  const container = document.getElementById('topVotedShowcase');
+  const grid = document.getElementById('topVotedGrid');
+  if (!grid || !container) return;
+
+  // Filter movies that are NOT seen and have at least 1 vote
+  const topContenders = [...proposedMovies]
+    .filter(m => (m.vote_count || 0) > 0)
+    .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0))
+    .slice(0, 3);
+
+  if (topContenders.length === 0) {
+    container.classList.add('page-hidden');
+    return;
+  }
+
+  container.classList.remove('page-hidden');
+  grid.innerHTML = topContenders.map((movie, index) => 
+    createMovieCardHTML(movie, { context: 'showcase', rank: index + 1 })
+  ).join('');
+
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -742,6 +779,9 @@ async function loadUserActivity() {
   } else {
     adminDashboard.classList.add('page-hidden');
   }
+
+  // Trophies rendering
+  await renderProfileAchievements();
 
   if (window.lucide) window.lucide.createIcons();
 }
@@ -1029,6 +1069,16 @@ async function fetchUserList() {
           </td>
           <td><span class="user-date">${date}</span></td>
           <td>
+            <div class="checkin-container">
+              <button class="btn-checkin" onclick="window.toggleCheckinDropdown('${p.id}')">
+                <i data-lucide="map-pin"></i> Check-in
+              </button>
+              <div id="checkin-${p.id}" class="checkin-dropdown">
+                <!-- Session options will be injected here -->
+              </div>
+            </div>
+          </td>
+          <td>
             ${p.id !== user?.id ? `
               <button class="delete-user-btn" onclick="window.deleteUser('${p.id}', '${name}')" title="Delete User">
                 <i data-lucide="user-minus"></i>
@@ -1043,9 +1093,81 @@ async function fetchUserList() {
 
   } catch (err) {
     console.error('Error fetching user list:', err);
-    adminUserList.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--text-secondary);">Unable to fetch user list.</td></tr>`;
+    adminUserList.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:2rem; color:var(--text-secondary);">Unable to fetch user list.</td></tr>`;
   }
 }
+
+// Attendance Logic
+window.toggleCheckinDropdown = (userId) => {
+  const dropdown = document.getElementById(`checkin-${userId}`);
+  const allDropdowns = document.querySelectorAll('.checkin-dropdown');
+  
+  // Close others
+  allDropdowns.forEach(d => { if (d.id !== `checkin-${userId}`) d.classList.remove('active'); });
+
+  if (dropdown.classList.contains('active')) {
+    dropdown.classList.remove('active');
+  } else {
+    // Populate with seen movies
+    const sessions = [...seenMovies].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
+    
+    if (sessions.length === 0) {
+      dropdown.innerHTML = '<div style="padding:0.5rem; font-size:0.7rem; color:var(--text-secondary);">No sessions available. Mark a movie as "Seen" first.</div>';
+    } else {
+      dropdown.innerHTML = sessions.map(m => `
+        <button class="checkin-option" onclick="window.markAttendance('${userId}', '${m.id}')">
+          <i data-lucide="play"></i> ${m.title}
+        </button>
+      `).join('');
+    }
+    
+    dropdown.classList.add('active');
+    if (window.lucide) window.lucide.createIcons();
+  }
+};
+
+window.markAttendance = async (userId, movieId) => {
+  if (!isAdmin) return;
+
+  try {
+    showNotification('Recording attendance...', 'info');
+    
+    // Check if already attended
+    const { data: existing } = await supabase
+      .from('participation_log')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('movie_id', movieId)
+      .eq('action_type', 'attendance')
+      .single();
+    
+    if (existing) {
+      showNotification('User already checked-in for this session.', 'warning');
+      return;
+    }
+
+    const { error } = await supabase.from('participation_log').insert([{
+      user_id: userId,
+      movie_id: movieId,
+      action_type: 'attendance',
+      points: 10
+    }]);
+
+    if (error) throw error;
+
+    showNotification('Attendance recorded! (+10 pts)', 'success');
+    
+    // Auto-refresh UI
+    const dropdown = document.getElementById(`checkin-${userId}`);
+    if (dropdown) dropdown.classList.remove('active');
+    
+    refreshData();
+    
+  } catch (err) {
+    console.error('Error marking attendance:', err);
+    showNotification('Failed to record attendance.', 'error');
+  }
+};
 
 window.deleteUser = async (userId, userName) => {
   if (!isAdmin) return;
@@ -1495,6 +1617,16 @@ window.proposeMovie = async (tmdbMovie, el) => {
     }
   } else {
     showNotification(`"${tmdbMovie.title}" proposed!`, 'success');
+
+    // Automatically add user's vote to their own proposal
+    try {
+      if (data && data[0]) {
+        await supabase.from('votes').insert([{ user_id: user.id, movie_id: data[0].id }]);
+      }
+    } catch (vErr) {
+      console.error('Auto-vote failed:', vErr);
+    }
+
     if (card) {
       card.style.transform = 'scale(1.05)';
       card.style.borderColor = 'var(--success)';
@@ -1686,6 +1818,355 @@ function setupEventListeners() {
     exploreGrid.innerHTML = '<div class="empty-state">Start searching to discover films.</div>';
   };
 }
+
+/* --- Achievements System Logic --- */
+const ACHIEVEMENT_LIST = [
+  {
+    id: 'miembro',
+    name: 'Festival Member',
+    desc: 'You have joined our cinephile community.',
+    icon: 'user-check',
+    target: 1,
+    type: 'static',
+    class: 'medal-miembro'
+  },
+  {
+    id: 'streak',
+    name: 'Cinema Streak',
+    desc: 'You have attended 3 sessions in a row!',
+    icon: 'zap',
+    target: 1,
+    type: 'streak',
+    class: 'medal-streak'
+  },
+  {
+    id: 'debut',
+    name: 'Grand Premiere',
+    desc: 'You attended your first physical session.',
+    icon: 'ticket',
+    target: 1,
+    type: 'attendance',
+    class: 'medal-attendance'
+  },
+  {
+    id: 'regular',
+    name: 'Festival Regular',
+    desc: 'You have attended 3 physical sessions.',
+    icon: 'calendar',
+    target: 3,
+    type: 'attendance',
+    class: 'medal-attendance'
+  },
+  {
+    id: 'legend',
+    name: 'Cinema Legend',
+    desc: 'You have attended 5 physical sessions.',
+    icon: 'crown',
+    target: 5,
+    type: 'attendance',
+    class: 'medal-attendance'
+  },
+  {
+    id: 'feroz',
+    name: 'Fierce Critic',
+    desc: 'You have rated 5 or more movies.',
+    icon: 'clapperboard',
+    target: 5,
+    type: 'ratings',
+    class: 'medal-feroz'
+  },
+  {
+    id: 'oro',
+    name: 'Golden Cinephile',
+    desc: 'You have rated 10 or more movies.',
+    icon: 'award',
+    target: 10,
+    type: 'ratings',
+    class: 'medal-oro'
+  },
+  {
+    id: 'trend',
+    name: 'Trendsetter',
+    desc: 'A movie proposed by you entered the Top 3 voted list.',
+    icon: 'trending-up',
+    target: 1,
+    type: 'trend',
+    class: 'medal-trend'
+  }
+];
+
+/**
+ * Calculates achievement progress for a specific user.
+ */
+async function calculateUserAchievements(userId) {
+  // Return all medals with 0 progress if no user
+  if (!userId) return ACHIEVEMENT_LIST.map(a => ({ ...a, progress: 0, current: 0, completed: false }));
+
+  try {
+    const { count: ratingsCount } = await supabase
+      .from('user_ratings')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+
+    const top3Movies = [...proposedMovies]
+      .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0))
+      .slice(0, 3);
+    
+    const hasTop3 = top3Movies.some(m => m.proposed_by === userId);
+
+    // Fetch attendance from participation_log
+    const { data: attendanceLogs } = await supabase
+      .from('participation_log')
+      .select('movie_id')
+      .eq('user_id', userId)
+      .eq('action_type', 'attendance');
+    
+    const attendanceCount = attendanceLogs?.length || 0;
+    const attendedMovieIds = new Set(attendanceLogs?.map(l => l.movie_id) || []);
+
+    // Streak Logic: Attended the last 3 "seen" movies
+    const last3Seen = [...seenMovies]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 3);
+    
+    const hasStreak = last3Seen.length >= 3 && last3Seen.every(m => attendedMovieIds.has(m.id));
+
+    return ACHIEVEMENT_LIST.map(achievement => {
+      let current = 0;
+      let completed = false;
+
+      if (achievement.type === 'static') {
+        current = 1;
+        completed = true;
+      } else if (achievement.type === 'ratings') {
+        current = ratingsCount || 0;
+        completed = current >= achievement.target;
+      } else if (achievement.type === 'attendance') {
+        current = attendanceCount;
+        completed = current >= achievement.target;
+      } else if (achievement.type === 'streak') {
+        current = hasStreak ? 1 : 0;
+        completed = hasStreak;
+      } else if (achievement.type === 'trend') {
+        current = hasTop3 ? 1 : 0;
+        completed = hasTop3;
+      }
+
+      const progress = Math.min(100, (current / achievement.target) * 100);
+
+      return { ...achievement, current, completed, progress };
+    });
+  } catch (e) {
+    console.error('Error calculating achievements:', e);
+    return ACHIEVEMENT_LIST.map(a => ({ ...a, progress: 0, current: 0, completed: false }));
+  }
+}
+
+async function calculateGlobalAchievementStats() {
+  const stats = { miembro: 0, feroz: 0, oro: 0, trend: 0, streak: 0, debut: 0, regular: 0, legend: 0 };
+  try {
+    // Count total unique profiles for 'miembro'
+    const { data: profiles } = await supabase.from('profiles').select('id');
+    stats.miembro = profiles?.length || 0;
+
+    const { data: allRatings } = await supabase.from('user_ratings').select('user_id');
+    const ratingsMap = {};
+    allRatings?.forEach(r => { ratingsMap[r.user_id] = (ratingsMap[r.user_id] || 0) + 1; });
+
+    Object.values(ratingsMap).forEach(count => {
+      if (count >= 5) stats.feroz++;
+      if (count >= 10) stats.oro++;
+    });
+
+    const top3Movies = [...proposedMovies].sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0)).slice(0, 3);
+    const trendsetters = new Set(top3Movies.map(m => m.proposed_by));
+    stats.trend = trendsetters.size;
+
+    // Attendance stats
+    const { data: allAttendance } = await supabase.from('participation_log').select('user_id').eq('action_type', 'attendance');
+    const attMap = {};
+    allAttendance?.forEach(a => { attMap[a.user_id] = (attMap[a.user_id] || 0) + 1; });
+
+    Object.values(attMap).forEach(count => {
+      if (count >= 1) stats.debut++;
+      if (count >= 3) stats.regular++;
+      if (count >= 5) stats.legend++;
+    });
+
+  } catch (e) {
+    console.error('Error calculating global stats:', e);
+  }
+  return stats;
+}
+
+async function renderHomeAchievements() {
+  const grid = document.getElementById('homeAchievementsGrid');
+  if (!grid) return;
+
+  const stats = await calculateGlobalAchievementStats();
+
+  grid.innerHTML = ACHIEVEMENT_LIST.map(a => {
+    const userCount = stats[a.id] || 0;
+    return `
+      <div class="achievement-card ${a.class} active">
+        <div class="achievement-header">
+          <div class="medal-icon-wrapper">
+            <i data-lucide="${a.icon}"></i>
+          </div>
+          <div class="achievement-info">
+            <span class="achievement-name">${a.name}</span>
+            <span class="achievement-desc">${a.desc}</span>
+            <div class="achievement-stats-badge">
+              <i data-lucide="users" style="width:12px; height:12px;"></i>
+              ${userCount} users earned this
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+async function renderProfileAchievements() {
+  const grid = document.getElementById('profileAchievementsGrid');
+  if (!grid) return;
+
+  const achievements = await calculateUserAchievements(user?.id);
+
+  grid.innerHTML = achievements.map(a => `
+    <div class="achievement-card ${a.class} ${a.completed ? 'completed active' : 'locked'}">
+      <i data-lucide="check-circle" class="completed-check"></i>
+      <div class="achievement-header">
+        <div class="medal-icon-wrapper">
+          <i data-lucide="${a.icon}"></i>
+        </div>
+        <div class="achievement-info">
+          <span class="achievement-name">${a.name}</span>
+          <span class="achievement-desc">${a.desc}</span>
+        </div>
+      </div>
+      
+      <div class="achievement-progress-section">
+        <div class="progress-label-row">
+          <span>Progress</span>
+          <span>${a.current} / ${a.target}</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" style="width: ${a.progress}%"></div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+/**
+ * Helper to format date as "time ago"
+ */
+function timeAgo(date) {
+  const seconds = Math.floor((new Date() - date) / 1000);
+  let interval = seconds / 31536000;
+  if (interval > 1) return `${Math.floor(interval)} years ago`;
+  interval = seconds / 2592000;
+  if (interval > 1) return `${Math.floor(interval)} months ago`;
+  interval = seconds / 86400;
+  if (interval > 1) return `${Math.floor(interval)} days ago`;
+  interval = seconds / 3600;
+  if (interval > 1) return `${Math.floor(interval)} hours ago`;
+  interval = seconds / 60;
+  if (interval > 1) return `${Math.floor(interval)} min ago`;
+  return 'just now';
+}
+
+/**
+ * Fetches recent community milestones
+ */
+async function fetchRecentAchievementEvents() {
+  const events = [];
+  try {
+    // 1. Get New Members (Join events)
+    const { data: profiles } = await supabase.from('profiles').select('full_name, email, created_at').order('created_at', { ascending: false }).limit(5);
+    profiles?.forEach(p => {
+      events.push({
+        type: 'miembro',
+        name: p.full_name || p.email.split('@')[0],
+        date: new Date(p.created_at),
+        text: 'joined the community'
+      });
+    });
+
+    // 2. Get Milestones (5 and 10 ratings)
+    const { data: allRatings } = await supabase.from('user_ratings').select('user_id, created_at, profiles(full_name, email)').order('created_at', { ascending: true });
+    
+    const userRatings = {};
+    allRatings?.forEach(r => {
+      if (!userRatings[r.user_id]) userRatings[r.user_id] = [];
+      userRatings[r.user_id].push(r);
+      
+      const count = userRatings[r.user_id].length;
+      if (count === 5 || count === 10) {
+        events.push({
+          type: count === 5 ? 'feroz' : 'oro',
+          name: r.profiles?.full_name || r.profiles?.email?.split('@')[0] || 'A cinephile',
+          date: new Date(r.created_at),
+          text: `earned the <span class="event-medal-name">${count === 5 ? 'Fierce Critic' : 'Golden Cinephile'}</span> medal`
+        });
+      }
+    });
+
+    // Sort all by date desc and take top 5
+    return events.sort((a, b) => b.date - a.date).slice(0, 5);
+  } catch (e) {
+    console.error('Error fetching timeline events:', e);
+    return [];
+  }
+}
+
+async function renderAchievementTimeline() {
+  const body = document.getElementById('timelineBody');
+  if (!body) return;
+
+  const events = await fetchRecentAchievementEvents();
+  
+  if (events.length === 0) {
+    body.innerHTML = `<tr><td colspan="2" style="text-align:center; padding: 2rem; color: var(--text-secondary);">No recent activity yet.</td></tr>`;
+    return;
+  }
+
+  const icons = {
+    miembro: 'user-plus',
+    feroz: 'clapperboard',
+    oro: 'award',
+    trend: 'trending-up'
+  };
+
+  body.innerHTML = events.map(e => `
+    <tr class="timeline-row event-${e.type}">
+      <td>
+        <div class="event-user-cell">
+          <div class="event-icon-circle">
+            <i data-lucide="${icons[e.type] || 'star'}"></i>
+          </div>
+          <div class="event-text">
+            <span class="event-name">${e.name}</span> ${e.text}
+          </div>
+        </div>
+      </td>
+      <td class="event-meta">
+        ${timeAgo(e.date)}
+      </td>
+    </tr>
+  `).join('');
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// Intercept lifecycle to render achievements - REMOVED WRAPPING
+
+// Direct calls added to refreshData and loadUserActivity
 
 init();
 

@@ -78,6 +78,42 @@
             </button>
           </div>
         </section>
+        
+        <!-- GLOBAL ACHIEVEMENTS SHOWCASE -->
+        <section id="homeAchievements" class="home-achievements-section container">
+          <div class="section-title">
+            <h2>Community Achievements</h2>
+            <p style="color:var(--text-secondary); font-size: 0.9rem;">How much do you love cinema?</p>
+          </div>
+          <div id="homeAchievementsGrid" class="achievements-grid">
+            <!-- Legend and stats will be injected here -->
+          </div>
+        </section>
+
+        <!-- RECENT ACTIVITY TIMELINE -->
+        <section id="achievementTimeline" class="container" style="margin-bottom: 4rem;">
+          <div class="section-title">
+            <h2>Recent Community Milestones</h2>
+          </div>
+          <div class="timeline-section">
+            <table class="timeline-table">
+              <tbody id="timelineBody">
+                <!-- Feed items will be injected here -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- TOP VOTED SHOWCASE -->
+        <section id="topVotedShowcase" class="showcase-section container page-hidden">
+          <div class="section-title">
+            <h2>🏆 Most Wanted Movies</h2>
+            <p style="color:var(--text-secondary); font-size: 0.9rem;">The community speaks! These are the top contenders to be screened next.</p>
+          </div>
+          <div id="topVotedGrid" class="showcase-grid">
+            <!-- Top 3 cards injected here -->
+          </div>
+        </section>
 
         <section class="proposals container">
           <div class="section-title">
@@ -235,6 +271,17 @@
             </div>
           </div>
 
+          <!-- USER ACHIEVEMENTS PROGRESS -->
+          <div class="profile-activity" style="margin-top: 2rem;">
+            <div class="section-title">
+              <h2>My Trophies</h2>
+              <p style="color:var(--text-secondary); font-size: 0.9rem;">Keep engaging to unlock them all.</p>
+            </div>
+            <div id="profileAchievementsGrid" class="achievements-grid">
+              <!-- Progress cards will be injected here -->
+            </div>
+          </div>
+
           <div class="profile-activity">
             <div class="section-title">
               <h2>My Activity</h2>
@@ -268,6 +315,7 @@
                       <th>Email</th>
                       <th>Score</th>
                       <th>Joined</th>
+                      <th>Attendance</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
