@@ -340,6 +340,8 @@
                 <div class="admin-tabs" style="margin: 0;">
                   <button class="admin-tab-btn active" data-tab="users">Users</button>
                   <button class="admin-tab-btn" data-tab="sessions">Sessions</button>
+                  <button class="admin-tab-btn" data-tab="logs">Activity Log</button>
+                  <button class="admin-tab-btn" data-tab="settings">Settings</button>
                 </div>
                 <div style="flex-grow: 1;"></div>
                 <button class="admin-btn-action" onclick="window.cleanupInactiveMovies()" style="background: var(--warning); color: black; border: none; padding: 0.5rem 1rem; border-radius: 8px; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; cursor: pointer;" title="Move movies with no votes in 15 days to cemetery">
@@ -371,11 +373,14 @@
                   </table>
                 </div>
               </div>
+            </div>
 
-              <div class="admin-panel glass" style="margin-top: 2rem;">
+            <!-- ADMIN LOGS TAB -->
+            <div id="adminLogsTab" class="admin-tab-content page-hidden">
+              <div class="admin-panel glass">
                 <div class="panel-header">
-                  <h3>Participation Log</h3>
-                  <span class="status-badge">Recent Activity</span>
+                  <h3>Global Participation Log</h3>
+                  <span class="status-badge">Live Updates</span>
                 </div>
                 <div class="user-list-container">
                   <table class="user-table">
@@ -389,7 +394,7 @@
                       </tr>
                     </thead>
                     <tbody id="adminParticipationLog">
-                      <tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--text-secondary);">Loading activity log...</td></tr>
+                      <tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--text-secondary);">Loading activity log...</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -408,6 +413,33 @@
                 
                 <div id="adminSessionsList" class="admin-sessions-list">
                   <!-- Sessions with management tools injected here -->
+                </div>
+              </div>
+            </div>
+
+            <!-- ADMIN SETTINGS TAB -->
+            <div id="adminSettingsTab" class="admin-tab-content page-hidden">
+              <div class="admin-panel glass">
+                <div class="panel-header">
+                  <h3>Global Festival Settings</h3>
+                  <p>Control the rules of participation for all users.</p>
+                </div>
+                <div class="settings-grid" style="padding: 2rem; max-width: 600px;">
+                  <div class="input-group">
+                    <label><i data-lucide="layers"></i> Max Proposals per User</label>
+                    <input type="number" id="settingMaxProposals" min="1" max="100" />
+                    <small>Movies a user can have active at the same time.</small>
+                  </div>
+                  <div class="input-group" style="margin-top: 1.5rem;">
+                    <label><i data-lucide="heart"></i> Max Votes per User</label>
+                    <input type="number" id="settingMaxVotes" min="1" max="1000" />
+                    <small>Total "likes" a user can distribute among proposals.</small>
+                  </div>
+                  <div class="edit-actions" style="margin-top: 2rem;">
+                    <button class="save-profile-btn" onclick="window.saveAppSettings()">
+                      <i data-lucide="save"></i> Save System Settings
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

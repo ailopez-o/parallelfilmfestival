@@ -42,6 +42,59 @@ let providerMap = {}; // Map of provider ID to data (name, logo)
 let sessions = [];
 let currentSession = null;
 
+async function fetchAppSettings() {
+  try {
+    const { data, error } = await supabase.from('app_settings').select('*');
+    if (error) throw error;
+    
+    data?.forEach(setting => {
+      if (setting.key === 'max_proposals') MAX_PROPOSALS = parseInt(setting.value);
+      if (setting.key === 'max_votes') MAX_VOTES = parseInt(setting.value);
+    });
+  } catch (err) {
+    console.error('Error fetching app settings:', err);
+  }
+}
+
+function loadAppSettings() {
+  const maxPropInput = document.getElementById('settingMaxProposals');
+  const maxVoteInput = document.getElementById('settingMaxVotes');
+  if (maxPropInput) maxPropInput.value = MAX_PROPOSALS;
+  if (maxVoteInput) maxVoteInput.value = MAX_VOTES;
+}
+
+window.saveAppSettings = async () => {
+  if (!isAdmin) return;
+  const maxPropInput = document.getElementById('settingMaxProposals');
+  const maxVoteInput = document.getElementById('settingMaxVotes');
+  
+  const newValProp = maxPropInput.value;
+  const newValVote = maxVoteInput.value;
+
+  try {
+    showNotification('Updating system settings...', 'warning');
+    
+    await Promise.all([
+      supabase.from('app_settings').update({ value: newValProp.toString() }).eq('key', 'max_proposals'),
+      supabase.from('app_settings').update({ value: newValVote.toString() }).eq('key', 'max_votes')
+    ]);
+
+    // Update local state
+    MAX_PROPOSALS = parseInt(newValProp);
+    MAX_VOTES = parseInt(newValVote);
+
+    showNotification('System settings updated successfully!', 'success');
+    
+    // Refresh UI components that use these limits
+    updateAuthUI();
+    if (currentView === 'profile') loadUserActivity();
+
+  } catch (err) {
+    console.error('Error saving app settings:', err);
+    showNotification('Error updating settings', 'error');
+  }
+};
+
 /**
  * Normalizes strings for robust comparison:
  * - Trims whitespace
@@ -125,9 +178,9 @@ const editAvatar = document.getElementById('editAvatar');
 const FALLBACK_IMAGE = 'https://placehold.co/300x450/1a1a1f/94a3b8?text=Cinema+Poster';
 const TBD_POSTER = '/coming-soon.png';
 
-// Limits configuration
-const MAX_PROPOSALS = 3;
-const MAX_VOTES = 5;
+// Limits configuration (Dynamic from DB)
+let MAX_PROPOSALS = 3;
+let MAX_VOTES = 5;
 
 // Initialization
 async function init() {
@@ -144,6 +197,7 @@ async function init() {
     await Promise.all([
       fetchGenreMap(),
       fetchProvidersMap(),
+      fetchAppSettings(),
       checkUser()
     ]);
 
@@ -903,8 +957,8 @@ async function loadUserActivity() {
     
   const { data: votes } = await supabase.from('votes').select('movie_id, movies(*)').eq('user_id', user.id);
 
-  countProposals.textContent = proposals?.length || 0;
-  countVotes.textContent = votes?.length || 0;
+  countProposals.textContent = `${proposals?.length || 0} / ${MAX_PROPOSALS}`;
+  countVotes.textContent = `${votes?.length || 0} / ${MAX_VOTES}`;
 
   // Default view is proposals
   renderActivityGrid(proposals || []);
@@ -991,7 +1045,7 @@ async function fetchParticipationLog() {
 
     // Create a quick lookup map for profiles and movies
     const profileMap = {};
-    profilesRes.data.forEach(p => profileMap[p.id] = p);
+    (profilesRes.data || []).forEach(p => profileMap[p.id] = p);
 
     // We also need movie data for lookup
     const allMovies = [...proposedMovies, ...seenMovies];
@@ -1093,12 +1147,12 @@ async function fetchParticipationLog() {
 
 async function updateGlobalRanking() {
   try {
-    const [profilesRes, votesRes, moviesRes, ratingsRes, attendanceRes] = await Promise.all([
+    const [profilesRes, votesRes, moviesRes, ratingsRes, participationRes] = await Promise.all([
       supabase.from('profiles').select('*'),
       supabase.from('votes').select('user_id, movie_id, movies(is_seen)'),
       supabase.from('movies').select('proposed_by, is_dropped, is_seen'),
       supabase.from('user_ratings').select('user_id'),
-      supabase.from('session_attendance').select('user_id')
+      supabase.from('participation_log').select('user_id, action_type')
     ]);
     
     if (profilesRes.error) throw profilesRes.error;
@@ -1107,7 +1161,7 @@ async function updateGlobalRanking() {
     const votes = votesRes.data || [];
     const allMoviesList = moviesRes.data || [];
     const ratings = ratingsRes.data || [];
-    const attendance = attendanceRes.data || [];
+    const attendance = (participationRes.data || []).filter(p => p.action_type === 'attendance');
 
     // Calculate activity per user
     const userStats = {};
@@ -1149,18 +1203,17 @@ async function updateGlobalRanking() {
       if (userStats[a.user_id]) userStats[a.user_id].sessionsCount++;
     });
 
-    // Calculate Achievements for each user to get their achievement points
-    profiles.forEach(p => {
+    // Calculate Achievements for each user
+    (profiles || []).forEach(p => {
       const stats = userStats[p.id];
+      if (!stats) return;
+
       const earnedAchievements = ACHIEVEMENT_LIST.filter(def => {
-        // Simple condition mapping for ranking
         if (def.type === 'static') return true;
-        if (def.type === 'ratings') return stats.ratings >= def.target;
-        if (def.type === 'attendance') return stats.sessionsCount >= def.target;
-        if (def.type === 'visionary') return stats.seenProposals >= def.target;
-        // Streak and Trend are harder in global ranking, so we skip or simplify
-        if (def.type === 'streak') return stats.sessionsCount >= 3; 
-        if (def.type === 'trend') return false; // Needs vote ranking context
+        if (def.type === 'ratings') return (stats.ratings || 0) >= def.target;
+        if (def.type === 'attendance') return (stats.sessionsCount || 0) >= def.target;
+        if (def.type === 'visionary') return (stats.seenProposals || 0) >= def.target;
+        if (def.type === 'streak') return (stats.sessionsCount || 0) >= 3; 
         return false;
       });
       stats.achievementsCount = earnedAchievements.length;
@@ -1168,8 +1221,9 @@ async function updateGlobalRanking() {
     });
 
     // Final Score Calculation
-    profiles.forEach(p => {
+    (profiles || []).forEach(p => {
       const s = userStats[p.id];
+      if (!s) { p.score = 0; return; }
       p.score = (s.proposalsActive * 5) + 
                 (s.proposalsDropped * 1) + 
                 (s.votesNormal * 1) + 
@@ -1239,8 +1293,8 @@ async function fetchUserList() {
     // ranking is already updated by updateGlobalRanking() called in refreshData()
     const profiles = rankedUsers;
 
-    adminUserCount.textContent = `${profiles.length} Users`;
-    adminUserList.innerHTML = profiles.map(p => {
+    adminUserCount.textContent = `${profiles?.length || 0} Users`;
+    adminUserList.innerHTML = (profiles || []).map(p => {
       const name = p.full_name || p.email.split('@')[0];
       const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
       const date = p.created_at ? new Date(p.created_at).toLocaleDateString() : 'N/A';
@@ -1361,32 +1415,48 @@ window.markAttendance = async (userId, movieId) => {
 window.deleteUser = async (userId, userName) => {
   if (!isAdmin) return;
   
-  const confirmed = window.confirm(`⚠️ DANGER ZONE: Are you sure you want to delete user "${userName}"? \n\nThis will also remove all their movie proposals and votes. This action cannot be undone.`);
+  const confirmed = window.confirm(`⚠️ DANGER ZONE: Are you sure you want to delete user "${userName}"? \n\nThis will also remove all their movie proposals, votes and ratings. This action cannot be undone.`);
   if (!confirmed) return;
 
   try {
     showNotification(`Deleting user ${userName}...`, 'warning');
-
-    // 1. Delete user's votes
+    // 1. Delete user's votes (Standard table: votes)
+    console.log(' - Cleaning votes...');
     await supabase.from('votes').delete().eq('user_id', userId);
     
-    // 2. Delete user's movie proposals
-    await supabase.from('movies').delete().eq('proposed_by', userId);
+    // 2. Delete user's ratings (stars on seen movies)
+    console.log(' - Cleaning user_ratings...');
+    await supabase.from('user_ratings').delete().eq('user_id', userId);
+
+    // 3. Delete user's participation logs (points and attendance history)
+    console.log(' - Cleaning participation_log...');
+    await supabase.from('participation_log').delete().eq('user_id', userId);
     
-    // 3. Delete user's profile
+    // 5. Delete user's movie proposals
+    console.log(' - Cleaning movie proposals...');
+    const { error: e5 } = await supabase.from('movies').delete().eq('proposed_by', userId);
+    if (e5) console.error('Error cleaning movies:', e5);
+    
+    // 6. Finally, delete user's profile
+    console.log(' - Deleting profile record...');
     const { error: profileError } = await supabase.from('profiles').delete().eq('id', userId);
     
-    if (profileError) throw profileError;
+    if (profileError) {
+      console.error('CRITICAL: Error deleting profile:', profileError);
+      throw profileError;
+    }
 
-    showNotification(`User ${userName} has been removed.`, 'success');
+    console.log(`[Admin] User ${userName} successfully removed from the system.`);
+    showNotification(`User ${userName} and all their data have been removed.`, 'success');
     
-    // Refresh ranking and user list
+    // Refresh UI
     await updateGlobalRanking();
     await fetchUserList();
+    await fetchParticipationLog();
     await refreshData();
   } catch (err) {
     console.error('Error deleting user:', err);
-    showNotification('System error deleting user', 'error');
+    showNotification(`Error: ${err.message || 'System error deleting user'}`, 'error');
   }
 };
 
@@ -1403,7 +1473,7 @@ window.unmarkAsSeen = async (movieId) => {
 };
 
 function renderActivityGrid(movies) {
-  if (!movies.length) {
+  if (!movies || movies.length === 0) {
     profileActivityGrid.innerHTML = '<div class="empty-state">Nothing to show here yet.</div>';
     return;
   }
@@ -2042,6 +2112,9 @@ function setupEventListeners() {
       const tab = btn.dataset.tab;
       document.getElementById('adminUsersTab').classList.toggle('page-hidden', tab !== 'users');
       document.getElementById('adminSessionsTab').classList.toggle('page-hidden', tab !== 'sessions');
+      document.getElementById('adminLogsTab').classList.toggle('page-hidden', tab !== 'logs');
+      document.getElementById('adminSettingsTab').classList.toggle('page-hidden', tab !== 'settings');
+      if (tab === 'settings') loadAppSettings();
     };
   });
 
@@ -2369,10 +2442,17 @@ async function fetchRecentAchievementEvents() {
     // Fetch all necessary data to calculate achievements globally
     const [profiles, allRatings, allAttendance, allMovies] = await Promise.all([
       supabase.from('profiles').select('id, full_name, email, created_at').order('created_at', { ascending: false }).limit(20),
-      supabase.from('user_ratings').select('user_id, created_at').order('created_at', { ascending: true }),
-      supabase.from('session_attendance').select('user_id, created_at').order('created_at', { ascending: true }),
-      supabase.from('movies').select('proposed_by, is_seen, title, updated_at').eq('is_seen', true).order('updated_at', { ascending: true })
+      supabase.from('user_ratings').select('user_id, created_at, movie_id'),
+      supabase.from('participation_log').select('user_id, created_at, action_type'),
+      supabase.from('movies').select('proposed_by, is_seen, title, created_at')
     ]);
+
+    console.log('[Timeline] Supabase Data:', {
+      profiles: profiles.data?.length || 0,
+      ratings: allRatings.data?.length || 0,
+      logs: allAttendance.data?.length || 0,
+      movies: allMovies.data?.length || 0
+    });
 
     if (profiles.error) return;
 
@@ -2381,20 +2461,25 @@ async function fetchRecentAchievementEvents() {
       events.push({
         type: 'miembro',
         icon: 'user-check',
+        userId: p.id,
         name: p.full_name || p.email.split('@')[0],
         date: new Date(p.created_at),
         text: 'earned the <span class="event-medal-name">Festival Member</span> medal'
       });
     });
 
-    // 2. Ratings Milestones (Feroz, Oro)
+    // 2. Ratings Milestones (Unique movies only, sorted by date)
     const ratingStats = {};
-    allRatings.data?.forEach(r => {
-      if (!ratingStats[r.user_id]) ratingStats[r.user_id] = 0;
-      ratingStats[r.user_id]++;
+    const processedRatings = (allRatings.data || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    
+    processedRatings.forEach(r => {
+      if (!ratingStats[r.user_id]) ratingStats[r.user_id] = new Set();
+      ratingStats[r.user_id].add(r.movie_id);
       
-      if (ratingStats[r.user_id] === 5 || ratingStats[r.user_id] === 10) {
-        const isOro = ratingStats[r.user_id] === 10;
+      const count = ratingStats[r.user_id].size;
+      if (count === 5 || count === 10) {
+        const isOro = count === 10;
+        // Only add if not already added for this specific count (avoiding duplicates if logic runs twice)
         events.push({
           type: isOro ? 'oro' : 'feroz',
           icon: isOro ? 'award' : 'clapperboard',
@@ -2405,18 +2490,23 @@ async function fetchRecentAchievementEvents() {
       }
     });
 
-    // 3. Attendance Milestones (Grand Premiere, Regular, Legend)
+    // 3. Attendance Milestones (Sorted by date)
     const attendanceStats = {};
-    allAttendance.data?.forEach(a => {
+    const processedAttendance = (allAttendance.data || [])
+      .filter(a => a.action_type === 'attendance')
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+    processedAttendance.forEach(a => {
       if (!attendanceStats[a.user_id]) attendanceStats[a.user_id] = 0;
       attendanceStats[a.user_id]++;
 
-      if (attendanceStats[a.user_id] === 1 || attendanceStats[a.user_id] === 3 || attendanceStats[a.user_id] === 5) {
+      const count = attendanceStats[a.user_id];
+      if (count === 1 || count === 3 || count === 5) {
         let medal = '';
         let icon = '';
-        if (attendanceStats[a.user_id] === 1) { medal = 'Grand Premiere'; icon = 'ticket'; }
-        else if (attendanceStats[a.user_id] === 3) { medal = 'Festival Regular'; icon = 'calendar'; }
-        else if (attendanceStats[a.user_id] === 5) { medal = 'Cinema Legend'; icon = 'crown'; }
+        if (count === 1) { medal = 'Grand Premiere'; icon = 'ticket'; }
+        else if (count === 3) { medal = 'Festival Regular'; icon = 'calendar'; }
+        else if (count === 5) { medal = 'Cinema Legend'; icon = 'crown'; }
 
         events.push({
           type: 'asistencia',
@@ -2428,38 +2518,58 @@ async function fetchRecentAchievementEvents() {
       }
     });
 
-    // 4. Visionary Milestones
+    // 4. Visionary Milestones (ONLY for SEEN movies, sorted by when they were proposed)
     const visionaryStats = {};
-    allMovies.data?.forEach(m => {
+    const seenMoviesData = (allMovies.data || [])
+      .filter(m => m.is_seen)
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+    seenMoviesData.forEach(m => {
       if (!visionaryStats[m.proposed_by]) visionaryStats[m.proposed_by] = 0;
       visionaryStats[m.proposed_by]++;
 
-      if (visionaryStats[m.proposed_by] === 1 || visionaryStats[m.proposed_by] === 3) {
-        const isOracle = visionaryStats[m.proposed_by] === 3;
+      const count = visionaryStats[m.proposed_by];
+      if (count === 1 || count === 3) {
+        const isOracle = count === 3;
         events.push({
           type: 'visionary',
           icon: isOracle ? 'sparkles' : 'eye',
           userId: m.proposed_by,
-          date: new Date(m.updated_at),
+          date: new Date(m.created_at || Date.now()), // Ideally this would be 'seen_at', using created_at as proxy for now
           text: `earned the <span class="event-medal-name">${isOracle ? 'The Oracle' : 'The Visionary'}</span> medal`
         });
       }
     });
 
-    // Enrich names for non-profile events
+    // Enrich names and STRICT FILTER
     const eventUserIds = [...new Set(events.filter(e => e.userId).map(e => e.userId))];
-    if (eventUserIds.length > 0) {
-      const { data: eventProfiles } = await supabase.from('profiles').select('id, full_name, email').in('id', eventUserIds);
-      const nameMap = {};
-      eventProfiles?.forEach(p => nameMap[p.id] = p.full_name || p.email.split('@')[0]);
-      events.forEach(e => {
-        if (e.userId && !e.name) e.name = nameMap[e.userId] || 'A cinephile';
-      });
+    
+    // Get ALL active profile IDs to ensure we don't show ghosts
+    console.log(`[Timeline] Generated ${events.length} total raw events.`);
+    const { data: activeProfiles, error: profError } = await supabase.from('profiles').select('id, full_name, email');
+    
+    if (profError) {
+      console.error('[Timeline] Error fetching active profiles:', profError);
+      // Fallback: Use what we have without strict filtering if we can't verify
+      events.sort((a, b) => b.date - a.date);
+      renderAchievementTimeline(events.slice(0, 5));
+      return;
     }
 
-    // Sort all by date descending and take top 5
-    events.sort((a, b) => b.date - a.date);
-    renderAchievementTimeline(events.slice(0, 5));
+    const activeUserMap = {};
+    activeProfiles?.forEach(p => activeUserMap[p.id] = p.full_name || p.email.split('@')[0]);
+
+    // Final Filter: The user MUST exist in activeProfiles
+    const filteredEvents = events.filter(e => activeUserMap[e.userId]);
+    console.log(`[Timeline] ${filteredEvents.length} events survived the active user filter.`);
+
+    filteredEvents.forEach(e => {
+      if (e.userId) e.name = activeUserMap[e.userId] || e.name;
+    });
+
+    // Sort and render
+    filteredEvents.sort((a, b) => b.date - a.date);
+    renderAchievementTimeline(filteredEvents.slice(0, 5));
 
   } catch (err) {
     console.error('Error fetching achievement events:', err);
@@ -2468,34 +2578,61 @@ async function fetchRecentAchievementEvents() {
 
 async function renderAchievementTimeline(events) {
   const body = document.getElementById('timelineBody');
-  if (!body) return;
+  if (!body) {
+    console.error('[Timeline] Target element #timelineBody not found in DOM');
+    return;
+  }
+  
+  const safeEvents = events || [];
+  
+  // CRITICAL FIX: If we already have items and the new update is empty, 
+  // do NOT clear the UI. This prevents the "flash" of empty state.
+  if (safeEvents.length === 0 && body.children.length > 1) {
+    console.log('[Timeline] Ignoring empty update to preserve existing items.');
+    return;
+  }
 
-  if (events.length === 0) {
+  console.log(`[Timeline] Rendering ${safeEvents.length} items to #timelineBody:`, safeEvents);
+  
+  if (safeEvents.length === 0) {
     body.innerHTML = `<tr><td colspan="2" style="text-align:center; padding: 2rem; color: var(--text-secondary);">No recent activity yet.</td></tr>`;
     return;
   }
 
-  body.innerHTML = events.map(e => `
+  // Simplified and more robust HTML structure
+  const html = safeEvents.map(e => `
     <tr class="timeline-row event-${e.type}">
       <td>
         <div class="event-user-cell">
           <div class="event-icon-circle">
             <i data-lucide="${e.icon || 'star'}"></i>
           </div>
-          <div class="event-text">
-            <span class="event-name">${e.name}</span> ${e.text}
+          <div class="event-content">
+            <div class="event-message">
+              <span class="event-name">${e.name || 'User'}</span> ${e.text}
+            </div>
+            <div class="event-date">${timeAgo(e.date)}</div>
           </div>
         </div>
-      </td>
-      <td class="event-meta">
-        ${timeAgo(e.date)}
       </td>
     </tr>
   `).join('');
 
-  if (window.lucide) {
-    setTimeout(() => window.lucide.createIcons(), 100);
-  }
+  body.innerHTML = html;
+  console.log('[Timeline] HTML successfully injected into DOM.');
+
+  // More robust icon refresh
+  const refreshIcons = () => {
+    if (window.lucide) {
+      window.lucide.createIcons();
+      console.log('[Timeline] Lucide icons refreshed.');
+    } else {
+      console.warn('[Timeline] Lucide not found, retrying...');
+      setTimeout(refreshIcons, 200);
+    }
+  };
+  
+  setTimeout(refreshIcons, 100);
 }
 
 // Intercept lifecycle to render achievements - REMOVED WRAPPING
