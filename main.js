@@ -454,8 +454,31 @@ async function enrichMovieData(movies) {
 }
 
 // Routing
-window.navigateTo = (view) => {
-  window.location.hash = view;
+window.navigateTo = (viewId, targetUserId = null) => {
+  currentView = viewId;
+  
+  // Hide all views
+  Object.values(views).forEach(v => v.classList.add('page-hidden'));
+  adminDashboard.classList.add('page-hidden');
+
+  // If we are navigating to profile, check if it's our own or another user's (audit)
+  if (viewId === 'profile') {
+    loadUserActivity(targetUserId);
+  }
+
+  // Show target view
+  if (views[viewId]) {
+    views[viewId].classList.remove('page-hidden');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  updateActiveNavLink(viewId);
+};
+
+window.viewUserProfile = (userId) => {
+  if (!isAdmin) return;
+  console.log(`[Admin] Auditing user profile: ${userId}`);
+  window.navigateTo('profile', userId);
 };
 
 function handleRouting() {
@@ -929,33 +952,52 @@ window.handleLogout = async () => {
 };
 
 // Profile Logic
-async function loadUserActivity() {
-  if (!user) return;
+async function loadUserActivity(targetUserId = null) {
+  if (!user && !targetUserId) return;
   
-  // Fetch latest profile data from the DB
-  const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+  const isAudit = targetUserId && targetUserId !== user?.id;
+  const activeUid = targetUserId || user.id;
+
+  // Fetch target profile data from the DB
+  const { data: profile } = await supabase.from('profiles').select('*').eq('id', activeUid).single();
   
-  const displayName = profile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0];
+  const displayName = profile?.full_name || profile?.email?.split('@')[0] || 'User';
+  const displayEmail = profile?.email || 'N/A';
   
   // Generate high-end initial-based avatar
   const displayAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=5850ec&color=fff&size=256&bold=true`;
   
   profileName.textContent = displayName;
-  profileEmail.textContent = user.email;
+  profileEmail.textContent = displayEmail;
   profileAvatar.src = displayAvatar;
 
-  // Pre-fill edit form
-  editName.value = displayName;
-  const displayEmailInput = document.getElementById('displayEmail');
-  if (displayEmailInput) displayEmailInput.value = user.email;
+  // Show audit badge if viewing another user
+  const auditBadge = document.getElementById('auditBadge') || document.createElement('div');
+  if (isAudit) {
+    auditBadge.id = 'auditBadge';
+    auditBadge.className = 'audit-badge';
+    auditBadge.innerHTML = `<i data-lucide="shield-check"></i> Auditing User Profile <button onclick="window.navigateTo('profile')">Exit Audit</button>`;
+    profileName.parentElement.prepend(auditBadge);
+    document.getElementById('editProfileBtn')?.classList.add('page-hidden');
+  } else {
+    auditBadge.remove();
+    document.getElementById('editProfileBtn')?.classList.remove('page-hidden');
+  }
+
+  // Pre-fill edit form (only if it's our own profile)
+  if (!isAudit) {
+    editName.value = displayName;
+    const displayEmailInput = document.getElementById('displayEmail');
+    if (displayEmailInput) displayEmailInput.value = user.email;
+  }
 
   const { data: proposals } = await supabase
     .from('movies')
     .select('*')
-    .eq('proposed_by', user.id)
+    .eq('proposed_by', activeUid)
     .eq('is_dropped', false);
     
-  const { data: votes } = await supabase.from('votes').select('movie_id, movies(*)').eq('user_id', user.id);
+  const { data: votes } = await supabase.from('votes').select('movie_id, movies(*)').eq('user_id', activeUid);
 
   countProposals.textContent = `${proposals?.length || 0} / ${MAX_PROPOSALS}`;
   countVotes.textContent = `${votes?.length || 0} / ${MAX_VOTES}`;
@@ -969,7 +1011,7 @@ async function loadUserActivity() {
       document.querySelector('.activity-tab.active').classList.remove('active');
       tab.classList.add('active');
       const view = tab.dataset.view;
-      renderActivityGrid(view === 'myProposals' ? proposals : votes.map(v => v.movies));
+      renderActivityGrid(view === 'myProposals' ? (proposals || []) : (votes?.map(v => v.movies) || []));
     };
   });
 
@@ -1302,7 +1344,7 @@ async function fetchUserList() {
       const rankClass = p.rank <= 3 ? `top-${p.rank}` : '';
 
       return `
-        <tr>
+        <tr class="admin-user-row clickable" onclick="window.viewUserProfile('${p.id}')">
           <td>
             <div class="user-cell">
               <span class="user-rank ${rankClass}">#${p.rank}</span>
@@ -1315,18 +1357,23 @@ async function fetchUserList() {
           </td>
           <td><span class="user-email">${p.email}</span></td>
           <td>
-            <div class="score-badge" onclick="window.navigateTo('ranking')" title="View Global Ranking">
+            <div class="score-badge" title="View Global Ranking">
               <i data-lucide="award" style="width:12px; height:12px; margin-right:4px;"></i>
               ${p.score}
             </div>
           </td>
           <td><span class="user-date">${date}</span></td>
           <td>
-            ${p.id !== user?.id ? `
-              <button class="delete-user-btn" onclick="window.deleteUser('${p.id}', '${name}')" title="Delete User">
-                <i data-lucide="user-minus"></i>
+            <div class="user-actions-cell" onclick="event.stopPropagation()">
+              <button class="btn-icon view-btn" title="View Profile" onclick="window.viewUserProfile('${p.id}')">
+                <i data-lucide="eye"></i>
               </button>
-            ` : '<span style="color:var(--text-secondary); font-size:0.7rem; font-style:italic;">(You)</span>'}
+              ${p.id !== user?.id ? `
+                <button class="delete-user-btn" onclick="window.deleteUser('${p.id}', '${name}')" title="Delete User">
+                  <i data-lucide="user-minus"></i>
+                </button>
+              ` : '<span style="color:var(--text-secondary); font-size:0.7rem; font-style:italic;">(You)</span>'}
+            </div>
           </td>
         </tr>
       `;
