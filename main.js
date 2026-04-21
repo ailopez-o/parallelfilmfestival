@@ -2733,6 +2733,12 @@ function renderSessions() {
     const poster = session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER;
     const title = session.movie_id ? session.movies?.title : 'Film To Be Decided';
     
+    const isSignedUp = user && session.session_signups?.some(s => s.user_id === user.id);
+    const displayKey = session.keyword && session.keyword.trim() !== "" ? session.keyword : 'TBD';
+    const keywordDisplay = isSignedUp 
+      ? `<div class="session-keyword-unlocked"><i data-lucide="key"></i> ${displayKey}</div>`
+      : `<div class="session-keyword-locked"><i data-lucide="lock"></i> Register to see keyword</div>`;
+
     return `
       <div class="session-card" onclick="window.openSessionDetail('${session.id}')">
         <div class="session-card-poster">
@@ -2746,9 +2752,10 @@ function renderSessions() {
             ${renderAvatarStack(session.session_signups)}
           </div>
           <div class="session-card-title">${title}</div>
-          <p style="color:var(--text-secondary); font-size: 0.9rem; line-height: 1.4; margin-top: 0.5rem;">
+          <p style="color:var(--text-secondary); font-size: 0.85rem; line-height: 1.4; margin-top: 0.5rem; margin-bottom: 1rem;">
             ${session.description || 'Join us for this special screening!'}
           </p>
+          ${keywordDisplay}
         </div>
       </div>
     `;
@@ -2772,6 +2779,11 @@ function renderNextSessionHero() {
   const isSignedUp = user && upcoming.session_signups?.some(s => s.user_id === user.id);
   const signupCount = upcoming.session_signups?.length || 0;
 
+  const displayKey = upcoming.keyword && upcoming.keyword.trim() !== "" ? upcoming.keyword : 'TBD';
+  const keywordDisplay = isSignedUp 
+    ? `<div class="hero-keyword-unlocked"><i data-lucide="key"></i> Secret Code: <strong>${displayKey}</strong></div>`
+    : `<div class="hero-keyword-locked"><i data-lucide="lock"></i> Register to unlock secret code</div>`;
+
   nextSessionHero.classList.remove('page-hidden');
   nextSessionHero.innerHTML = `
     <img src="${poster}" class="next-session-poster" alt="${title}">
@@ -2786,7 +2798,10 @@ function renderNextSessionHero() {
         <span><i data-lucide="clock"></i> ${new Date(upcoming.session_date).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</span>
       </div>
       <p style="color:var(--text-secondary); margin-bottom: 1.5rem;">${upcoming.description || 'No description available.'}</p>
-      <button class="btn-signup-hero ${isSignedUp ? 'success' : ''}" onclick="window.signupForSession('${upcoming.id}')">
+      
+      ${keywordDisplay}
+
+      <button class="btn-signup-hero ${isSignedUp ? 'success' : ''}" onclick="window.signupForSession('${upcoming.id}')" style="margin-top: 1rem;">
         <i data-lucide="${isSignedUp ? 'user-check' : 'user-plus'}"></i> 
         ${isSignedUp ? 'Already Signed Up' : 'Sign Up Now'}
       </button>
@@ -3037,6 +3052,10 @@ window.handleCreateSession = async () => {
   const movieId = sessionMovieSelect.value;
   const date = document.getElementById('sessionDate').value;
   const desc = document.getElementById('sessionDescription').value;
+  const keywordInput = document.getElementById('sessionKeyword');
+  const keyword = keywordInput ? keywordInput.value.trim() : '';
+
+  console.log('[Admin] Creating session:', { date, keyword });
 
   if (!date) {
     showNotification('Date is required', 'error');
@@ -3047,6 +3066,7 @@ window.handleCreateSession = async () => {
     movie_id: movieId || null,
     session_date: new Date(date).toISOString(),
     description: desc,
+    keyword: keyword,
     is_upcoming: true
   }]);
 
@@ -3179,6 +3199,8 @@ window.showEditSessionModal = (sessionId) => {
   document.getElementById('sessionDate').value = localDate;
   
   document.getElementById('sessionDescription').value = session.description || '';
+  const kwInput = document.getElementById('sessionKeyword');
+  if (kwInput) kwInput.value = session.keyword || '';
   
   // Update button text
   const submitBtn = createSessionModal.querySelector('.submit-btn');
@@ -3192,6 +3214,7 @@ window.handleUpdateSession = async (sessionId) => {
   const movieId = sessionMovieSelect.value;
   const date = document.getElementById('sessionDate').value;
   const desc = document.getElementById('sessionDescription').value;
+  const keyword = document.getElementById('sessionKeyword').value.trim();
 
   if (!date) {
     showNotification('Date is required', 'error');
@@ -3201,7 +3224,8 @@ window.handleUpdateSession = async (sessionId) => {
   const { error } = await supabase.from('sessions').update({
     movie_id: movieId || null,
     session_date: new Date(date).toISOString(),
-    description: desc
+    description: desc,
+    keyword: keyword
   }).eq('id', sessionId);
 
   if (!error) {
