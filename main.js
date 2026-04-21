@@ -1918,10 +1918,22 @@ window.proposeMovie = async (tmdbMovie, el) => {
     return;
   }
 
-  // Check limits
-  const userProposals = proposedMovies.filter(m => m.proposed_by === user.id);
-  if (userProposals.length >= MAX_PROPOSALS && !isAdmin) {
-    showNotification(`Limit reached! You can only have ${MAX_PROPOSALS} active proposals.`, 'warning');
+  // Check limits with a fresh DB query to avoid race conditions
+  const { count, error: countError } = await supabase
+    .from('movies')
+    .select('*', { count: 'exact', head: true })
+    .eq('proposed_by', user.id)
+    .eq('is_seen', false)
+    .eq('is_dropped', false);
+
+  if (countError) {
+    console.error('Error checking proposal limits:', countError);
+  }
+
+  const currentCount = count !== null ? count : proposedMovies.filter(m => m.proposed_by === user.id).length;
+
+  if (currentCount >= MAX_PROPOSALS && !isAdmin) {
+    showNotification(`Proposal limit reached! You already have the maximum allowed (${MAX_PROPOSALS}). You must delete or wait for one of your current proposals to be screened to add more.`, 'warning');
     return;
   }
 
@@ -2033,7 +2045,7 @@ window.toggleVote = async (movieId) => {
     console.log(`[Vote] User Votes: ${userVotes.size} / ${MAX_VOTES} | Admin: ${isAdmin}`);
     
     if (userVotes.size >= MAX_VOTES && !isAdmin) {
-      showNotification(`Limit reached! You have already used your ${MAX_VOTES} votes.`, 'warning');
+      showNotification(`You've run out of votes! You have already used your ${MAX_VOTES} available votes. Remove a vote from another movie if you want to support this new proposal.`, 'warning');
       return;
     }
 
