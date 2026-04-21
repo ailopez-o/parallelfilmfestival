@@ -8,23 +8,36 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Edge Function Proxy Helper
 async function invokeTMDBCall(path, params = {}) {
-  const { data, error } = await supabase.functions.invoke('tmdb-proxy', {
-    body: { path, params }
-  });
+  // Helper for timeout
+  const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error('Request Timeout')), ms));
   
-  if (error) {
-    // If it's a non-2xx status, find the error message in the payload
-    const msg = error.message || "Unknown Proxy Error";
-    console.error(`[TMDB Proxy Error]: ${msg}`, error);
-    throw new Error(`TMDB Proxy Error: ${msg}`);
-  }
-  
-  if (data && data.error) {
-    console.error(`[TMDB Proxy Logic Error]: ${data.error}`, data.details);
-    throw new Error(data.error);
-  }
+  try {
+    // Race between the actual call and a 12-second timeout
+    const response = await Promise.race([
+      supabase.functions.invoke('tmdb-proxy', { body: { path, params } }),
+      timeout(12000)
+    ]);
 
-  return data;
+    const { data, error } = response;
+    
+    if (error) {
+      const msg = error.message || "Unknown Proxy Error";
+      console.error(`[TMDB Proxy Error]: ${msg}`, error);
+      throw new Error(`TMDB Proxy Error: ${msg}`);
+    }
+    
+    if (data && data.error) {
+      console.error(`[TMDB Proxy Logic Error]: ${data.error}`, data.details);
+      throw new Error(data.error);
+    }
+
+    return data;
+  } catch (e) {
+    if (e.message === 'Request Timeout') {
+      console.warn(`[TMDB Proxy] Timeout reached for ${path}`);
+    }
+    throw e;
+  }
 }
 
 // State
@@ -1663,37 +1676,53 @@ async function fetchExploreResults() {
       results = results.filter(m => normalize(m.title).includes(normalize(query)));
     }
 
-    // 3. Final Enrichment & Detail Fetching
+    // 3. Final Enrichment & Detail Fetching (More resilient batching)
     const finalResults = results.slice(0, limit);
-    const enriched = await Promise.all(finalResults.map(async movie => {
-      try {
-        const details = await invokeTMDBCall(`/movie/${movie.id}`, {
-          append_to_response: 'videos,watch/providers,credits'
-        });
-        
-        const directors = details.credits?.crew
-          ?.filter(p => p.job === 'Director')
-          .map(d => d.name) || [];
-        const movieGenres = details.genres?.map(g => g.name) || [];
-        const trailer = details.videos?.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube');
-        
-        return {
-          ...details,
-          director: directors.join(', ') || 'Unknown Director',
-          genres: movieGenres,
-          synopsis: details.overview,
-          trailer_url: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null,
-          watch_providers: details['watch/providers']?.results?.ES
-        };
-      } catch (e) {
-        return { ...movie, director: 'Unknown', genres: [], synopsis: movie.overview };
-      }
-    }));
+    const enriched = [];
+    
+    // Process in small chunks to avoid hanging the server
+    for (let i = 0; i < finalResults.length; i += 5) {
+      const chunk = finalResults.slice(i, i + 5);
+      const chunkResults = await Promise.all(chunk.map(async movie => {
+        try {
+          const details = await invokeTMDBCall(`/movie/${movie.id}`, {
+            append_to_response: 'videos,watch/providers,credits'
+          });
+          
+          const directors = details.credits?.crew
+            ?.filter(p => p.job === 'Director')
+            .map(d => d.name) || [];
+          const movieGenres = details.genres?.map(g => g.name) || [];
+          const trailer = details.videos?.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube');
+          
+          return {
+            ...movie,
+            ...details,
+            director: directors.join(', ') || 'Unknown Director',
+            genres: movieGenres,
+            synopsis: details.overview,
+            trailer_url: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null,
+            watch_providers: details['watch/providers']?.results?.ES
+          };
+        } catch (e) {
+          console.warn(`[Explore] Failed to enrich ${movie.title}, using basic data.`, e);
+          return { ...movie, director: 'Unknown', genres: [], synopsis: movie.overview };
+        }
+      }));
+      enriched.push(...chunkResults);
+      // Give the browser a tiny breath
+      await new Promise(r => setTimeout(r, 10));
+    }
 
     renderExploreResults(enriched);
   } catch (err) {
     console.error('Explore error:', err);
     exploreGrid.innerHTML = '<div class="empty-state">Discovery session failed. Try adjusting your filters.</div>';
+  } finally {
+    // If it's still showing the loader, clean it up
+    if (exploreGrid.innerHTML.includes('loading-state')) {
+      exploreGrid.innerHTML = '<div class="empty-state">Connection timeout. Please try again.</div>';
+    }
   }
 }
 
