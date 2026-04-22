@@ -2201,6 +2201,7 @@ function setupEventListeners() {
       document.getElementById('adminUsersTab').classList.toggle('page-hidden', tab !== 'users');
       document.getElementById('adminSessionsTab').classList.toggle('page-hidden', tab !== 'sessions');
       document.getElementById('adminLogsTab').classList.toggle('page-hidden', tab !== 'logs');
+      document.getElementById('adminAchievementsTab').classList.toggle('page-hidden', tab !== 'achievements');
       document.getElementById('adminSettingsTab').classList.toggle('page-hidden', tab !== 'settings');
       if (tab === 'settings') loadAppSettings();
     };
@@ -2252,16 +2253,7 @@ const ACHIEVEMENT_LIST = [
     class: 'medal-miembro',
     points: 5
   },
-  {
-    id: 'streak',
-    name: 'Cinema Streak',
-    desc: 'You have attended 3 sessions in a row!',
-    icon: 'zap',
-    target: 1,
-    type: 'streak',
-    class: 'medal-streak',
-    points: 20
-  },
+
   {
     id: 'debut',
     name: 'Grand Premiere',
@@ -2293,6 +2285,16 @@ const ACHIEVEMENT_LIST = [
     points: 25
   },
   {
+    id: 'first_critic',
+    name: 'First Critic',
+    desc: 'You have rated your first movie.',
+    icon: 'star',
+    target: 1,
+    type: 'ratings',
+    class: 'medal-feroz',
+    points: 5
+  },
+  {
     id: 'feroz',
     name: 'Fierce Critic',
     desc: 'You have rated 5 or more movies.',
@@ -2313,14 +2315,24 @@ const ACHIEVEMENT_LIST = [
     points: 15
   },
   {
-    id: 'trend',
-    name: 'Trendsetter',
-    desc: 'A movie proposed by you entered the Top 3 voted list.',
-    icon: 'trending-up',
-    target: 1,
-    type: 'trend',
-    class: 'medal-trend',
+    id: 'streak3',
+    name: 'Iron Streak (3x)',
+    desc: 'Attended 3 consecutive sessions without missing any.',
+    icon: 'flame',
+    target: 3,
+    type: 'streak',
+    class: 'medal-feroz',
     points: 10
+  },
+  {
+    id: 'streak5',
+    name: 'Infinite Streak (5x)',
+    desc: 'Attended 5 consecutive sessions without missing any.',
+    icon: 'zap',
+    target: 5,
+    type: 'streak',
+    class: 'medal-oro',
+    points: 20
   }
 ];
 
@@ -2336,12 +2348,6 @@ async function calculateUserAchievements(userId) {
       .from('user_ratings')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId);
-
-    const top3Movies = [...proposedMovies]
-      .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0))
-      .slice(0, 3);
-    
-    const hasTop3 = top3Movies.some(m => m.proposed_by === userId);
 
     // Fetch attendance from participation_log
     const { data: attendanceLogs } = await supabase
@@ -2360,12 +2366,24 @@ async function calculateUserAchievements(userId) {
       .eq('proposed_by', userId)
       .eq('is_seen', true);
 
-    // Streak Logic: Attended the last 3 "seen" movies
-    const last3Seen = [...seenMovies]
-      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-      .slice(0, 3);
+    // 4. Attendance Streak Logic: Find the longest sequence of attended sessions
+    const { data: allSessions } = await supabase
+      .from('sessions')
+      .select('id')
+      .order('session_date', { ascending: true });
     
-    const hasStreak = last3Seen.length >= 3 && last3Seen.every(m => attendedMovieIds.has(m.id));
+    let maxStreak = 0;
+    let currentStreak = 0;
+    if (allSessions) {
+      allSessions.forEach(s => {
+        if (attendedMovieIds.has(s.id)) {
+          currentStreak++;
+          if (currentStreak > maxStreak) maxStreak = currentStreak;
+        } else {
+          currentStreak = 0;
+        }
+      });
+    }
 
     return ACHIEVEMENT_LIST.map(achievement => {
       let current = 0;
@@ -2381,11 +2399,8 @@ async function calculateUserAchievements(userId) {
         current = attendanceCount;
         completed = current >= achievement.target;
       } else if (achievement.type === 'streak') {
-        current = hasStreak ? 1 : 0;
-        completed = hasStreak;
-      } else if (achievement.type === 'trend') {
-        current = hasTop3 ? 1 : 0;
-        completed = hasTop3;
+        current = maxStreak;
+        completed = current >= achievement.target;
       } else if (achievement.type === 'visionary') {
         current = seenCount || 0;
         completed = current >= achievement.target;
@@ -2528,18 +2543,20 @@ async function fetchRecentAchievementEvents() {
   const events = [];
   try {
     // Fetch all necessary data to calculate achievements globally
-    const [profiles, allRatings, allAttendance, allMovies] = await Promise.all([
+    const [profiles, allRatings, allAttendance, allMovies, allSessions] = await Promise.all([
       supabase.from('profiles').select('id, full_name, email, created_at').order('created_at', { ascending: false }).limit(20),
       supabase.from('user_ratings').select('user_id, created_at, movie_id'),
-      supabase.from('participation_log').select('user_id, created_at, action_type'),
-      supabase.from('movies').select('proposed_by, is_seen, title, created_at')
+      supabase.from('participation_log').select('user_id, created_at, action_type, movie_id'),
+      supabase.from('movies').select('proposed_by, is_seen, is_dropped, title, created_at, updated_at, vote_count'),
+      supabase.from('sessions').select('id, session_date').order('session_date', { ascending: true })
     ]);
 
     console.log('[Timeline] Supabase Data:', {
       profiles: profiles.data?.length || 0,
       ratings: allRatings.data?.length || 0,
       logs: allAttendance.data?.length || 0,
-      movies: allMovies.data?.length || 0
+      movies: allMovies.data?.length || 0,
+      sessions: allSessions.data?.length || 0
     });
 
     if (profiles.error) return;
@@ -2565,15 +2582,18 @@ async function fetchRecentAchievementEvents() {
       ratingStats[r.user_id].add(r.movie_id);
       
       const count = ratingStats[r.user_id].size;
-      if (count === 5 || count === 10) {
+      if (count === 1 || count === 5 || count === 10) {
         const isOro = count === 10;
-        // Only add if not already added for this specific count (avoiding duplicates if logic runs twice)
+        const isFirst = count === 1;
+        let icon = isOro ? 'award' : (isFirst ? 'star' : 'clapperboard');
+        let medal = isOro ? 'Golden Cinephile' : (isFirst ? 'First Critic' : 'Fierce Critic');
+        
         events.push({
           type: isOro ? 'oro' : 'feroz',
-          icon: isOro ? 'award' : 'clapperboard',
+          icon: icon,
           userId: r.user_id,
           date: new Date(r.created_at),
-          text: `earned the <span class="event-medal-name">${isOro ? 'Golden Cinephile' : 'Fierce Critic'}</span> medal`
+          text: `earned the <span class="event-medal-name">${medal}</span> medal`
         });
       }
     });
@@ -2606,7 +2626,43 @@ async function fetchRecentAchievementEvents() {
       }
     });
 
-    // 4. Visionary Milestones (ONLY for SEEN movies, sorted by when they were proposed)
+    // 4. Streak Milestones
+    const userAttendanceMap = {};
+    (allAttendance.data || []).forEach(log => {
+      if (log.action_type === 'attendance') {
+        if (!userAttendanceMap[log.user_id]) userAttendanceMap[log.user_id] = new Set();
+        userAttendanceMap[log.user_id].add(log.movie_id);
+      }
+    });
+
+    const sessions = allSessions.data || [];
+    const activeUserIds = (profiles.data || []).map(p => p.id);
+
+    activeUserIds.forEach(uId => {
+      let currentStreak = 0;
+      let maxStreak = 0;
+      let streakDates = {};
+
+      sessions.forEach(s => {
+        if (userAttendanceMap[uId]?.has(s.id)) {
+          currentStreak++;
+          if (currentStreak === 3 || currentStreak === 5) {
+            const streakName = currentStreak === 5 ? 'Infinite Streak (5x)' : 'Iron Streak (3x)';
+            events.push({
+              type: 'streak',
+              icon: currentStreak === 5 ? 'zap' : 'flame',
+              userId: uId,
+              date: new Date(s.session_date),
+              text: `earned the <span class="event-medal-name">${streakName}</span> medal`
+            });
+          }
+        } else {
+          currentStreak = 0;
+        }
+      });
+    });
+
+    // 5. Visionary Milestones (ONLY for SEEN movies, sorted by when they were proposed)
     const visionaryStats = {};
     const seenMoviesData = (allMovies.data || [])
       .filter(m => m.is_seen)
@@ -2623,7 +2679,7 @@ async function fetchRecentAchievementEvents() {
           type: 'visionary',
           icon: isOracle ? 'sparkles' : 'eye',
           userId: m.proposed_by,
-          date: new Date(m.created_at || Date.now()), // Ideally this would be 'seen_at', using created_at as proxy for now
+          date: new Date(m.created_at || Date.now()),
           text: `earned the <span class="event-medal-name">${isOracle ? 'The Oracle' : 'The Visionary'}</span> medal`
         });
       }
@@ -2657,7 +2713,39 @@ async function fetchRecentAchievementEvents() {
 
     // Sort and render
     filteredEvents.sort((a, b) => b.date - a.date);
+    
+    // Home Timeline (Top 5)
     renderAchievementTimeline(filteredEvents.slice(0, 5));
+
+    // Admin Audit List (Full history)
+    const adminList = document.getElementById('adminAchievementsList');
+    if (adminList) {
+      adminList.innerHTML = filteredEvents.map(e => {
+        const userName = activeUserMap[e.userId] || 'Unknown';
+        const medalName = e.text.match(/<span class="event-medal-name">(.*?)<\/span>/)?.[1] || 'Achievement';
+        return `
+          <tr>
+            <td>
+              <div style="display:flex; flex-direction:column;">
+                <span class="user-name">${userName}</span>
+                <span style="font-size:0.7rem; color:var(--text-secondary);">${e.userId}</span>
+              </div>
+            </td>
+            <td>
+              <div style="display:flex; align-items:center; gap:0.75rem;">
+                <div class="achievement-icon-small" style="background:var(--accent); color:white; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center;">
+                  <i data-lucide="${e.icon}"></i>
+                </div>
+                <span style="font-weight:600;">${medalName}</span>
+              </div>
+            </td>
+            <td>${e.date.toLocaleString()}</td>
+            <td><span class="score-badge">+10</span></td>
+          </tr>
+        `;
+      }).join('');
+      if (window.lucide) window.lucide.createIcons();
+    }
 
   } catch (err) {
     console.error('Error fetching achievement events:', err);

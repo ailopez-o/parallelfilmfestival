@@ -341,6 +341,7 @@
                   <button class="admin-tab-btn active" data-tab="users">Users</button>
                   <button class="admin-tab-btn" data-tab="sessions">Sessions</button>
                   <button class="admin-tab-btn" data-tab="logs">Activity Log</button>
+                  <button class="admin-tab-btn" data-tab="achievements">Achievements</button>
                   <button class="admin-tab-btn" data-tab="settings">Settings</button>
                 </div>
                 <div style="flex-grow: 1;"></div>
@@ -395,6 +396,31 @@
                     </thead>
                     <tbody id="adminParticipationLog">
                       <tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--text-secondary);">Loading activity log...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- ADMIN ACHIEVEMENTS TAB -->
+            <div id="adminAchievementsTab" class="admin-tab-content page-hidden">
+              <div class="admin-panel glass">
+                <div class="panel-header">
+                  <h3>Achievements Audit</h3>
+                  <span class="status-badge" style="background:var(--accent); color:white;">Global Milestones</span>
+                </div>
+                <div class="user-list-container">
+                  <table class="user-table">
+                    <thead>
+                      <tr>
+                        <th>User</th>
+                        <th>Medal / Achievement</th>
+                        <th>Date Earned</th>
+                        <th>Points</th>
+                      </tr>
+                    </thead>
+                    <tbody id="adminAchievementsList">
+                      <tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--text-secondary);">Calculating achievements...</td></tr>
                     </tbody>
                   </table>
                 </div>
