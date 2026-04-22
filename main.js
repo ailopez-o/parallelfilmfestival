@@ -11,6 +11,11 @@ import {
   renderAvatarStack
 } from './src/components/index.js';
 import { HomeView, ProfileView, AdminView, ExploreView, SessionsView } from './src/views/index.js';
+import { 
+  AuthService, MovieService, TMDBService, 
+  AchievementService, SessionService, AdminService 
+} from './src/api/index.js';
+import { ACHIEVEMENT_LIST } from './src/config/constants.js';
 
 // Configuration removed (now in src/config/supabase.js)
 
@@ -65,15 +70,11 @@ let currentSession = null;
 
 async function fetchAppSettings() {
   try {
-    const { data, error } = await supabase.from('app_settings').select('*');
-    if (error) throw error;
-    
-    data?.forEach(setting => {
-      if (setting.key === 'max_proposals') MAX_PROPOSALS = parseInt(setting.value);
-      if (setting.key === 'max_votes') MAX_VOTES = parseInt(setting.value);
-    });
+    const settings = await AdminService.fetchAppSettings();
+    if (settings.maxProposals) MAX_PROPOSALS = settings.maxProposals;
+    if (settings.maxVotes) MAX_VOTES = settings.maxVotes;
   } catch (err) {
-    console.error('Error fetching app settings:', err);
+    console.error('Error fetching settings:', err);
   }
 }
 
@@ -391,7 +392,7 @@ async function refreshData() {
   // Achievements rendering
   renderHomeAchievements();
   renderTopVotedShowcase();
-  renderAchievementTimeline();
+  fetchRecentAchievementEvents();
   if (currentView === 'profile') renderProfileAchievements();
 
   // Sessions rendering
@@ -481,6 +482,16 @@ window.navigateTo = (viewId, targetUserId = null) => {
 
   updateActiveNavLink(viewId);
 };
+
+function updateActiveNavLink(viewId) {
+  document.querySelectorAll('.nav-link-btn').forEach(btn => {
+    if (btn.getAttribute('onclick')?.includes(viewId)) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+}
 
 window.viewUserProfile = (userId) => {
   if (!isAdmin) return;
@@ -620,7 +631,7 @@ function updateAuthUI() {
       const red = '#ef4444';
       proposalsLabel.innerHTML = `
         <span style="color:${proposalsLeft > 0 ? green : red}">
-          ${proposalsLeft > 0 ? `Available Proposals: ${proposalsLeft} / 3` : 'Limit Reached: 3 / 3 Proposals Used'}
+          ${proposalsLeft > 0 ? `Available Proposals: ${proposalsLeft} / ${MAX_PROPOSALS}` : `Limit Reached: ${MAX_PROPOSALS} / ${MAX_PROPOSALS} Proposals Used`}
         </span>
       `;
     }
@@ -1086,8 +1097,15 @@ function renderRankingView() {
 }
 
 async function fetchUserList() {
-  AdminView.renderUserList(rankedUsers, adminUserList, adminUserCount, user);
-  if (window.lucide) window.lucide.createIcons();
+  try {
+    const profiles = await AdminService.fetchAllProfiles();
+    // Re-calculate ranks and scores locally for display consistency
+    // (This logic could eventually move to the store/state layer)
+    AdminView.renderUserList(rankedUsers, adminUserList, adminUserCount, user);
+    if (window.lucide) window.lucide.createIcons();
+  } catch (err) {
+    console.error('Error fetching user list:', err);
+  }
 }
 
 // Attendance Logic
@@ -1901,236 +1919,17 @@ function setupEventListeners() {
 }
 
 /* --- Achievements System Logic --- */
-const ACHIEVEMENT_LIST = [
-  {
-    id: 'oracle',
-    name: 'The Oracle',
-    desc: 'You have shaped the festival: 3 of your proposals have been screened!',
-    icon: 'sparkles',
-    target: 3,
-    type: 'visionary',
-    class: 'medal-oracle',
-    points: 50
-  },
-  {
-    id: 'visionary',
-    name: 'The Visionary',
-    desc: 'One of your proposed movies has been screened!',
-    icon: 'eye',
-    target: 1,
-    type: 'visionary',
-    class: 'medal-visionary',
-    points: 20
-  },
-  {
-    id: 'miembro',
-    name: 'Festival Member',
-    desc: 'You have joined our cinephile community.',
-    icon: 'user-check',
-    target: 1,
-    type: 'static',
-    class: 'medal-miembro',
-    points: 5
-  },
 
-  {
-    id: 'debut',
-    name: 'Grand Premiere',
-    desc: 'You attended your first physical session.',
-    icon: 'ticket',
-    target: 1,
-    type: 'attendance',
-    class: 'medal-attendance',
-    points: 10
-  },
-  {
-    id: 'regular',
-    name: 'Festival Regular',
-    desc: 'You have attended 3 physical sessions.',
-    icon: 'calendar',
-    target: 3,
-    type: 'attendance',
-    class: 'medal-attendance',
-    points: 15
-  },
-  {
-    id: 'legend',
-    name: 'Cinema Legend',
-    desc: 'You have attended 5 physical sessions.',
-    icon: 'crown',
-    target: 5,
-    type: 'attendance',
-    class: 'medal-attendance',
-    points: 25
-  },
-  {
-    id: 'first_critic',
-    name: 'First Critic',
-    desc: 'You have rated your first movie.',
-    icon: 'star',
-    target: 1,
-    type: 'ratings',
-    class: 'medal-feroz',
-    points: 5
-  },
-  {
-    id: 'feroz',
-    name: 'Fierce Critic',
-    desc: 'You have rated 5 or more movies.',
-    icon: 'clapperboard',
-    target: 5,
-    type: 'ratings',
-    class: 'medal-feroz',
-    points: 10
-  },
-  {
-    id: 'oro',
-    name: 'Golden Cinephile',
-    desc: 'You have rated 10 or more movies.',
-    icon: 'award',
-    target: 10,
-    type: 'ratings',
-    class: 'medal-oro',
-    points: 15
-  },
-  {
-    id: 'streak3',
-    name: 'Iron Streak (3x)',
-    desc: 'Attended 3 consecutive sessions without missing any.',
-    icon: 'flame',
-    target: 3,
-    type: 'streak',
-    class: 'medal-feroz',
-    points: 10
-  },
-  {
-    id: 'streak5',
-    name: 'Infinite Streak (5x)',
-    desc: 'Attended 5 consecutive sessions without missing any.',
-    icon: 'zap',
-    target: 5,
-    type: 'streak',
-    class: 'medal-oro',
-    points: 20
-  }
-];
 
 /**
  * Calculates achievement progress for a specific user.
  */
 async function calculateUserAchievements(userId) {
-  // Return all medals with 0 progress if no user
-  if (!userId) return ACHIEVEMENT_LIST.map(a => ({ ...a, progress: 0, current: 0, completed: false }));
-
-  try {
-    const { count: ratingsCount } = await supabase
-      .from('user_ratings')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId);
-
-    // Fetch attendance from participation_log
-    const { data: attendanceLogs } = await supabase
-      .from('participation_log')
-      .select('movie_id')
-      .eq('user_id', userId)
-      .eq('action_type', 'attendance');
-    
-    const attendanceCount = attendanceLogs?.length || 0;
-    const attendedMovieIds = new Set(attendanceLogs?.map(l => l.movie_id) || []);
-
-    // Visionary Logic: One of your proposals is marked as seen
-    const { count: seenCount } = await supabase
-      .from('movies')
-      .select('*', { count: 'exact', head: true })
-      .eq('proposed_by', userId)
-      .eq('is_seen', true);
-
-    // 4. Attendance Streak Logic: Find the longest sequence of attended sessions
-    const { data: allSessions } = await supabase
-      .from('sessions')
-      .select('id')
-      .order('session_date', { ascending: true });
-    
-    let maxStreak = 0;
-    let currentStreak = 0;
-    if (allSessions) {
-      allSessions.forEach(s => {
-        if (attendedMovieIds.has(s.id)) {
-          currentStreak++;
-          if (currentStreak > maxStreak) maxStreak = currentStreak;
-        } else {
-          currentStreak = 0;
-        }
-      });
-    }
-
-    return ACHIEVEMENT_LIST.map(achievement => {
-      let current = 0;
-      let completed = false;
-
-      if (achievement.type === 'static') {
-        current = 1;
-        completed = true;
-      } else if (achievement.type === 'ratings') {
-        current = ratingsCount || 0;
-        completed = current >= achievement.target;
-      } else if (achievement.type === 'attendance') {
-        current = attendanceCount;
-        completed = current >= achievement.target;
-      } else if (achievement.type === 'streak') {
-        current = maxStreak;
-        completed = current >= achievement.target;
-      } else if (achievement.type === 'visionary') {
-        current = seenCount || 0;
-        completed = current >= achievement.target;
-      }
-
-      const progress = Math.min(100, (current / achievement.target) * 100);
-      if (completed) current = achievement.target;
-
-      return { ...achievement, current, completed, progress };
-    });
-  } catch (e) {
-    console.error('Error calculating achievements:', e);
-    return ACHIEVEMENT_LIST.map(a => ({ ...a, progress: 0, current: 0, completed: false }));
-  }
+  return AchievementService.calculateUserAchievements(userId || user?.id, sessions);
 }
 
 async function calculateGlobalAchievementStats() {
-  const stats = { miembro: 0, feroz: 0, oro: 0, trend: 0, streak: 0, debut: 0, regular: 0, legend: 0 };
-  try {
-    // Count total unique profiles for 'miembro'
-    const { data: profiles } = await supabase.from('profiles').select('id');
-    stats.miembro = profiles?.length || 0;
-
-    const { data: allRatings } = await supabase.from('user_ratings').select('user_id');
-    const ratingsMap = {};
-    allRatings?.forEach(r => { ratingsMap[r.user_id] = (ratingsMap[r.user_id] || 0) + 1; });
-
-    Object.values(ratingsMap).forEach(count => {
-      if (count >= 5) stats.feroz++;
-      if (count >= 10) stats.oro++;
-    });
-
-    const top3Movies = [...proposedMovies].sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0)).slice(0, 3);
-    const trendsetters = new Set(top3Movies.map(m => m.proposed_by));
-    stats.trend = trendsetters.size;
-
-    // Attendance stats
-    const { data: allAttendance } = await supabase.from('participation_log').select('user_id').eq('action_type', 'attendance');
-    const attMap = {};
-    allAttendance?.forEach(a => { attMap[a.user_id] = (attMap[a.user_id] || 0) + 1; });
-
-    Object.values(attMap).forEach(count => {
-      if (count >= 1) stats.debut++;
-      if (count >= 3) stats.regular++;
-      if (count >= 5) stats.legend++;
-    });
-
-  } catch (e) {
-    console.error('Error calculating global stats:', e);
-  }
-  return stats;
+  return AchievementService.calculateGlobalStats(proposedMovies);
 }
 
 async function renderHomeAchievements() {
@@ -2153,190 +1952,26 @@ async function renderProfileAchievements(userId) {
  * Fetches recent achievement events
  */
 async function fetchRecentAchievementEvents() {
-  const events = [];
   try {
-    // Fetch all necessary data to calculate achievements globally
-    const [profiles, allRatings, allAttendance, allMovies, allSessions] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, email, created_at').order('created_at', { ascending: false }).limit(20),
-      supabase.from('user_ratings').select('user_id, created_at, movie_id'),
-      supabase.from('participation_log').select('user_id, created_at, action_type, movie_id'),
-      supabase.from('movies').select('proposed_by, is_seen, is_dropped, title, created_at, updated_at, vote_count'),
-      supabase.from('sessions').select('id, session_date').order('session_date', { ascending: true })
-    ]);
-
-    console.log('[Timeline] Supabase Data:', {
-      profiles: profiles.data?.length || 0,
-      ratings: allRatings.data?.length || 0,
-      logs: allAttendance.data?.length || 0,
-      movies: allMovies.data?.length || 0,
-      sessions: allSessions.data?.length || 0
-    });
-
-    if (profiles.error) return;
-
-    // 1. Join Events (Festival Member)
-    profiles.data?.forEach(p => {
-      events.push({
-        type: 'miembro',
-        icon: 'user-check',
-        userId: p.id,
-        name: p.full_name || p.email.split('@')[0],
-        date: new Date(p.created_at),
-        text: 'earned the <span class="event-medal-name">Festival Member</span> medal'
-      });
-    });
-
-    // 2. Ratings Milestones (Unique movies only, sorted by date)
-    const ratingStats = {};
-    const processedRatings = (allRatings.data || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    const events = await AchievementService.fetchRecentEvents();
     
-    processedRatings.forEach(r => {
-      if (!ratingStats[r.user_id]) ratingStats[r.user_id] = new Set();
-      ratingStats[r.user_id].add(r.movie_id);
-      
-      const count = ratingStats[r.user_id].size;
-      if (count === 1 || count === 5 || count === 10) {
-        const isOro = count === 10;
-        const isFirst = count === 1;
-        let icon = isOro ? 'award' : (isFirst ? 'star' : 'clapperboard');
-        let medal = isOro ? 'Golden Cinephile' : (isFirst ? 'First Critic' : 'Fierce Critic');
-        
-        events.push({
-          type: isOro ? 'oro' : 'feroz',
-          icon: icon,
-          userId: r.user_id,
-          date: new Date(r.created_at),
-          text: `earned the <span class="event-medal-name">${medal}</span> medal`
-        });
-      }
-    });
-
-    // 3. Attendance Milestones (Sorted by date)
-    const attendanceStats = {};
-    const processedAttendance = (allAttendance.data || [])
-      .filter(a => a.action_type === 'attendance')
-      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-
-    processedAttendance.forEach(a => {
-      if (!attendanceStats[a.user_id]) attendanceStats[a.user_id] = 0;
-      attendanceStats[a.user_id]++;
-
-      const count = attendanceStats[a.user_id];
-      if (count === 1 || count === 3 || count === 5) {
-        let medal = '';
-        let icon = '';
-        if (count === 1) { medal = 'Grand Premiere'; icon = 'ticket'; }
-        else if (count === 3) { medal = 'Festival Regular'; icon = 'calendar'; }
-        else if (count === 5) { medal = 'Cinema Legend'; icon = 'crown'; }
-
-        events.push({
-          type: 'asistencia',
-          icon: icon,
-          userId: a.user_id,
-          date: new Date(a.created_at),
-          text: `earned the <span class="event-medal-name">${medal}</span> medal`
-        });
-      }
-    });
-
-    // 4. Streak Milestones
-    const userAttendanceMap = {};
-    (allAttendance.data || []).forEach(log => {
-      if (log.action_type === 'attendance') {
-        if (!userAttendanceMap[log.user_id]) userAttendanceMap[log.user_id] = new Set();
-        userAttendanceMap[log.user_id].add(log.movie_id);
-      }
-    });
-
-    const sessions = allSessions.data || [];
-    const activeUserIds = (profiles.data || []).map(p => p.id);
-
-    activeUserIds.forEach(uId => {
-      let currentStreak = 0;
-      let maxStreak = 0;
-      let streakDates = {};
-
-      sessions.forEach(s => {
-        if (userAttendanceMap[uId]?.has(s.id)) {
-          currentStreak++;
-          if (currentStreak === 3 || currentStreak === 5) {
-            const streakName = currentStreak === 5 ? 'Infinite Streak (5x)' : 'Iron Streak (3x)';
-            events.push({
-              type: 'streak',
-              icon: currentStreak === 5 ? 'zap' : 'flame',
-              userId: uId,
-              date: new Date(s.session_date),
-              text: `earned the <span class="event-medal-name">${streakName}</span> medal`
-            });
-          }
-        } else {
-          currentStreak = 0;
-        }
-      });
-    });
-
-    // 5. Visionary Milestones (ONLY for SEEN movies, sorted by when they were proposed)
-    const visionaryStats = {};
-    const seenMoviesData = (allMovies.data || [])
-      .filter(m => m.is_seen)
-      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-
-    seenMoviesData.forEach(m => {
-      if (!visionaryStats[m.proposed_by]) visionaryStats[m.proposed_by] = 0;
-      visionaryStats[m.proposed_by]++;
-
-      const count = visionaryStats[m.proposed_by];
-      if (count === 1 || count === 3) {
-        const isOracle = count === 3;
-        events.push({
-          type: 'visionary',
-          icon: isOracle ? 'sparkles' : 'eye',
-          userId: m.proposed_by,
-          date: new Date(m.created_at || Date.now()),
-          text: `earned the <span class="event-medal-name">${isOracle ? 'The Oracle' : 'The Visionary'}</span> medal`
-        });
-      }
-    });
-
-    // Enrich names and STRICT FILTER
-    const eventUserIds = [...new Set(events.filter(e => e.userId).map(e => e.userId))];
-    
-    // Get ALL active profile IDs to ensure we don't show ghosts
-    console.log(`[Timeline] Generated ${events.length} total raw events.`);
-    const { data: activeProfiles, error: profError } = await supabase.from('profiles').select('id, full_name, email');
-    
-    if (profError) {
-      console.error('[Timeline] Error fetching active profiles:', profError);
-      // Fallback: Use what we have without strict filtering if we can't verify
-      events.sort((a, b) => b.date - a.date);
-      renderAchievementTimeline(events.slice(0, 5));
-      return;
-    }
-
-    const activeUserMap = {};
-    activeProfiles?.forEach(p => activeUserMap[p.id] = p.full_name || p.email.split('@')[0]);
-
-    // Final Filter: The user MUST exist in activeProfiles
-    const filteredEvents = events.filter(e => activeUserMap[e.userId]);
-    console.log(`[Timeline] ${filteredEvents.length} events survived the active user filter.`);
-
-    filteredEvents.forEach(e => {
-      if (e.userId) e.name = activeUserMap[e.userId] || e.name;
-    });
-
     // Sort and render
-    filteredEvents.sort((a, b) => b.date - a.date);
+    events.sort((a, b) => b.date - a.date);
     
     // Home Timeline (Top 5)
-    renderAchievementTimeline(filteredEvents.slice(0, 5));
+    renderAchievementTimeline(events.slice(0, 5));
 
     // Admin Audit List (Full history)
     const adminList = document.getElementById('adminAchievementsList');
     if (adminList) {
-      AdminView.renderAchievementsAudit(filteredEvents, adminList, activeUserMap);
+      // Need a map for admin view if it expects one
+      const { data: activeProfiles } = await supabase.from('profiles').select('id, full_name, email');
+      const activeUserMap = {};
+      activeProfiles?.forEach(p => activeUserMap[p.id] = p.full_name || p.email.split('@')[0]);
+      
+      AdminView.renderAchievementsAudit(events, adminList, activeUserMap);
       if (window.lucide) window.lucide.createIcons();
     }
-
   } catch (err) {
     console.error('Error fetching achievement events:', err);
   }
@@ -2351,13 +1986,10 @@ async function renderAchievementTimeline(events) {
 /* --- Session System Logic --- */
 
 async function fetchSessions() {
-  const { data, error } = await supabase
-    .from('sessions')
-    .select('*, movies(*), session_signups(user_id, profiles(full_name))')
-    .order('session_date', { ascending: false });
-
-  if (!error) {
-    sessions = data || [];
+  try {
+    sessions = await SessionService.fetchAll();
+  } catch (err) {
+    console.error('Error fetching sessions:', err);
   }
 }
 
@@ -2383,21 +2015,13 @@ window.viewSessionDetails = async (sessionId) => {
   sessionModal.classList.remove('page-hidden');
   document.body.style.overflow = 'hidden';
 
-  const [comments, photos, signups, attendance] = await Promise.all([
-    supabase.from('session_comments').select('*, profiles(full_name)').eq('session_id', sessionId).order('created_at', { ascending: false }),
-    supabase.from('session_photos').select('*, profiles(full_name)').eq('session_id', sessionId).order('created_at', { ascending: false }),
-    supabase.from('session_signups').select('*, profiles(full_name, id)').eq('session_id', sessionId),
-    supabase.from('session_attendance').select('*, profiles(full_name, id)').eq('session_id', sessionId)
-  ]);
-
-  sessionModalBody.innerHTML = SessionsView.renderDetail(session, {
-    comments: comments.data || [],
-    photos: photos.data || [],
-    signups: signups.data || [],
-    attendance: attendance.data || []
-  }, { user, isAdmin });
-  
-  if (window.lucide) window.lucide.createIcons();
+  try {
+    const details = await SessionService.fetchDetails(sessionId);
+    sessionModalBody.innerHTML = SessionsView.renderDetail(session, details, { user, isAdmin });
+    if (window.lucide) window.lucide.createIcons();
+  } catch (err) {
+    console.error('Error fetching session details:', err);
+  }
 };
 
 
@@ -2431,60 +2055,49 @@ window.switchSessionTab = async (tab) => {
 
 window.signupForSession = async (sessionId) => {
   if (!user) {
-    window.navigateTo('auth');
+    showNotification('Please log in to sign up!', 'error');
     return;
   }
 
-  const { data: existing } = await supabase.from('session_signups').select('*').match({ session_id: sessionId, user_id: user.id }).single();
-
-  if (existing) {
-    await supabase.from('session_signups').delete().match({ session_id: sessionId, user_id: user.id });
-    showNotification('Sign up cancelled', 'warning');
-  } else {
-    await supabase.from('session_signups').insert([{ session_id: sessionId, user_id: user.id }]);
-    showNotification('Signed up for the session!', 'success');
+  try {
+    const res = await SessionService.toggleSignup(sessionId, user.id);
+    showNotification(res.action === 'added' ? 'You are now signed up!' : 'Signup removed.');
+    
+    // Refresh
+    await fetchSessions();
+    renderSessions();
+    if (currentSession?.id === sessionId) window.viewSessionDetails(sessionId);
+  } catch (err) {
+    console.error('Error signing up:', err);
+    showNotification('Action failed.', 'error');
   }
-  refreshData();
 };
 
 window.addSessionComment = async () => {
-  if (!user) {
-    showNotification('Please log in to comment', 'warning');
-    return;
-  }
-
   const input = document.getElementById('sessionCommentInput');
-  const text = input.value.trim();
-  if (!text) return;
+  const content = input?.value.trim();
+  if (!content || !user || !currentSession) return;
 
-  const { error } = await supabase.from('session_comments').insert([{
-    session_id: currentSession.id,
-    user_id: user.id,
-    content: text
-  }]);
-
-  if (!error) {
-    showNotification('Comment posted!');
-    input.value = ''; // Clear input
+  try {
+    await SessionService.addComment(currentSession.id, user.id, content);
+    input.value = '';
+    showNotification('Comment added!');
     window.switchSessionTab('comments');
-  } else {
-    showNotification('Error posting comment', 'error');
+  } catch (err) {
+    console.error('Error adding comment:', err);
   }
 };
 
 window.addSessionPhoto = async () => {
   const url = window.prompt("Enter photo URL (implementing full upload in Supabase Storage requires more setup, so for now we use URLs):");
-  if (!url) return;
+  if (!url || !user || !currentSession) return;
 
-  const { error } = await supabase.from('session_photos').insert([{
-    session_id: currentSession.id,
-    user_id: user.id,
-    photo_url: url
-  }]);
-
-  if (!error) {
+  try {
+    await SessionService.addPhoto(currentSession.id, user.id, url);
     showNotification('Photo added to gallery!');
     window.switchSessionTab('photos');
+  } catch (err) {
+    console.error('Error adding photo:', err);
   }
 };
 

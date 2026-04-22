@@ -9,54 +9,51 @@ import { TMDB_PROXY_TIMEOUT } from '../config/constants.js';
  * @param {Object} params - Query parameters for the request.
  * @returns {Promise<Object>} The data returned from TMDB.
  */
-export async function invokeTMDBCall(path, params = {}) {
-  const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error('Request Timeout')), ms));
-  
-  try {
-    const response = await Promise.race([
-      supabase.functions.invoke('tmdb-proxy', { body: { path, params } }),
-      timeout(TMDB_PROXY_TIMEOUT)
-    ]);
-
-    const { data, error } = response;
+export const TMDBService = {
+  async invokeTMDBCall(path, params = {}) {
+    const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error('Request Timeout')), ms));
     
-    if (error) {
-      const msg = error.message || "Unknown Proxy Error";
-      console.error(`[TMDB Proxy Error]: ${msg}`, error);
-      throw new Error(`TMDB Proxy Error: ${msg}`);
+    try {
+      const response = await Promise.race([
+        supabase.functions.invoke('tmdb-proxy', { body: { path, params } }),
+        timeout(TMDB_PROXY_TIMEOUT)
+      ]);
+
+      const { data, error } = response;
+      
+      if (error) {
+        const msg = error.message || "Unknown Proxy Error";
+        console.error(`[TMDB Proxy Error]: ${msg}`, error);
+        throw new Error(`TMDB Proxy Error: ${msg}`);
+      }
+      
+      if (data && data.error) {
+        console.error(`[TMDB Proxy Logic Error]: ${data.error}`, data.details);
+        throw new Error(data.error);
+      }
+
+      return data;
+    } catch (e) {
+      if (e.message === 'Request Timeout') {
+        console.warn(`[TMDB Proxy] Timeout reached for ${path}`);
+      }
+      throw e;
     }
+  },
+
+  async searchTMDB(query) {
+    if (!query || query.length < 2) return [];
     
-    if (data && data.error) {
-      console.error(`[TMDB Proxy Logic Error]: ${data.error}`, data.details);
-      throw new Error(data.error);
+    try {
+      const data = await this.invokeTMDBCall('/search/movie', { 
+        query, 
+        include_adult: 'false' 
+      });
+      return data.results || [];
+    } catch (err) {
+      console.error('TMDB Search error:', err);
+      throw err;
     }
-
-    return data;
-  } catch (e) {
-    if (e.message === 'Request Timeout') {
-      console.warn(`[TMDB Proxy] Timeout reached for ${path}`);
-    }
-    throw e;
   }
-}
+};
 
-/**
- * Searches for movies on TMDB.
- * 
- * @param {string} query - The search query.
- * @returns {Promise<Array>} List of movies found.
- */
-export async function searchTMDB(query) {
-  if (!query || query.length < 2) return [];
-  
-  try {
-    const data = await invokeTMDBCall('/search/movie', { 
-      query, 
-      include_adult: 'false' 
-    });
-    return data.results || [];
-  } catch (err) {
-    console.error('TMDB Search error:', err);
-    throw err;
-  }
-}
