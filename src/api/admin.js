@@ -91,7 +91,7 @@ export const AdminService = {
     
     const { data: moviesToClean, error: fetchErr } = await supabase
       .from('movies')
-      .select('id, title, created_at, vote_count, is_dropped, is_seen')
+      .select('id, title, created_at, is_dropped, is_seen')
       .eq('is_dropped', false)
       .eq('is_seen', false);
       
