@@ -96,12 +96,9 @@ window.saveAppSettings = async () => {
   try {
     showNotification('Updating system settings...', 'warning');
     
-    await Promise.all([
-      supabase.from('app_settings').update({ value: newValProp.toString() }).eq('key', 'max_proposals'),
-      supabase.from('app_settings').update({ value: newValVote.toString() }).eq('key', 'max_votes')
-    ]);
+    await AdminService.updateAppSettings(newValProp, newValVote);
 
-    // Update local state
+    // Update local config
     MAX_PROPOSALS = parseInt(newValProp);
     MAX_VOTES = parseInt(newValVote);
 
@@ -449,7 +446,8 @@ async function enrichMovieData(movies) {
       
       if (Object.keys(updates).length > 0) {
         console.log(`[Enrichment] Data updated for ${movie.title}`);
-        await supabase.from('movies').update(updates).eq('id', movie.id);
+        await MovieService.updateMovieData(movie.id, updates);
+        movie.vote_average = updates.average_rating || movie.vote_average;
       }
     } catch (e) {
       console.error(`[Enrichment] Failed for ${movie.title}:`, e);
@@ -686,26 +684,28 @@ window.deleteMovie = async (movieId) => {
   }
   const movie = allMovies.find(m => m.id === movieId);
   const title = movie ? movie.title : "this movie";
-  if (!confirm(`ADMIN ACTION: Permanently delete "${title}"? This cannot be undone.`)) return;
-  const { error } = await supabase.from("movies").delete().eq("id", movieId);
-  if (error) {
-    showNotification("Error deleting movie", "error");
-  } else {
-    showNotification("Movie permanently deleted", "success");
+  if (!confirm("Are you sure you want to delete this proposal? This action cannot be undone.")) return;
+
+  try {
+    await MovieService.deleteMovie(movieId);
+    showNotification("Proposal deleted successfully.");
     refreshData();
+  } catch (e) {
+    showNotification("Error deleting movie", "error");
   }
 };
 
 window.dropMovie = async (movieId) => {
   const movie = allMovies.find(m => m.id === movieId);
   if (!movie) return;
-  if (!confirm(`Move "${movie.title}" to the Cemetery? It will no longer be an active proposal.`)) return;
-  const { error } = await supabase.from("movies").update({ is_dropped: true }).eq("id", movieId);
-  if (error) {
-    showNotification("Error dropping movie", "error");
-  } else {
-    showNotification("Movie moved to the Cemetery", "info");
+  if (!confirm("Move this movie to the Cemetery? (It can be recovered later)")) return;
+
+  try {
+    await MovieService.updateMovieData(movieId, { is_dropped: true });
+    showNotification("Movie sent to Cemetery.");
     refreshData();
+  } catch (e) {
+    showNotification("Error dropping movie", "error");
   }
 };
 
@@ -1157,14 +1157,11 @@ window.markAttendance = async (userId, movieId) => {
       return;
     }
 
-    const { error } = await supabase.from('participation_log').insert([{
-      user_id: userId,
-      movie_id: movieId,
-      action_type: 'attendance',
-      points: 10
-    }]);
-
-    if (error) throw error;
+    try {
+      await AdminService.logParticipation(userId, 'attendance', movieId);
+    } catch (err) {
+      console.error(`[Participation] Failed to log attendance:`, err);
+    }
 
     showNotification('Attendance recorded! (+10 pts)', 'success');
     
@@ -1188,31 +1185,8 @@ window.confirmDeleteUser = async (userId, userName) => {
 
   try {
     showNotification(`Deleting user ${userName}...`, 'warning');
-    // 1. Delete user's votes (Standard table: votes)
-    console.log(' - Cleaning votes...');
-    await supabase.from('votes').delete().eq('user_id', userId);
     
-    // 2. Delete user's ratings (stars on seen movies)
-    console.log(' - Cleaning user_ratings...');
-    await supabase.from('user_ratings').delete().eq('user_id', userId);
-
-    // 3. Delete user's participation logs (points and attendance history)
-    console.log(' - Cleaning participation_log...');
-    await supabase.from('participation_log').delete().eq('user_id', userId);
-    
-    // 5. Delete user's movie proposals
-    console.log(' - Cleaning movie proposals...');
-    const { error: e5 } = await supabase.from('movies').delete().eq('proposed_by', userId);
-    if (e5) console.error('Error cleaning movies:', e5);
-    
-    // 6. Finally, delete user's profile
-    console.log(' - Deleting profile record...');
-    const { error: profileError } = await supabase.from('profiles').delete().eq('id', userId);
-    
-    if (profileError) {
-      console.error('CRITICAL: Error deleting profile:', profileError);
-      throw profileError;
-    }
+    await AdminService.deleteUser(userId);
 
     console.log(`[Admin] User ${userName} successfully removed from the system.`);
     showNotification(`User ${userName} and all their data have been removed.`, 'success');
@@ -1230,13 +1204,12 @@ window.confirmDeleteUser = async (userId, userName) => {
 
 window.unmarkAsSeen = async (movieId) => {
   if (!isAdmin) return;
-  const { error } = await supabase.from('movies').update({ is_seen: false }).eq('id', movieId);
-  if (error) {
-    console.error('Error unmarking as seen:', error);
-    showNotification('Failed to revert status', 'error');
-  } else {
+  try {
+    await MovieService.updateMovieData(movieId, { is_seen: false });
     showNotification('Movie moved back to proposals', 'success');
     await refreshData();
+  } catch (e) {
+    showNotification('Failed to revert status', 'error');
   }
 };
 
@@ -1672,34 +1645,22 @@ window.proposeMovie = async (tmdbMovie, el) => {
     synopsis: tmdbMovie.synopsis
   };
 
-  // Insert logic matching actual schema
-  let { data, error } = await supabase.from('movies').insert([{
-    ...payload,
-    average_rating: tmdbMovie.vote_average || 0,
-    vote_count: 0 // Start with zero festival votes
-  }]).select();
-
-  if (error) {
-    if (error.code === '23505') {
-      showNotification('Already in the lineup!', 'warning');
-      if (card) {
-        card.style.animation = 'shake 0.5s ease';
-        setTimeout(() => card.style.animation = '', 500);
-      }
-    } else {
-      console.error('Error proposing movie:', error);
-      showNotification('Something went wrong', 'error');
-    }
-  } else {
+  try {
+    data = await MovieService.createMovie({
+      ...payload,
+      average_rating: tmdbMovie.vote_average || 0
+    });
+    
     showNotification(`"${tmdbMovie.title}" proposed!`, 'success');
 
     // Automatically add user's vote to their own proposal
     try {
-      if (data && data[0]) {
-        await supabase.from('votes').insert([{ user_id: user.id, movie_id: data[0].id }]);
+      if (data && data.id) {
+        await MovieService.addVote(user.id, data.id);
+        userVotes.add(data.id);
       }
     } catch (vErr) {
-      console.error('Auto-vote failed:', vErr);
+      console.warn('Auto-vote failed:', vErr);
     }
 
     if (card) {
@@ -1713,6 +1674,17 @@ window.proposeMovie = async (tmdbMovie, el) => {
     searchInput.value = '';
     searchResults.classList.remove('active');
     await refreshData();
+  } catch (error) {
+    if (error.code === '23505') {
+      showNotification('Already in the lineup!', 'warning');
+      if (card) {
+        card.style.animation = 'shake 0.5s ease';
+        setTimeout(() => card.style.animation = '', 500);
+      }
+    } else {
+      console.error('Error proposing movie:', error);
+      showNotification('Something went wrong', 'error');
+    }
   }
 };
 
@@ -1730,12 +1702,15 @@ window.toggleVote = async (movieId) => {
 
   if (userVotes.has(movieId)) {
     // Unvote is ALWAYS allowed
-    const { error } = await supabase.from('votes').delete().match({ user_id: user.id, movie_id: movieId });
-    if (!error) {
+    try {
+      await MovieService.removeVote(user.id, movieId);
       userVotes.delete(movieId);
       movie.vote_count = (movie.vote_count || 1) - 1;
       if (btn) btn.classList.remove('active');
       if (countEl) countEl.textContent = `${movie.vote_count} votes`;
+    } catch (err) {
+      console.error('Failed to remove vote:', err);
+      showNotification('Failed to remove vote', 'error');
     }
   } else {
     // Check vote limits
@@ -1747,21 +1722,29 @@ window.toggleVote = async (movieId) => {
     }
 
     // Vote
-    const { error } = await supabase.from('votes').insert([{ user_id: user.id, movie_id: movieId }]);
-    if (!error) {
+    try {
+      await MovieService.addVote(user.id, movieId);
       userVotes.add(movieId);
       movie.vote_count = (movie.vote_count || 0) + 1;
       if (btn) btn.classList.add('active');
       if (countEl) countEl.textContent = `${movie.vote_count} votes`;
+    } catch (err) {
+      console.error('Failed to add vote:', err);
+      showNotification('Failed to add vote', 'error');
     }
   }
   updateAuthUI();
 };
 
 window.markAsSeen = async (movieId) => {
-  const { error } = await supabase.from('movies').update({ is_seen: true }).eq('id', movieId);
-  if (error) console.error('Error marking as seen:', error);
-  else await refreshData();
+  if (!confirm('Mark this movie as SEEN?')) return;
+  try {
+    await MovieService.updateMovieData(movieId, { is_seen: true });
+    showNotification('Movie marked as seen!', 'success');
+    await refreshData();
+  } catch (e) {
+    console.error('Error marking as seen:', e);
+  }
 };
 
 window.rateMovie = async (movieId, rating) => {
@@ -2126,32 +2109,31 @@ window.closeCreateSessionModal = () => {
 
 window.handleCreateSession = async () => {
   const movieId = sessionMovieSelect.value;
-  const date = document.getElementById('sessionDate').value;
+  const dateStr = document.getElementById('sessionDate').value;
   const desc = document.getElementById('sessionDescription').value;
-  const keywordInput = document.getElementById('sessionKeyword');
-  const keyword = keywordInput ? keywordInput.value.trim() : '';
+  const isUpcoming = true;
 
-  console.log('[Admin] Creating session:', { date, keyword });
-
-  if (!date) {
+  if (!dateStr) {
     showNotification('Date is required', 'error');
     return;
   }
 
-  const { error } = await supabase.from('sessions').insert([{
-    movie_id: movieId || null,
-    session_date: new Date(date).toISOString(),
-    description: desc,
-    keyword: keyword,
-    is_upcoming: true
-  }]);
-
-  if (!error) {
+  try {
+    await SessionService.createSession({
+      movie_id: movieId,
+      session_date: dateStr,
+      description: desc,
+      is_upcoming: isUpcoming
+    });
+    
     showNotification('Session created successfully!');
+    await fetchSessions();
+    renderSessions();
+    
     window.closeCreateSessionModal();
-    refreshData();
-  } else {
-    showNotification('Error creating session', 'error');
+  } catch (err) {
+    console.error('Error creating session:', err);
+    showNotification('Failed to create session', 'error');
   }
 };
 
@@ -2187,10 +2169,20 @@ async function updateAdminSessions() {
 window.handleDeleteSession = async (sessionId) => {
   if (!confirm('Are you sure you want to delete this session?')) return;
 
-  const { error } = await supabase.from('sessions').delete().eq('id', sessionId);
-  if (!error) {
-    showNotification('Session deleted');
-    refreshData();
+  try {
+    await SessionService.deleteSession(sessionId);
+    showNotification('Session deleted.');
+    
+    if (currentSession?.id === sessionId) {
+      document.getElementById('sessionDetailsModal')?.classList.add('page-hidden');
+      currentSession = null;
+    }
+    
+    await fetchSessions();
+    renderSessions();
+  } catch (err) {
+    console.error('Error deleting session:', err);
+    showNotification('Failed to delete session', 'error');
   }
 };
 
@@ -2228,27 +2220,24 @@ window.manageAttendance = async (sessionId) => {
 };
 
 window.toggleAttendance = async (sessionId, userId, btn) => {
-  const isConfirmed = btn.classList.contains('success');
-
-  if (isConfirmed) {
-    await supabase.from('session_attendance').delete().match({ session_id: sessionId, user_id: userId });
-    btn.classList.remove('success');
-    btn.classList.add('secondary');
-    btn.textContent = 'Confirm Attendance';
-  } else {
-    await supabase.from('session_attendance').insert([{ session_id: sessionId, user_id: userId }]);
-    btn.classList.remove('secondary');
-    btn.classList.add('success');
-    btn.textContent = 'Confirmed';
+  try {
+    const res = await SessionService.toggleAttendance(sessionId, userId);
     
-    const session = sessions.find(s => s.id === sessionId);
-    const logData = {
-      user_id: userId,
-      action_type: "attendance",
-      points: 50
-    };
-    if (session.movie_id) logData.movie_id = session.movie_id;
-    await supabase.from("participation_log").insert([logData]);
+    // Log achievement points only when checking IN
+    if (res.action === 'added') {
+      try {
+        await AdminService.logParticipation(userId, 'attendance', currentSession.movie_id);
+      } catch (logErr) {
+        console.error('Failed to log attendance points:', logErr);
+      }
+    }
+    
+    showNotification(res.action === 'added' ? 'Checked in!' : 'Check-in removed');
+    await fetchSessions();
+    window.viewSessionDetails(sessionId);
+  } catch (err) {
+    console.error('Error toggling attendance:', err);
+    showNotification('Action failed', 'error');
   }
 };
 window.showEditSessionModal = (sessionId) => {
@@ -2287,29 +2276,21 @@ window.showEditSessionModal = (sessionId) => {
 };
 
 window.handleUpdateSession = async (sessionId) => {
-  const movieId = sessionMovieSelect.value;
-  const date = document.getElementById('sessionDate').value;
   const desc = document.getElementById('sessionDescription').value;
-  const keyword = document.getElementById('sessionKeyword').value.trim();
+  const isUpcoming = true;
 
-  if (!date) {
-    showNotification('Date is required', 'error');
-    return;
-  }
-
-  const { error } = await supabase.from('sessions').update({
-    movie_id: movieId || null,
-    session_date: new Date(date).toISOString(),
-    description: desc,
-    keyword: keyword
-  }).eq('id', sessionId);
-
-  if (!error) {
-    showNotification('Session updated successfully!');
-    window.closeCreateSessionModal();
-    refreshData();
-  } else {
-    showNotification('Error updating session', 'error');
+  try {
+    await SessionService.updateSession(currentSession.id, {
+      description: desc,
+      is_upcoming: isUpcoming
+    });
+    
+    showNotification('Session updated!');
+    await fetchSessions();
+    window.viewSessionDetails(currentSession.id);
+  } catch (err) {
+    console.error('Error updating session:', err);
+    showNotification('Failed to update session', 'error');
   }
 };
 
@@ -2320,39 +2301,17 @@ init();
 window.cleanupInactiveMovies = async (silent = false) => {
   if (!isAdmin) return;
   if (!silent) showNotification('Checking for inactive movies...', 'info');
-  const fifteenDaysAgo = new Date();
-  fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
-  const { data: moviesToClean, error: fetchErr } = await supabase
-    .from('movies')
-    .select('id, title, created_at, vote_count, is_dropped, is_seen')
-    .eq('is_dropped', false)
-    .eq('is_seen', false);
-  if (fetchErr || !moviesToClean) return;
-  const { data: allVotes, error: votesErr } = await supabase
-    .from('votes')
-    .select('movie_id, created_at');
-  if (votesErr) return;
-  const toDrop = moviesToClean.filter(m => {
-    const proposalDate = new Date(m.created_at);
-    const movieVotes = (allVotes || []).filter(v => v.movie_id === m.id);
-    if (movieVotes.length === 0) {
-      return proposalDate < fifteenDaysAgo;
+  
+  try {
+    const { cleanedCount } = await AdminService.cleanupInactiveMovies();
+    if (cleanedCount > 0) {
+      if (!silent) showNotification(`Cleaned up ${cleanedCount} inactive movies`, 'success');
+      refreshData();
     } else {
-      const lastVoteDate = new Date(Math.max(...movieVotes.map(v => new Date(v.created_at))));
-      return lastVoteDate < fifteenDaysAgo;
+      if (!silent) showNotification('All movies are active!', 'success');
     }
-  });
-  if (toDrop.length === 0) {
-    if (!silent) showNotification('All movies are active!', 'success');
-    return;
-  }
-  const ids = toDrop.map(m => m.id);
-  const { error: updateErr } = await supabase
-    .from('movies')
-    .update({ is_dropped: true })
-    .in('id', ids);
-  if (!updateErr) {
-    if (!silent) showNotification(`Cleaned up ${toDrop.length} inactive movies`, 'success');
-    refreshData();
+  } catch (err) {
+    console.error('Error cleaning up movies:', err);
+    if (!silent) showNotification('Failed to clean inactive movies', 'error');
   }
 };

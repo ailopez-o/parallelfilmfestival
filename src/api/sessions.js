@@ -80,5 +80,50 @@ export const SessionService = {
       photo_url: url
     }]);
     if (error) throw error;
+  },
+
+  /**
+   * Toggles session attendance for a user (Admin only).
+   */
+  async toggleAttendance(sessionId, userId) {
+    const { data: existing } = await supabase
+      .from('session_attendance')
+      .select('*')
+      .match({ session_id: sessionId, user_id: userId })
+      .single();
+
+    if (existing) {
+      const { error } = await supabase.from('session_attendance').delete().match({ session_id: sessionId, user_id: userId });
+      if (error) throw error;
+      return { action: 'removed' };
+    } else {
+      const { error } = await supabase.from('session_attendance').insert([{ session_id: sessionId, user_id: userId }]);
+      if (error) throw error;
+      return { action: 'added' };
+    }
+  },
+
+  /**
+   * Creates a new session (Admin only).
+   */
+  async createSession(sessionData) {
+    const { error } = await supabase.from('sessions').insert([sessionData]);
+    if (error) throw error;
+  },
+
+  /**
+   * Updates an existing session (Admin only).
+   */
+  async updateSession(sessionId, updates) {
+    const { error } = await supabase.from('sessions').update(updates).eq('id', sessionId);
+    if (error) throw error;
+  },
+
+  /**
+   * Deletes a session (Admin only).
+   */
+  async deleteSession(sessionId) {
+    const { error } = await supabase.from('sessions').delete().eq('id', sessionId);
+    if (error) throw error;
   }
 };
