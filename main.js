@@ -1,7 +1,15 @@
 import { supabase } from './src/config/supabase.js';
 import { normalize, formatScore, timeAgo, showNotification } from './src/utils/index.js';
 import { FALLBACK_IMAGE, TBD_POSTER, DEFAULT_MAX_PROPOSALS, DEFAULT_MAX_VOTES } from './src/config/constants.js';
-import { createMovieCardHTML } from './src/components/index.js';
+import { 
+  createMovieCardHTML, 
+  createSessionCardHTML, 
+  createSessionHeroHTML, 
+  createRankingRowHTML, 
+  createAchievementCardHTML, 
+  createTimelineItemHTML,
+  renderAvatarStack
+} from './src/components/index.js';
 
 // Configuration removed (now in src/config/supabase.js)
 
@@ -1131,29 +1139,7 @@ async function updateGlobalRanking() {
 function renderRankingView() {
   if (!rankingList) return;
   
-  rankingList.innerHTML = rankedUsers.map(p => {
-    const name = p.full_name || p.email.split('@')[0];
-    const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
-    const rankClass = p.rank <= 3 ? `top-${p.rank}` : '';
-    
-    return `
-      <tr>
-        <td><span class="user-rank ${rankClass}">#${p.rank}</span></td>
-        <td>
-          <div class="user-cell">
-            <img src="${avatar}" alt="${name}">
-            <span class="user-name">${name}</span>
-          </div>
-        </td>
-        <td>
-          <div class="score-badge" onclick="window.navigateTo('ranking')" title="View Global Ranking">
-            <i data-lucide="award" style="width:12px; height:12px; margin-right:4px;"></i>
-            ${p.score}
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join('');
+  rankingList.innerHTML = rankedUsers.map(p => createRankingRowHTML(p)).join('');
   
   if (window.lucide) window.lucide.createIcons();
 }
@@ -2314,38 +2300,10 @@ async function renderProfileAchievements() {
 
   const achievements = await calculateUserAchievements(user?.id);
 
-  grid.innerHTML = achievements.map(a => `
-    <div class="achievement-card ${a.class} ${a.completed ? 'completed active' : 'locked'}">
-      <i data-lucide="check-circle" class="completed-check"></i>
-      <div class="achievement-header">
-        <div class="medal-icon-wrapper">
-          <i data-lucide="${a.icon}"></i>
-        </div>
-        <div class="achievement-info">
-          <span class="achievement-name">${a.name}</span>
-          <span class="achievement-desc">${a.desc}</span>
-        </div>
-      </div>
-      
-      <div class="achievement-progress-section">
-        <div class="progress-label-row">
-          <span>Progress</span>
-          <span>${a.current} / ${a.target}</span>
-        </div>
-        <div class="progress-track">
-          <div class="progress-fill" style="width: ${a.progress}%"></div>
-        </div>
-      </div>
-    </div>
-  `).join('');
+  grid.innerHTML = achievements.map(a => createAchievementCardHTML(a)).join('');
 
   if (window.lucide) window.lucide.createIcons();
 }
-
-/**
- * Helper to format date as "time ago"
- */
-// timeAgo imported from utils
 
 /**
  * Fetches recent achievement events
@@ -2565,70 +2523,10 @@ async function fetchRecentAchievementEvents() {
 
 async function renderAchievementTimeline(events) {
   const body = document.getElementById('timelineBody');
-  if (!body) {
-    console.error('[Timeline] Target element #timelineBody not found in DOM');
-    return;
-  }
-  
-  const safeEvents = events || [];
-  
-  // CRITICAL FIX: If we already have items and the new update is empty, 
-  // do NOT clear the UI. This prevents the "flash" of empty state.
-  if (safeEvents.length === 0 && body.children.length > 1) {
-    console.log('[Timeline] Ignoring empty update to preserve existing items.');
-    return;
-  }
-
-  console.log(`[Timeline] Rendering ${safeEvents.length} items to #timelineBody:`, safeEvents);
-  
-  if (safeEvents.length === 0) {
-    body.innerHTML = `<tr><td colspan="2" style="text-align:center; padding: 2rem; color: var(--text-secondary);">No recent activity yet.</td></tr>`;
-    return;
-  }
-
-  // Simplified and more robust HTML structure
-  const html = safeEvents.map(e => `
-    <tr class="timeline-row event-${e.type}">
-      <td>
-        <div class="event-user-cell">
-          <div class="event-icon-circle">
-            <i data-lucide="${e.icon || 'star'}"></i>
-          </div>
-          <div class="event-content">
-            <div class="event-message">
-              <span class="event-name">${e.name || 'User'}</span> ${e.text}
-            </div>
-            <div class="event-date">${timeAgo(e.date)}</div>
-          </div>
-        </div>
-      </td>
-    </tr>
-  `).join('');
-
-  body.innerHTML = html;
-  console.log('[Timeline] HTML successfully injected into DOM.');
-
-  // More robust icon refresh
-  const refreshIcons = () => {
-    if (window.lucide) {
-      window.lucide.createIcons();
-      console.log('[Timeline] Lucide icons refreshed.');
-    } else {
-      console.warn('[Timeline] Lucide not found, retrying...');
-      setTimeout(refreshIcons, 200);
-    }
-  };
-  
-  setTimeout(refreshIcons, 100);
+  if (!body) return;
+  body.innerHTML = events.map(event => createTimelineItemHTML(event, timeAgo)).join('');
+  if (window.lucide) window.lucide.createIcons();
 }
-
-// Intercept lifecycle to render achievements - REMOVED WRAPPING
-
-// Direct calls added to refreshData and loadUserActivity
-
-
-
-
 
 /* --- Session System Logic --- */
 
@@ -2643,24 +2541,6 @@ async function fetchSessions() {
   }
 }
 
-function renderAvatarStack(signups) {
-  if (!signups || signups.length === 0) return '';
-  
-  const limit = 3;
-  const displayed = signups.slice(0, limit);
-  const moreCount = signups.length - limit;
-  const allNames = signups.map(s => s.profiles?.full_name || 'Anonymous').join('\n');
-
-  return `
-    <div class="avatar-stack" data-tooltip="Interested:\n${allNames}">
-      ${moreCount > 0 ? `<div class="more-count">+${moreCount}</div>` : ''}
-      ${displayed.reverse().map(s => `
-        <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(s.profiles?.full_name || 'A')}&background=random" alt="Avatar">
-      `).join('')}
-    </div>
-  `;
-}
-
 function renderSessions() {
   if (!sessionsGrid) return;
   
@@ -2669,37 +2549,7 @@ function renderSessions() {
     return;
   }
 
-  sessionsGrid.innerHTML = sessions.map(session => {
-    const poster = session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER;
-    const title = session.movie_id ? session.movies?.title : 'Film To Be Decided';
-    
-    const isSignedUp = user && session.session_signups?.some(s => s.user_id === user.id);
-    const displayKey = session.keyword && session.keyword.trim() !== "" ? session.keyword : 'TBD';
-    const keywordDisplay = isSignedUp 
-      ? `<div class="session-keyword-unlocked"><i data-lucide="key"></i> ${displayKey}</div>`
-      : `<div class="session-keyword-locked"><i data-lucide="lock"></i> Register to see keyword</div>`;
-
-    return `
-      <div class="session-card" onclick="window.openSessionDetail('${session.id}')">
-        <div class="session-card-poster">
-          <img src="${poster}" alt="${title}">
-        </div>
-        <div class="session-card-content">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.5rem;">
-            <div class="session-date-badge">
-              ${new Date(session.session_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}
-            </div>
-            ${renderAvatarStack(session.session_signups)}
-          </div>
-          <div class="session-card-title">${title}</div>
-          <p style="color:var(--text-secondary); font-size: 0.85rem; line-height: 1.4; margin-top: 0.5rem; margin-bottom: 1rem;">
-            ${session.description || 'Join us for this special screening!'}
-          </p>
-          ${keywordDisplay}
-        </div>
-      </div>
-    `;
-  }).join('');
+  sessionsGrid.innerHTML = sessions.map(session => createSessionCardHTML(session, { user })).join('');
 }
 
 function renderNextSessionHero() {
@@ -2725,28 +2575,7 @@ function renderNextSessionHero() {
     : `<div class="hero-keyword-locked"><i data-lucide="lock"></i> Register to unlock secret code</div>`;
 
   nextSessionHero.classList.remove('page-hidden');
-  nextSessionHero.innerHTML = `
-    <img src="${poster}" class="next-session-poster" alt="${title}">
-    <div class="next-session-info">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.5rem;">
-         <div class="session-date-badge">NEXT SESSION</div>
-         ${renderAvatarStack(upcoming.session_signups)}
-      </div>
-      <h3 style="margin-top:0.5rem;">${title}</h3>
-      <div class="next-session-meta">
-        <span><i data-lucide="calendar"></i> ${new Date(upcoming.session_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}</span>
-        <span><i data-lucide="clock"></i> ${new Date(upcoming.session_date).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</span>
-      </div>
-      <p style="color:var(--text-secondary); margin-bottom: 1.5rem;">${upcoming.description || 'No description available.'}</p>
-      
-      ${keywordDisplay}
-
-      <button class="btn-signup-hero ${isSignedUp ? 'success' : ''}" onclick="window.signupForSession('${upcoming.id}')" style="margin-top: 1rem;">
-        <i data-lucide="${isSignedUp ? 'user-check' : 'user-plus'}"></i> 
-        ${isSignedUp ? 'Already Signed Up' : 'Sign Up Now'}
-      </button>
-    </div>
-  `;
+  nextSessionHero.innerHTML = createSessionHeroHTML(upcoming, { user });
   if (window.lucide) window.lucide.createIcons();
 }
 
