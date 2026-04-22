@@ -10,7 +10,7 @@ import {
   createTimelineItemHTML,
   renderAvatarStack
 } from './src/components/index.js';
-import { HomeView, ProfileView, AdminView } from './src/views/index.js';
+import { HomeView, ProfileView, AdminView, ExploreView, SessionsView } from './src/views/index.js';
 
 // Configuration removed (now in src/config/supabase.js)
 
@@ -1560,14 +1560,8 @@ function createExploreCard(movie) {
 }
 
 function renderExploreResults(results) {
-  exploreGrid.innerHTML = ''; // Clear everything
-  if (!results.length) {
-    exploreGrid.innerHTML = '<div class="empty-state">No movies found matching those criteria.</div>';
-    return;
-  }
-  results.forEach(movie => {
-    exploreGrid.appendChild(createExploreCard(movie));
-  });
+  exploreGrid.innerHTML = '';
+  ExploreView.renderResults(results, exploreGrid, { isAdmin, user, userVotes });
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -2368,14 +2362,8 @@ async function fetchSessions() {
 }
 
 function renderSessions() {
-  if (!sessionsGrid) return;
-  
-  if (sessions.length === 0) {
-    sessionsGrid.innerHTML = '<div class="empty-state">No sessions scheduled yet.</div>';
-    return;
-  }
-
-  sessionsGrid.innerHTML = sessions.map(session => createSessionCardHTML(session, { user })).join('');
+  SessionsView.renderSessions(sessions, sessionsGrid, { user });
+  if (window.lucide) window.lucide.createIcons();
 }
 
 function renderNextSessionHero() {
@@ -2395,7 +2383,6 @@ window.openSessionDetail = async (sessionId) => {
   sessionModal.classList.remove('page-hidden');
   document.body.style.overflow = 'hidden';
 
-  // Load comments, photos, signups
   const [comments, photos, signups, attendance] = await Promise.all([
     supabase.from('session_comments').select('*, profiles(full_name)').eq('session_id', sessionId).order('created_at', { ascending: false }),
     supabase.from('session_photos').select('*, profiles(full_name)').eq('session_id', sessionId).order('created_at', { ascending: false }),
@@ -2403,67 +2390,12 @@ window.openSessionDetail = async (sessionId) => {
     supabase.from('session_attendance').select('*, profiles(full_name, id)').eq('session_id', sessionId)
   ]);
 
-  const isSignedUp = user && signups.data?.some(s => s.user_id === user.id);
-  const isAttended = user && attendance.data?.some(a => a.user_id === user.id);
-  const signupCount = signups.data?.length || 0;
-
-  const poster = session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER;
-  const title = session.movie_id ? session.movies?.title : 'Film To Be Decided';
-
-  sessionModalBody.innerHTML = `
-    <div class="session-detail-layout">
-      <div class="session-sidebar">
-        <img src="${poster}" style="width:100%; border-radius:1.5rem; box-shadow:0 10px 30px rgba(0,0,0,0.5);" />
-        <div style="margin-top: 2rem;">
-          <h4 style="margin-bottom: 0.5rem; color:var(--text-secondary);">SESSION INFO</h4>
-          <p><i data-lucide="calendar" style="width:14px; margin-right:5px;"></i> ${new Date(session.session_date).toLocaleDateString()}</p>
-          <p><i data-lucide="map-pin" style="width:14px; margin-right:5px;"></i> ${session.location || 'Paral·lel Cinema'}</p>
-        </div>
-        
-        <div style="margin-top: 2rem;">
-          ${session.is_upcoming ? `
-            <button class="submit-btn ${isSignedUp ? 'success' : ''}" onclick="window.signupForSession('${session.id}')">
-              <i data-lucide="${isSignedUp ? 'user-check' : 'user-plus'}"></i> 
-              ${isSignedUp ? 'Already Signed Up' : 'Sign Up for Session'}
-            </button>
-            <p style="text-align:center; margin-top:1rem; font-size:0.8rem; color:var(--text-secondary);">
-              <i data-lucide="users" style="width:12px; height:12px; vertical-align:middle;"></i> ${signupCount} people interested
-            </p>
-          ` : `
-            <div class="badge ${isAttended ? 'success' : 'muted'}" style="padding: 1rem; text-align:center; border-radius:1rem; background:rgba(255,255,255,0.05);">
-              <i data-lucide="${isAttended ? 'check-circle' : 'info'}"></i>
-              ${isAttended ? 'You Attended This Session' : 'This session has passed'}
-            </div>
-          `}
-        </div>
-      </div>
-
-      <div class="session-main-info">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-          <h2>${title}</h2>
-          ${isAdmin ? `
-            <button class="edit-profile-btn" onclick="window.showEditSessionModal('${session.id}')">
-              <i data-lucide="edit"></i> Edit Session
-            </button>
-          ` : ''}
-        </div>
-        <p style="font-size: 1.1rem; color:var(--text-secondary); margin-bottom: 2rem;">${session.description || ''}</p>
-
-        <div class="session-tabs">
-          <button class="session-tab-btn active" onclick="window.switchSessionTab('comments')">Comments (${comments.data?.length || 0})</button>
-          <button class="session-tab-btn" onclick="window.switchSessionTab('photos')">Gallery (${photos.data?.length || 0})</button>
-          <button class="session-tab-btn" onclick="window.switchSessionTab('participants')">
-            ${session.is_upcoming ? 'Interested' : 'Participants'} (${session.is_upcoming ? signupCount : attendance.data?.length || 0})
-          </button>
-        </div>
-
-        <div id="sessionTabContent">
-          <!-- Comments by default -->
-          ${renderCommentsHTML(comments.data || [])}
-        </div>
-      </div>
-    </div>
-  `;
+  sessionModalBody.innerHTML = SessionsView.renderDetail(session, {
+    comments: comments.data || [],
+    photos: photos.data || [],
+    signups: signups.data || [],
+    attendance: attendance.data || []
+  }, { user, isAdmin });
   
   if (window.lucide) window.lucide.createIcons();
 };
@@ -2481,76 +2413,18 @@ window.switchSessionTab = async (tab) => {
   
   if (tab === 'comments') {
     const { data } = await supabase.from('session_comments').select('*, profiles(full_name)').eq('session_id', currentSession.id).order('created_at', { ascending: false });
-    content.innerHTML = renderCommentsHTML(data || []);
+    content.innerHTML = SessionsView.renderCommentsHTML(data || []);
   } else if (tab === 'photos') {
     const { data } = await supabase.from('session_photos').select('*, profiles(full_name)').eq('session_id', currentSession.id).order('created_at', { ascending: false });
-    content.innerHTML = renderGalleryHTML(data || []);
+    content.innerHTML = SessionsView.renderGalleryHTML(data || []);
   } else if (tab === 'participants') {
     const isUpcoming = currentSession.is_upcoming;
     const table = isUpcoming ? 'session_signups' : 'session_attendance';
-    const { data } = await supabase.from(table).select('*, profiles(full_name)').eq('session_id', currentSession.id);
-    
-    content.innerHTML = `
-      <div class="participants-list" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem;">
-        ${data?.length ? data.map(p => `
-          <div class="participant-card" style="background:rgba(255,255,255,0.05); padding:1rem; border-radius:1rem; text-align:center;">
-            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(p.profiles.full_name)}&background=random" style="width:50px; height:50px; border-radius:50%; margin-bottom:0.5rem;" />
-            <div style="font-weight:600; font-size:0.8rem;">${p.profiles.full_name}</div>
-            ${isUpcoming ? '<div style="font-size:0.6rem; color:var(--text-secondary); margin-top:0.2rem;">Interested</div>' : ''}
-          </div>
-        `).join('') : `<div class="empty-state">No ${isUpcoming ? 'interest recorded' : 'participants'} yet.</div>`}
-      </div>
-    `;
+    content.innerHTML = SessionsView.renderParticipantsHTML(data || [], isUpcoming);
   }
+  
   if (window.lucide) window.lucide.createIcons();
 };
-
-function renderCommentsHTML(comments) {
-  return `
-    <div class="comments-section">
-      ${user ? `
-        <div class="comment-input-wrapper">
-          <textarea id="newCommentText" placeholder="Share your thoughts about this movie..." rows="2"></textarea>
-          <button class="submit-btn" style="width:auto; padding:0 1.5rem;" onclick="window.postComment()">
-            <i data-lucide="send"></i>
-          </button>
-        </div>
-      ` : '<p style="text-align:center; color:var(--text-secondary);">Sign in to leave a comment.</p>'}
-      
-      <div class="comments-list">
-        ${comments.length ? comments.map(c => `
-          <div class="comment-card">
-            <div class="comment-header">
-              <span class="comment-user">${c.profiles?.full_name || 'Anonymous'}</span>
-              <span style="opacity:0.5;">${new Date(c.created_at).toLocaleDateString()}</span>
-            </div>
-            <div class="comment-body">${c.content}</div>
-          </div>
-        `).join('') : '<div class="empty-state">No comments yet.</div>'}
-      </div>
-    </div>
-  `;
-}
-
-function renderGalleryHTML(photos) {
-  return `
-    <div class="gallery-section">
-      <div class="photo-gallery">
-        ${user ? `
-          <div class="upload-photo-btn" onclick="window.triggerPhotoUpload()">
-            <i data-lucide="camera" style="width:32px; height:32px;"></i>
-            <span>Add Photo</span>
-          </div>
-        ` : ''}
-        ${photos.map(p => `
-          <div class="gallery-item" onclick="window.openFullPhoto('${p.photo_url}')">
-            <img src="${p.photo_url}" loading="lazy" />
-          </div>
-        `).join('')}
-      </div>
-    </div>
-  `;
-}
 
 window.signupForSession = async (sessionId) => {
   if (!user) {
