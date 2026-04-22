@@ -1,3 +1,5 @@
+import { createRankingRowHTML } from '../components/index.js';
+
 /**
  * Admin View Module.
  * Manages the administrator dashboard and auditing tools.
@@ -103,5 +105,18 @@ export const AdminView = {
         </tr>
       `;
     }).join('');
+  },
+
+  /**
+   * Renders the global ranking table.
+   */
+  renderRankingView(rankedUsers, container) {
+    if (!container) return;
+    if (!rankedUsers || rankedUsers.length === 0) {
+      container.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:2rem; color:var(--text-secondary);">No rankings available yet.</td></tr>';
+      return;
+    }
+
+    container.innerHTML = rankedUsers.slice(0, 10).map(user => createRankingRowHTML(user)).join('');
   }
 };

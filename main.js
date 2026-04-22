@@ -1162,7 +1162,7 @@ window.markAttendance = async (userId, movieId) => {
   }
 };
 
-window.deleteUser = async (userId, userName) => {
+window.confirmDeleteUser = async (userId, userName) => {
   if (!isAdmin) return;
   
   const confirmed = window.confirm(`⚠️ DANGER ZONE: Are you sure you want to delete user "${userName}"? \n\nThis will also remove all their movie proposals, votes and ratings. This action cannot be undone.`);
@@ -2375,7 +2375,7 @@ function renderNextSessionHero() {
   if (window.lucide) window.lucide.createIcons();
 }
 
-window.openSessionDetail = async (sessionId) => {
+window.viewSessionDetails = async (sessionId) => {
   const session = sessions.find(s => s.id === sessionId);
   if (!session) return;
 
@@ -2400,6 +2400,8 @@ window.openSessionDetail = async (sessionId) => {
   if (window.lucide) window.lucide.createIcons();
 };
 
+
+
 window.closeSessionModal = () => {
   sessionModal.classList.add('page-hidden');
   document.body.style.overflow = '';
@@ -2420,6 +2422,7 @@ window.switchSessionTab = async (tab) => {
   } else if (tab === 'participants') {
     const isUpcoming = currentSession.is_upcoming;
     const table = isUpcoming ? 'session_signups' : 'session_attendance';
+    const { data } = await supabase.from(table).select('*, profiles(full_name)').eq('session_id', currentSession.id);
     content.innerHTML = SessionsView.renderParticipantsHTML(data || [], isUpcoming);
   }
   
@@ -2444,8 +2447,14 @@ window.signupForSession = async (sessionId) => {
   refreshData();
 };
 
-window.postComment = async () => {
-  const text = document.getElementById('newCommentText').value.trim();
+window.addSessionComment = async () => {
+  if (!user) {
+    showNotification('Please log in to comment', 'warning');
+    return;
+  }
+
+  const input = document.getElementById('sessionCommentInput');
+  const text = input.value.trim();
   if (!text) return;
 
   const { error } = await supabase.from('session_comments').insert([{
@@ -2456,11 +2465,14 @@ window.postComment = async () => {
 
   if (!error) {
     showNotification('Comment posted!');
+    input.value = ''; // Clear input
     window.switchSessionTab('comments');
+  } else {
+    showNotification('Error posting comment', 'error');
   }
 };
 
-window.triggerPhotoUpload = async () => {
+window.addSessionPhoto = async () => {
   const url = window.prompt("Enter photo URL (implementing full upload in Supabase Storage requires more setup, so for now we use URLs):");
   if (!url) return;
 

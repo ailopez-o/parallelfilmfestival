@@ -42,7 +42,7 @@ export function createSessionCardHTML(session, options = {}) {
     : `<div class="session-keyword-locked"><i data-lucide="lock"></i> Register to see keyword</div>`;
 
   return `
-    <div class="session-card" onclick="window.openSessionDetail('${session.id}')">
+    <div class="session-card" onclick="window.viewSessionDetails('${session.id}')">
       <div class="session-card-poster">
         <img src="${poster}" alt="${title}">
       </div>

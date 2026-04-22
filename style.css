@@ -3633,3 +3633,70 @@ nav {
   50% { box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); }
   100% { box-shadow: 0 0 5px rgba(16, 185, 129, 0.2); }
 }
+
+/* Session Comments Premium Styling */
+.comments-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.comment-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.5rem;
+  padding: 0.5rem 0.5rem 0.5rem 1.25rem;
+  transition: all 0.3s ease;
+}
+
+.comment-input-wrapper:focus-within {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.15);
+}
+
+#sessionCommentInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: white;
+  font-family: inherit;
+  font-size: 0.95rem;
+  resize: none;
+  outline: none;
+  padding: 0.5rem 0;
+  max-height: 100px;
+}
+
+.send-comment-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-left: 0.75rem;
+}
+
+.send-comment-btn:hover {
+  transform: scale(1.1) rotate(-10deg);
+  background: var(--accent-hover);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+}
+
+.send-comment-btn:active {
+  transform: scale(0.95);
+}
+
+.send-comment-btn i {
+  width: 18px;
+  height: 18px;
+}
