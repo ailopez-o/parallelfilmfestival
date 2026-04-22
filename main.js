@@ -1,10 +1,8 @@
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from './src/config/supabase.js';
+import { normalize, formatScore, timeAgo, showNotification } from './src/utils/index.js';
+import { FALLBACK_IMAGE, TBD_POSTER, DEFAULT_MAX_PROPOSALS, DEFAULT_MAX_VOTES } from './src/config/constants.js';
 
-// Configuration
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Configuration removed (now in src/config/supabase.js)
 
 // Edge Function Proxy Helper
 async function invokeTMDBCall(path, params = {}) {
@@ -114,14 +112,7 @@ window.saveAppSettings = async () => {
  * - Converts to lowercase
  * - Removes diacritics (accents)
  */
-const normalize = (str) => {
-  if (!str) return "";
-  return str
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-};
+// normalize imported from utils
 
 // DOM Elements
 const views = {
@@ -187,13 +178,10 @@ const profileEditForm = document.getElementById('profileEditForm');
 const editName = document.getElementById('editName');
 const editAvatar = document.getElementById('editAvatar');
 
-// Fallback image helper
-const FALLBACK_IMAGE = 'https://placehold.co/300x450/1a1a1f/94a3b8?text=Cinema+Poster';
-const TBD_POSTER = '/coming-soon.png';
-
-// Limits configuration (Dynamic from DB)
-let MAX_PROPOSALS = 3;
-let MAX_VOTES = 5;
+// Fallback images (imported from constants)
+// Limits configuration
+let MAX_PROPOSALS = DEFAULT_MAX_PROPOSALS;
+let MAX_VOTES = DEFAULT_MAX_VOTES;
 
 // Initialization
 async function init() {
@@ -405,11 +393,7 @@ async function refreshData() {
 }
 
 // Rendering Helpers
-function formatScore(score) {
-  if (score === undefined || score === null || (typeof score === 'string' && score === 'N/A')) return 'N/A';
-  const num = parseFloat(score);
-  return isNaN(num) ? 'N/A' : num.toFixed(1);
-}
+// formatScore imported from utils
 
 async function enrichMovieData(movies) {
   // Find movies that need enrichment (missing scores, trailers, or providers)
@@ -515,39 +499,7 @@ function handleRouting() {
 }
 
 // Visual Feedback System (Toasts)
-function showNotification(message, type = 'success') {
-  let container = document.querySelector('.toast-container');
-  if (!container) {
-    container = document.createElement('div');
-    container.className = 'toast-container';
-    document.body.appendChild(container);
-  }
-
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  
-  const icons = {
-    success: 'check-circle',
-    warning: 'alert-triangle',
-    error: 'alert-circle'
-  };
-
-  toast.innerHTML = `
-    <div class="toast-icon">
-      <i data-lucide="${icons[type]}"></i>
-    </div>
-    <span>${message}</span>
-  `;
-
-  container.appendChild(toast);
-  if (window.lucide) window.lucide.createIcons();
-
-  // Auto remove
-  setTimeout(() => {
-    toast.classList.add('removing');
-    setTimeout(() => toast.remove(), 400);
-  }, 3000);
-}
+// showNotification imported from utils
 
 // Unified Movie Component
 function createMovieCardHTML(movie, options = {}) {
@@ -2521,20 +2473,7 @@ async function renderProfileAchievements() {
 /**
  * Helper to format date as "time ago"
  */
-function timeAgo(date) {
-  const seconds = Math.floor((new Date() - date) / 1000);
-  let interval = seconds / 31536000;
-  if (interval > 1) return `${Math.floor(interval)} years ago`;
-  interval = seconds / 2592000;
-  if (interval > 1) return `${Math.floor(interval)} months ago`;
-  interval = seconds / 86400;
-  if (interval > 1) return `${Math.floor(interval)} days ago`;
-  interval = seconds / 3600;
-  if (interval > 1) return `${Math.floor(interval)} hours ago`;
-  interval = seconds / 60;
-  if (interval > 1) return `${Math.floor(interval)} min ago`;
-  return 'just now';
-}
+// timeAgo imported from utils
 
 /**
  * Fetches recent achievement events
