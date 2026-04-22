@@ -53,20 +53,29 @@ async function invokeTMDBCall(path, params = {}) {
   }
 }
 
-// State
-let allMovies = [];
-let proposedMovies = [];
-let seenMovies = [];
-let userVotes = new Set(); // Set of movie IDs the user voted for
-let user = null;
-let userProfile = null; // Cache for profile data (name, avatar, role)
-let isAdmin = false;
-let rankedUsers = []; // Global leaderboard data
-let currentView = 'home';
-let genreMap = {}; // Map of genre ID to name
-let providerMap = {}; // Map of provider ID to data (name, logo)
-let sessions = [];
-let currentSession = null;
+import { store } from './src/state/store.js';
+// This routes all variable reads/writes transparently into the centralized store.
+['allMovies', 'proposedMovies', 'seenMovies', 'rankedUsers', 'sessions', 'currentSession', 'currentView', 'genreMap', 'providerMap', 'user', 'userProfile', 'isAdmin'].forEach(key => {
+  Object.defineProperty(window, key, {
+    get: () => store.getState()[key],
+    set: (v) => store.setState({ [key]: v })
+  });
+});
+
+Object.defineProperty(window, 'userVotes', {
+  get: () => store.getState().userVotes,
+  set: (v) => store.setUserVotes(v)
+});
+
+Object.defineProperty(window, 'MAX_PROPOSALS', {
+  get: () => store.getState().maxProposals,
+  set: (v) => store.setState({ maxProposals: v })
+});
+
+Object.defineProperty(window, 'MAX_VOTES', {
+  get: () => store.getState().maxVotes,
+  set: (v) => store.setState({ maxVotes: v })
+});
 
 async function fetchAppSettings() {
   try {
@@ -306,7 +315,7 @@ async function checkUser(session) {
     isAdmin = userProfile?.role === 'admin';
     console.log(`[ACL] User: ${user.email} | Role: ${userProfile?.role || 'user'} | Admin: ${isAdmin}`);
 
-    const { data: votes } = await supabase.from('votes').select('movie_id').eq('user_id', user.id);
+    const votes = await MovieService.fetchVotesForUser(user.id);
     userVotes = new Set(votes?.map(v => v.movie_id) || []);
   } else {
     userProfile = null;
@@ -320,14 +329,9 @@ async function checkUser(session) {
 }
 
 async function refreshData() {
-  const { data, error } = await supabase
-    .from('movies')
-    .select('*')
-    .order('created_at', { ascending: false });
-
-  if (!error) allMovies = data || [];
-
-  if (error) {
+  try {
+    allMovies = await MovieService.fetchAllMovies();
+  } catch (error) {
     console.error('Error fetching movies:', error);
     return;
   }
@@ -337,12 +341,10 @@ async function refreshData() {
   let allRatings = [];
 
   if (user) {
-    const { data: ratings } = await supabase.from('user_ratings').select('*').eq('user_id', user.id);
-    individualRatings = ratings || [];
+    individualRatings = await MovieService.getUserRatings(user.id);
   }
 
-  const { data: globalRatings } = await supabase.from('user_ratings').select('movie_id, rating');
-  allRatings = globalRatings || [];
+  allRatings = await MovieService.getGlobalRatings();
 
   allMovies.forEach(m => {
     const userV = individualRatings.find(r => r.movie_id === m.id);
@@ -364,15 +366,7 @@ async function refreshData() {
   // Background enrichment for movies with missing data
   enrichMovieData(allMovies);
 
-  // 1. TEMPORARY: Sanitization of corrupted vote counts from TMDB global data
-  const corrupted = allMovies.filter(m => !m.is_seen && m.vote_count > 50);
-  if (corrupted.length > 0) {
-    console.log(`[Migration] Sanitizing ${corrupted.length} corrupted movie counts...`);
-    supabase.from('movies').update({ vote_count: 0 }).in('id', corrupted.map(m => m.id)).then(() => {
-      corrupted.forEach(m => m.vote_count = 0);
-      renderProposals();
-    });
-  }
+
 
   proposedMovies = allMovies.filter(m => !m.is_seen && !m.is_dropped);
   seenMovies = allMovies.filter(m => m.is_seen);
