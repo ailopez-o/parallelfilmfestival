@@ -10,7 +10,7 @@ import {
   createTimelineItemHTML,
   renderAvatarStack
 } from './src/components/index.js';
-import { HomeView } from './src/views/index.js';
+import { HomeView, ProfileView, AdminView } from './src/views/index.js';
 
 // Configuration removed (now in src/config/supabase.js)
 
@@ -749,15 +749,17 @@ async function loadUserActivity(targetUserId = null) {
   // Fetch target profile data from the DB
   const { data: profile } = await supabase.from('profiles').select('*').eq('id', activeUid).single();
   
-  const displayName = profile?.full_name || profile?.email?.split('@')[0] || 'User';
-  const displayEmail = profile?.email || 'N/A';
-  
-  // Generate high-end initial-based avatar
-  const displayAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=5850ec&color=fff&size=256&bold=true`;
-  
-  profileName.textContent = displayName;
-  profileEmail.textContent = displayEmail;
-  profileAvatar.src = displayAvatar;
+  ProfileView.renderHeader(profile, {
+    profileName,
+    profileEmail,
+    profileAvatar,
+    countProposals,
+    countVotes,
+    maxProposals: MAX_PROPOSALS,
+    maxVotes: MAX_VOTES,
+    proposalsCount: 0, // Will update after fetch
+    votesCount: 0
+  });
 
   // Show audit badge if viewing another user
   const auditBadge = document.getElementById('auditBadge') || document.createElement('div');
@@ -772,28 +774,21 @@ async function loadUserActivity(targetUserId = null) {
     document.getElementById('editProfileBtn')?.classList.remove('page-hidden');
   }
 
-  // Pre-fill edit form (only if it's our own profile)
+  // Pre-fill edit form
   if (!isAudit) {
-    editName.value = displayName;
+    editName.value = profile?.full_name || '';
     const displayEmailInput = document.getElementById('displayEmail');
     if (displayEmailInput) displayEmailInput.value = user.email;
   }
 
-  const { data: proposals } = await supabase
-    .from('movies')
-    .select('*')
-    .eq('proposed_by', activeUid)
-    .eq('is_dropped', false);
-    
+  const { data: proposals } = await supabase.from('movies').select('*').eq('proposed_by', activeUid).eq('is_dropped', false);
   const { data: votes } = await supabase.from('votes').select('movie_id, movies(*)').eq('user_id', activeUid);
 
-  countProposals.textContent = `${proposals?.length || 0} / ${MAX_PROPOSALS}`;
-  countVotes.textContent = `${votes?.length || 0} / ${MAX_VOTES}`;
+  if (countProposals) countProposals.textContent = `${proposals?.length || 0} / ${MAX_PROPOSALS}`;
+  if (countVotes) countVotes.textContent = `${votes?.length || 0} / ${MAX_VOTES}`;
 
-  // Default view is proposals
   renderActivityGrid(proposals || []);
   
-  // Set up tab switching for profile
   document.querySelectorAll('.activity-tab').forEach(tab => {
     tab.onclick = () => {
       document.querySelector('.activity-tab.active').classList.remove('active');
@@ -803,7 +798,6 @@ async function loadUserActivity(targetUserId = null) {
     };
   });
 
-  // ADMIN DASHBOARD logic
   if (isAdmin) {
     adminDashboard.classList.remove('page-hidden');
     await fetchUserList();
@@ -812,9 +806,7 @@ async function loadUserActivity(targetUserId = null) {
     adminDashboard.classList.add('page-hidden');
   }
 
-  // Trophies rendering
-  await renderProfileAchievements();
-
+  await renderProfileAchievements(activeUid);
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -1089,68 +1081,13 @@ async function updateGlobalRanking() {
 }
 
 function renderRankingView() {
-  if (!rankingList) return;
-  
-  rankingList.innerHTML = rankedUsers.map(p => createRankingRowHTML(p)).join('');
-  
+  AdminView.renderRankingView(rankedUsers, rankingList);
   if (window.lucide) window.lucide.createIcons();
 }
 
 async function fetchUserList() {
-  try {
-    // ranking is already updated by updateGlobalRanking() called in refreshData()
-    const profiles = rankedUsers;
-
-    adminUserCount.textContent = `${profiles?.length || 0} Users`;
-    adminUserList.innerHTML = (profiles || []).map(p => {
-      const name = p.full_name || p.email.split('@')[0];
-      const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
-      const date = p.created_at ? new Date(p.created_at).toLocaleDateString() : 'N/A';
-      const roleLabel = p.role === 'admin' ? '<span style="color:var(--success); font-size: 0.7rem; font-weight:700;">ADMIN</span>' : '<span style="color:var(--text-secondary); font-size: 0.7rem;">USER</span>';
-      const rankClass = p.rank <= 3 ? `top-${p.rank}` : '';
-
-      return `
-        <tr class="admin-user-row clickable" onclick="window.viewUserProfile('${p.id}')">
-          <td>
-            <div class="user-cell">
-              <span class="user-rank ${rankClass}">#${p.rank}</span>
-              <img src="${avatar}" alt="${p.full_name || 'User'}">
-              <div style="display:flex; flex-direction:column;">
-                <span class="user-name">${p.full_name || 'Anonymous User'}</span>
-                ${roleLabel}
-              </div>
-            </div>
-          </td>
-          <td><span class="user-email">${p.email}</span></td>
-          <td>
-            <div class="score-badge" title="View Global Ranking">
-              <i data-lucide="award" style="width:12px; height:12px; margin-right:4px;"></i>
-              ${p.score}
-            </div>
-          </td>
-          <td><span class="user-date">${date}</span></td>
-          <td>
-            <div class="user-actions-cell" onclick="event.stopPropagation()">
-              <button class="btn-icon view-btn" title="View Profile" onclick="window.viewUserProfile('${p.id}')">
-                <i data-lucide="eye"></i>
-              </button>
-              ${p.id !== user?.id ? `
-                <button class="delete-user-btn" onclick="window.deleteUser('${p.id}', '${name}')" title="Delete User">
-                  <i data-lucide="user-minus"></i>
-                </button>
-              ` : '<span style="color:var(--text-secondary); font-size:0.7rem; font-style:italic;">(You)</span>'}
-            </div>
-          </td>
-        </tr>
-      `;
-    }).join('');
-
-    if (window.lucide) window.lucide.createIcons();
-
-  } catch (err) {
-    console.error('Error fetching user list:', err);
-    adminUserList.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:2rem; color:var(--text-secondary);">Unable to fetch user list.</td></tr>`;
-  }
+  AdminView.renderUserList(rankedUsers, adminUserList, adminUserCount, user);
+  if (window.lucide) window.lucide.createIcons();
 }
 
 // Attendance Logic
@@ -1286,21 +1223,7 @@ window.unmarkAsSeen = async (movieId) => {
 };
 
 function renderActivityGrid(movies) {
-  if (!movies || movies.length === 0) {
-    profileActivityGrid.innerHTML = '<div class="empty-state">Nothing to show here yet.</div>';
-    return;
-  }
-  profileActivityGrid.innerHTML = movies.map(movie => {
-      const isOwner = user && movie.proposed_by === user.id;
-      return createMovieCardHTML(movie, { 
-        context: 'activity', 
-        showDelete: isOwner || isAdmin,
-        isAdmin,
-        user,
-        userVotes
-      });
-    }).join('');
-  
+  ProfileView.renderActivityGrid(movies, profileActivityGrid, { isAdmin, user, userVotes });
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -2224,14 +2147,11 @@ async function renderHomeAchievements() {
   if (window.lucide) window.lucide.createIcons();
 }
 
-async function renderProfileAchievements() {
+async function renderProfileAchievements(userId) {
   const grid = document.getElementById('profileAchievementsGrid');
   if (!grid) return;
-
-  const achievements = await calculateUserAchievements(user?.id);
-
-  grid.innerHTML = achievements.map(a => createAchievementCardHTML(a)).join('');
-
+  const achievements = await calculateUserAchievements(userId || user?.id);
+  ProfileView.renderAchievements(achievements, grid);
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -2419,30 +2339,7 @@ async function fetchRecentAchievementEvents() {
     // Admin Audit List (Full history)
     const adminList = document.getElementById('adminAchievementsList');
     if (adminList) {
-      adminList.innerHTML = filteredEvents.map(e => {
-        const userName = activeUserMap[e.userId] || 'Unknown';
-        const medalName = e.text.match(/<span class="event-medal-name">(.*?)<\/span>/)?.[1] || 'Achievement';
-        return `
-          <tr>
-            <td>
-              <div style="display:flex; flex-direction:column;">
-                <span class="user-name">${userName}</span>
-                <span style="font-size:0.7rem; color:var(--text-secondary);">${e.userId}</span>
-              </div>
-            </td>
-            <td>
-              <div style="display:flex; align-items:center; gap:0.75rem;">
-                <div class="achievement-icon-small" style="background:var(--accent); color:white; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center;">
-                  <i data-lucide="${e.icon}"></i>
-                </div>
-                <span style="font-weight:600;">${medalName}</span>
-              </div>
-            </td>
-            <td>${e.date.toLocaleString()}</td>
-            <td><span class="score-badge">+10</span></td>
-          </tr>
-        `;
-      }).join('');
+      AdminView.renderAchievementsAudit(filteredEvents, adminList, activeUserMap);
       if (window.lucide) window.lucide.createIcons();
     }
 

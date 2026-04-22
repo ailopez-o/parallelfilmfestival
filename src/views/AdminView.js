@@ -1,0 +1,107 @@
+/**
+ * Admin View Module.
+ * Manages the administrator dashboard and auditing tools.
+ */
+export const AdminView = {
+  /**
+   * Renders the user directory table.
+   */
+  renderUserList(profiles, container, countElement) {
+    if (!container) return;
+    if (countElement) countElement.textContent = `${profiles?.length || 0} Users`;
+
+    container.innerHTML = (profiles || []).map(p => {
+      const name = p.full_name || p.email.split('@')[0];
+      const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
+      const date = p.created_at ? new Date(p.created_at).toLocaleDateString() : 'N/A';
+      const roleLabel = p.role === 'admin' ? '<span style="color:var(--success); font-size: 0.7rem; font-weight:700;">ADMIN</span>' : '<span style="color:var(--text-secondary); font-size: 0.7rem;">USER</span>';
+      const rankClass = p.rank <= 3 ? `top-${p.rank}` : '';
+
+      return `
+        <tr class="admin-user-row clickable" onclick="window.viewUserProfile('${p.id}')">
+          <td>
+            <div class="user-cell">
+              <span class="user-rank ${rankClass}">#${p.rank}</span>
+              <img src="${avatar}" alt="${p.full_name || 'User'}">
+              <div style="display:flex; flex-direction:column;">
+                <span class="user-name">${p.full_name || 'Anonymous User'}</span>
+                ${roleLabel}
+              </div>
+            </div>
+          </td>
+          <td><span style="font-size:0.85rem; color:var(--text-secondary);">${p.email}</span></td>
+          <td><span class="score-badge">${p.score || 0} pts</span></td>
+          <td><span style="font-size:0.8rem; color:var(--text-tertiary);">${date}</span></td>
+          <td>
+            <button class="delete-user-btn" onclick="event.stopPropagation(); window.confirmDeleteUser('${p.id}', '${name}')" title="Delete User">
+              <i data-lucide="user-minus"></i>
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  },
+
+  /**
+   * Renders the participation log audit table.
+   */
+  renderParticipationLog(logs, container) {
+    if (!container) return;
+    if (!logs || logs.length === 0) {
+      container.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--text-secondary);">No participation records found.</td></tr>';
+      return;
+    }
+
+    container.innerHTML = logs.map(log => {
+      const name = log.profiles?.full_name || 'User';
+      const actionLabel = log.action_type === 'vote' ? 'Voted' : 
+                          log.action_type === 'proposal' ? 'Proposed' : 
+                          log.action_type === 'attendance' ? 'Attended' : log.action_type;
+      
+      return `
+        <tr>
+          <td><span style="font-weight:600;">${name}</span></td>
+          <td><span class="audit-action-tag ${log.action_type}">${actionLabel}</span></td>
+          <td><span style="font-size:0.85rem;">${log.movies?.title || 'System'}</span></td>
+          <td style="font-size:0.8rem; color:var(--text-tertiary);">${new Date(log.created_at).toLocaleString()}</td>
+        </tr>
+      `;
+    }).join('');
+  },
+
+  /**
+   * Renders the achievements audit table.
+   */
+  renderAchievementsAudit(events, container, activeUserMap) {
+    if (!container) return;
+    if (!events || events.length === 0) {
+      container.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--text-secondary);">No achievement records found.</td></tr>';
+      return;
+    }
+
+    container.innerHTML = events.map(e => {
+      const userName = activeUserMap[e.userId] || 'Unknown';
+      const medalName = e.text.match(/<span class="event-medal-name">(.*?)<\/span>/)?.[1] || 'Achievement';
+      return `
+        <tr>
+          <td>
+            <div style="display:flex; flex-direction:column;">
+              <span class="user-name">${userName}</span>
+              <span style="font-size:0.7rem; color:var(--text-secondary);">${e.userId}</span>
+            </div>
+          </td>
+          <td>
+            <div style="display:flex; align-items:center; gap:0.75rem;">
+              <div class="achievement-icon-small" style="background:var(--accent); color:white; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center;">
+                <i data-lucide="${e.icon}"></i>
+              </div>
+              <span style="font-weight:600;">${medalName}</span>
+            </div>
+          </td>
+          <td>${e.date.toLocaleString()}</td>
+          <td><span class="score-badge">+10</span></td>
+        </tr>
+      `;
+    }).join('');
+  }
+};
