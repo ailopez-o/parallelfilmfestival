@@ -10,6 +10,7 @@ import {
   createTimelineItemHTML,
   renderAvatarStack
 } from './src/components/index.js';
+import { HomeView } from './src/views/index.js';
 
 // Configuration removed (now in src/config/supabase.js)
 
@@ -514,73 +515,24 @@ function handleRouting() {
 
 // Rendering
 function renderProposals() {
-  if (!proposedMovies.length) {
-    movieGrid.innerHTML = '<div class="empty-state">No movies proposed yet. Be the first!</div>';
-    return;
-  }
-
-  movieGrid.innerHTML = proposedMovies.map(movie => {
-    const isOwner = user && movie.proposed_by === user.id;
-    const canDelete = isOwner || isAdmin;
-    
-    return createMovieCardHTML(movie, { 
-      context: 'proposal', 
-      showDelete: canDelete,
-      isAdmin,
-      user,
-      userVotes
-    });
-  }).join('');
-  
+  HomeView.renderProposals(proposedMovies, movieGrid, { isAdmin, user, userVotes });
   if (window.lucide) window.lucide.createIcons();
 }
 
 async function renderTopVotedShowcase() {
   const container = document.getElementById('topVotedShowcase');
   const grid = document.getElementById('topVotedGrid');
-  if (!grid || !container) return;
-
-  // Filter movies that are NOT seen and have at least 1 vote
-  const topContenders = [...proposedMovies]
-    .filter(m => (m.vote_count || 0) > 0)
-    .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0))
-    .slice(0, 3);
-
-  if (topContenders.length === 0) {
-    container.classList.add('page-hidden');
-    return;
-  }
-
-  container.classList.remove('page-hidden');
-  grid.innerHTML = topContenders.map((movie, index) => 
-    createMovieCardHTML(movie, { 
-      context: 'showcase', 
-      rank: index + 1,
-      isAdmin,
-      user,
-      userVotes
-    })
-  ).join('');
-
+  HomeView.renderTopVotedShowcase(proposedMovies, container, grid, { isAdmin, user, userVotes });
   if (window.lucide) window.lucide.createIcons();
 }
 
 function renderHistory() {
-  if (!seenMovies.length) {
-    historyGrid.innerHTML = '<div class="empty-state">No movies in history yet.</div>';
-    return;
-  }
+  HomeView.renderHistory(seenMovies, historyGrid, { isAdmin, user, userVotes });
+  if (window.lucide) window.lucide.createIcons();
+}
 
-  historyGrid.innerHTML = seenMovies.map(movie => {
-    return createMovieCardHTML(movie, { 
-      context: 'history', 
-      showDelete: false, // Protected from deletion
-      isAdmin,
-      user,
-      userVotes
-    });
-  }).join('');
-  
+function renderCemetery(droppedMovies) {
+  HomeView.renderCemetery(droppedMovies, cemeteryGrid, { isAdmin, user, userVotes });
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -2267,30 +2219,8 @@ async function calculateGlobalAchievementStats() {
 async function renderHomeAchievements() {
   const grid = document.getElementById('homeAchievementsGrid');
   if (!grid) return;
-
   const stats = await calculateGlobalAchievementStats();
-
-  grid.innerHTML = ACHIEVEMENT_LIST.map(a => {
-    const userCount = stats[a.id] || 0;
-    return `
-      <div class="achievement-card ${a.class} active">
-        <div class="achievement-header">
-          <div class="medal-icon-wrapper">
-            <i data-lucide="${a.icon}"></i>
-          </div>
-          <div class="achievement-info">
-            <span class="achievement-name">${a.name}</span>
-            <span class="achievement-desc">${a.desc}</span>
-            <div class="achievement-stats-badge">
-              <i data-lucide="users" style="width:12px; height:12px;"></i>
-              ${userCount} users earned this
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-
+  HomeView.renderHomeAchievements(stats, grid, ACHIEVEMENT_LIST);
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -2523,8 +2453,7 @@ async function fetchRecentAchievementEvents() {
 
 async function renderAchievementTimeline(events) {
   const body = document.getElementById('timelineBody');
-  if (!body) return;
-  body.innerHTML = events.map(event => createTimelineItemHTML(event, timeAgo)).join('');
+  HomeView.renderTimeline(events, body);
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -2553,29 +2482,11 @@ function renderSessions() {
 }
 
 function renderNextSessionHero() {
-  if (!nextSessionHero) return;
-
   const upcoming = sessions
     .filter(s => s.is_upcoming && new Date(s.session_date) > new Date())
     .sort((a, b) => new Date(a.session_date) - new Date(b.session_date))[0];
 
-  if (!upcoming) {
-    nextSessionHero.classList.add('page-hidden');
-    return;
-  }
-
-  const poster = upcoming.movie_id ? (upcoming.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER;
-  const title = upcoming.movie_id ? upcoming.movies?.title : 'Film To Be Decided';
-  const isSignedUp = user && upcoming.session_signups?.some(s => s.user_id === user.id);
-  const signupCount = upcoming.session_signups?.length || 0;
-
-  const displayKey = upcoming.keyword && upcoming.keyword.trim() !== "" ? upcoming.keyword : 'TBD';
-  const keywordDisplay = isSignedUp 
-    ? `<div class="hero-keyword-unlocked"><i data-lucide="key"></i> Secret Code: <strong>${displayKey}</strong></div>`
-    : `<div class="hero-keyword-locked"><i data-lucide="lock"></i> Register to unlock secret code</div>`;
-
-  nextSessionHero.classList.remove('page-hidden');
-  nextSessionHero.innerHTML = createSessionHeroHTML(upcoming, { user });
+  HomeView.renderNextSessionHero(upcoming, nextSessionHero, { user });
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -3008,27 +2919,7 @@ window.handleUpdateSession = async (sessionId) => {
 
 init();
 
-function renderCemetery(droppedMovies) {
-  const cemeteryGrid = document.getElementById('cemeteryGrid');
-  if (!cemeteryGrid) return;
-  
-  if (droppedMovies.length === 0) {
-    cemeteryGrid.innerHTML = '<div class="empty-state">The cemetery is empty. All proposed movies are still fighting!</div>';
-    return;
-  }
-
-  cemeteryGrid.innerHTML = droppedMovies.map(movie => 
-      createMovieCardHTML(movie, { 
-        context: 'cemetery',
-        isAdmin,
-        user,
-        userVotes,
-        showDelete: isAdmin // Only admins can truly delete from cemetery
-      })
-    ).join('');
-  
-  if (window.lucide) window.lucide.createIcons();
-}
+// renderCemetery removed (now handled by HomeView)
 
 window.cleanupInactiveMovies = async (silent = false) => {
   if (!isAdmin) return;
