@@ -171,5 +171,34 @@ export const HomeView = {
 
     container.classList.remove('page-hidden');
     container.innerHTML = createSessionHeroHTML(upcomingSession, { user: state.user });
+  },
+
+  /**
+   * Renders the search autocomplete dropdown results.
+   */
+  renderSearchResults(results, container, formatScore, fallbackImage) {
+    if (!container) return;
+    if (!results.length) {
+      container.innerHTML = '<div class="search-result-item">No movies found</div>';
+    } else {
+      container.innerHTML = results.map(movie => `
+        <div class="search-result-item" onclick="window.proposeMovie(${JSON.stringify(movie).replace(/"/g, '&quot;')})">
+          <img class="result-poster" src="${movie.poster_path ? 'https://image.tmdb.org/t/p/w92' + movie.poster_path : fallbackImage}">
+          <div class="result-info">
+            <div class="result-title">${movie.title}</div>
+            <div class="result-meta">
+              <span>${movie.release_date ? movie.release_date.split('-')[0] : 'N/A'}</span>
+              <span style="color: rgba(255,255,255,0.2);">•</span>
+              <div class="rating-badge" style="margin:0; padding:0; background:transparent; border:none; font-size: 0.75rem;">
+                <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
+                <span style="color:#fbbf24;">${formatScore(movie.vote_average)}</span>
+              </div>
+            </div>
+            <div style="font-size: 0.7rem; color: var(--text-secondary); opacity: 0.7;">${movie.director}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+    container.classList.add('active');
   }
 };

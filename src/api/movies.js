@@ -67,6 +67,16 @@ export const MovieService = {
     if (error) throw error;
   },
 
+  async fetchVotesForUser(userId) {
+    const { data, error } = await supabase
+      .from('votes')
+      .select('movie_id')
+      .eq('user_id', userId);
+    
+    if (error) throw error;
+    return data || [];
+  },
+
   async addVote(userId, movieId) {
     const { error } = await supabase
       .from('votes')

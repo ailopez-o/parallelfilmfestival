@@ -19,39 +19,7 @@ import { ACHIEVEMENT_LIST } from './src/config/constants.js';
 
 // Configuration removed (now in src/config/supabase.js)
 
-// Edge Function Proxy Helper
-async function invokeTMDBCall(path, params = {}) {
-  // Helper for timeout
-  const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error('Request Timeout')), ms));
-  
-  try {
-    // Race between the actual call and a 12-second timeout
-    const response = await Promise.race([
-      supabase.functions.invoke('tmdb-proxy', { body: { path, params } }),
-      timeout(12000)
-    ]);
-
-    const { data, error } = response;
-    
-    if (error) {
-      const msg = error.message || "Unknown Proxy Error";
-      console.error(`[TMDB Proxy Error]: ${msg}`, error);
-      throw new Error(`TMDB Proxy Error: ${msg}`);
-    }
-    
-    if (data && data.error) {
-      console.error(`[TMDB Proxy Logic Error]: ${data.error}`, data.details);
-      throw new Error(data.error);
-    }
-
-    return data;
-  } catch (e) {
-    if (e.message === 'Request Timeout') {
-      console.warn(`[TMDB Proxy] Timeout reached for ${path}`);
-    }
-    throw e;
-  }
-}
+// Edge Function Proxy Helper logic is now fully in TMDBService
 
 import { store } from './src/state/store.js';
 // This routes all variable reads/writes transparently into the centralized store.
@@ -241,7 +209,7 @@ async function init() {
 
 async function fetchGenreMap() {
   try {
-    const data = await invokeTMDBCall('/genre/movie/list');
+    const data = await TMDBService.invokeTMDBCall('/genre/movie/list');
     if (data.genres) {
       exploreGenreSelect.innerHTML = '<option value="">All Genres</option>';
       data.genres.forEach(g => {
@@ -259,7 +227,7 @@ async function fetchGenreMap() {
 
 async function fetchProvidersMap() {
   try {
-    const data = await invokeTMDBCall('/watch/providers/movie', { watch_region: 'ES' });
+    const data = await TMDBService.invokeTMDBCall('/watch/providers/movie', { watch_region: 'ES' });
     const select = document.getElementById('exploreProvider');
     if (data.results && select) {
       select.innerHTML = '<option value="">Any Platform</option>';
@@ -411,7 +379,7 @@ async function enrichMovieData(movies) {
 
   for (const movie of moviesToEnrich) {
     try {
-      const data = await invokeTMDBCall(`/movie/${movie.tmdb_id}`, {
+      const data = await TMDBService.invokeTMDBCall(`/movie/${movie.tmdb_id}`, {
         append_to_response: 'videos,watch/providers'
       });
       
@@ -1214,24 +1182,23 @@ function renderActivityGrid(movies) {
 
 // TMDB Search Logic
 let searchTimeout;
-async function searchTMDB(query) {
+async function handleMovieSearch(query) {
   if (!user || !query) {
     searchResults.classList.remove('active');
     return;
   }
 
   try {
-    const data = await invokeTMDBCall('/search/movie', { query, include_adult: 'false' });
+    const dataResults = await TMDBService.searchTMDB(query);
     
-
     // No restrictive filtering - just sort by popularity (desc) and take top 20
-    const results = (data.results || [])
+    const results = dataResults
       .sort((a, b) => b.popularity - a.popularity)
       .slice(0, 20);
 
     const enrichedResults = await Promise.all(results.map(async movie => {
       try {
-        const creditsData = await invokeTMDBCall(`/movie/${movie.id}/credits`);
+        const creditsData = await TMDBService.invokeTMDBCall(`/movie/${movie.id}/credits`);
         const directors = creditsData.crew
           .filter(person => person.job === 'Director')
           .map(d => d.name)
@@ -1291,12 +1258,12 @@ async function fetchExploreResults() {
     // 1. Resolve Person IDs
     if (directorName || actorName) {
       const personRequests = [];
-      if (directorName) personRequests.push(invokeTMDBCall('/search/person', { query: directorName }));
-      if (actorName) personRequests.push(invokeTMDBCall('/search/person', { query: actorName }));
+      if (directorName) personRequests.push(TMDBService.invokeTMDBCall('/search/person', { query: directorName }));
+      if (actorName) personRequests.push(TMDBService.invokeTMDBCall('/search/person', { query: actorName }));
       
       const [directorRes, actorRes] = await Promise.all([
-        directorName ? invokeTMDBCall('/search/person', { query: directorName }) : null,
-        actorName ? invokeTMDBCall('/search/person', { query: actorName }) : null
+        directorName ? TMDBService.invokeTMDBCall('/search/person', { query: directorName }) : null,
+        actorName ? TMDBService.invokeTMDBCall('/search/person', { query: actorName }) : null
       ]);
 
       if (directorRes?.results?.length > 0) {
@@ -1321,7 +1288,7 @@ async function fetchExploreResults() {
       const pagesToFetch = Math.max(1, Math.ceil(limit / 20));
       const pages = await Promise.all(
         Array.from({ length: pagesToFetch }, (_, i) => 
-          invokeTMDBCall('/search/movie', { query, page: i + 1 })
+          TMDBService.invokeTMDBCall('/search/movie', { query, page: i + 1 })
         )
       );
       results = pages.flatMap(p => p.results || []);
@@ -1330,7 +1297,7 @@ async function fetchExploreResults() {
       const pagesToFetch = Math.max(1, Math.min(5, Math.ceil(limit / 20)));
       const responses = await Promise.all(
         Array.from({ length: pagesToFetch }, (_, i) => 
-          invokeTMDBCall('/discover/movie', { ...discoverParams, page: i + 1 })
+          TMDBService.invokeTMDBCall('/discover/movie', { ...discoverParams, page: i + 1 })
         )
       );
       results = responses.flatMap(r => r.results || []);
@@ -1350,7 +1317,7 @@ async function fetchExploreResults() {
       const chunk = finalResults.slice(i, i + 5);
       const chunkResults = await Promise.all(chunk.map(async movie => {
         try {
-          const details = await invokeTMDBCall(`/movie/${movie.id}`, {
+          const details = await TMDBService.invokeTMDBCall(`/movie/${movie.id}`, {
             append_to_response: 'videos,watch/providers,credits'
           });
           
@@ -1463,12 +1430,12 @@ async function fetchAIRecommendations() {
 
         try {
           // 1. Search for ID via Proxy
-          const searchData = await invokeTMDBCall('/search/movie', { query: title });
+          const searchData = await TMDBService.invokeTMDBCall('/search/movie', { query: title });
           const found = searchData.results?.[0];
 
           if (found && !renderedIds.has(found.id)) {
             // 2. Fetch Rich Details via Proxy
-            const detailData = await invokeTMDBCall(`/movie/${found.id}`, {
+            const detailData = await TMDBService.invokeTMDBCall(`/movie/${found.id}`, {
               append_to_response: 'videos,watch/providers,credits'
             });
             
@@ -1551,28 +1518,8 @@ function renderExploreResults(results) {
 }
 
 function renderSearchResults(results) {
-  if (!results.length) {
-    searchResults.innerHTML = '<div class="search-result-item">No movies found</div>';
-  } else {
-    searchResults.innerHTML = results.map(movie => `
-      <div class="search-result-item" onclick="window.proposeMovie(${JSON.stringify(movie).replace(/"/g, '&quot;')})">
-        <img class="result-poster" src="${movie.poster_path ? 'https://image.tmdb.org/t/p/w92' + movie.poster_path : FALLBACK_IMAGE}">
-        <div class="result-info">
-          <div class="result-title">${movie.title}</div>
-          <div class="result-meta">
-            <span>${movie.release_date ? movie.release_date.split('-')[0] : 'N/A'}</span>
-            <span style="color: rgba(255,255,255,0.2);">•</span>
-            <div class="rating-badge" style="margin:0; padding:0; background:transparent; border:none; font-size: 0.75rem;">
-              <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
-              <span style="color:#fbbf24;">${formatScore(movie.vote_average)}</span>
-            </div>
-          </div>
-          <div style="font-size: 0.7rem; color: var(--text-secondary); opacity: 0.7;">${movie.director}</div>
-        </div>
-      </div>
-    `).join('');
-  }
-  searchResults.classList.add('active');
+  HomeView.renderSearchResults(results, searchResults, formatScore, FALLBACK_IMAGE);
+  if (window.lucide) window.lucide.createIcons();
 }
 
 // Actions
@@ -1831,7 +1778,7 @@ function setupEventListeners() {
 
   searchInput.addEventListener('input', (e) => {
     clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => searchTMDB(e.target.value), 500);
+    searchTimeout = setTimeout(() => handleMovieSearch(e.target.value), 500);
   });
 
   document.addEventListener('click', (e) => {
