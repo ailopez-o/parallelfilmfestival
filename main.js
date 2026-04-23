@@ -715,12 +715,20 @@ window.handleLogout = async () => {
 // Profile Logic
 async function loadUserActivity(targetUserId = null) {
   if (!user && !targetUserId) return;
-  
-  const isAudit = targetUserId && targetUserId !== user?.id;
+
   const activeUid = targetUserId || user.id;
+  const isAudit = targetUserId && targetUserId !== user?.id;
+
+  // 1. Show skeletons immediately
+  ProfileView.renderSkeletonHeader({ profileName, profileEmail, profileAvatar, countProposals, countVotes });
+  ProfileView.renderActivitySkeletons(profileActivityGrid);
+  ProfileView.renderAchievementSkeletons(document.getElementById('profileAchievementsGrid'));
 
   // Fetch target profile data from the DB
   const { data: profile } = await supabase.from('profiles').select('*').eq('id', activeUid).single();
+  
+  // Remove skeleton class from avatar wrapper once we have the image
+  if (profileAvatar) profileAvatar.parentElement.classList.remove('skeleton');
   
   ProfileView.renderHeader(profile, {
     profileName,
@@ -1854,6 +1862,12 @@ async function calculateGlobalAchievementStats() {
 async function renderHomeAchievements() {
   const grid = document.getElementById('homeAchievementsGrid');
   if (!grid) return;
+  
+  // Show skeletons while calculating
+  if (grid.innerHTML.trim() === "" || grid.querySelector('.empty-state')) {
+    ProfileView.renderAchievementSkeletons(grid, 4);
+  }
+
   const stats = await calculateGlobalAchievementStats();
   HomeView.renderHomeAchievements(stats, grid, ACHIEVEMENT_LIST);
   if (window.lucide) window.lucide.createIcons();
@@ -1905,6 +1919,9 @@ async function renderAchievementTimeline(events) {
 /* --- Session System Logic --- */
 
 async function fetchSessions() {
+  if (sessionsGrid && (sessionsGrid.innerHTML.trim() === "" || sessionsGrid.querySelector('.empty-state'))) {
+    SessionsView.renderSkeletons(sessionsGrid, 3);
+  }
   try {
     sessions = await SessionService.fetchAll();
   } catch (err) {

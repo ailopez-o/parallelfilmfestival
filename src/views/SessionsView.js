@@ -22,6 +22,21 @@ export const SessionsView = {
   },
 
   /**
+   * Renders skeletons for the sessions grid.
+   */
+  renderSkeletons(container, count = 3) {
+    if (!container) return;
+    container.innerHTML = Array(count).fill(0).map(() => `
+      <div class="skeleton-card">
+        <div class="skeleton skeleton-image"></div>
+        <div class="skeleton skeleton-title"></div>
+        <div class="skeleton skeleton-text"></div>
+        <div class="skeleton skeleton-text-short"></div>
+      </div>
+    `).join('');
+  },
+
+  /**
    * Renders the session detail modal body.
    */
   renderDetail(session, data, state) {
@@ -113,15 +128,24 @@ export const SessionsView = {
           </button>
         </div>
         <div class="comments-list">
-          ${comments.length ? comments.map(c => `
-            <div class="comment-card">
-              <div class="comment-header">
-                <span class="comment-user">${c.profiles?.full_name || 'Anonymous'}</span>
-                <span class="comment-date">${new Date(c.created_at).toLocaleString()}</span>
+          ${comments.length ? comments.map(c => {
+            const userName = c.profiles?.full_name || 'Anonymous';
+            const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=random&size=64`;
+            const date = new Date(c.created_at).toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' });
+            
+            return `
+              <div class="comment-item">
+                <img src="${avatar}" class="comment-avatar" />
+                <div class="comment-body">
+                  <div class="comment-meta">
+                    <span class="comment-author">${userName}</span>
+                    <span class="comment-time">${date}</span>
+                  </div>
+                  <div class="comment-content">${c.content || ''}</div>
+                </div>
               </div>
-              <div class="comment-text">${c.content || ''}</div>
-            </div>
-          `).join('') : '<div class="empty-state">No comments yet.</div>'}
+            `;
+          }).join('') : '<div class="empty-state">No comments yet.</div>'}
         </div>
       </div>
     `;
