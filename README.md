@@ -48,6 +48,8 @@ The application features a cutting-edge **Glassmorphism** interface with:
 | | Auth | Supabase Auth |
 | | API | [TMDB API](https://www.themoviedb.org/documentation/api) |
 
+> 📚 **Developer Guide:** For a detailed breakdown of how the frontend modules and backend services interact, please read our [System Architecture Document](ARCHITECTURE.md).
+
 ---
 
 ## 🚀 Getting Started

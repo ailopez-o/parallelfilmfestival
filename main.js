@@ -1,71 +1,57 @@
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from './src/config/supabase.js';
+import { normalize, formatScore, timeAgo, showNotification } from './src/utils/index.js';
+import { FALLBACK_IMAGE, TBD_POSTER, DEFAULT_MAX_PROPOSALS, DEFAULT_MAX_VOTES } from './src/config/constants.js';
+import { 
+  createMovieCardHTML, 
+  createSessionCardHTML, 
+  createSessionHeroHTML, 
+  createRankingRowHTML, 
+  createAchievementCardHTML, 
+  createTimelineItemHTML,
+  renderAvatarStack
+} from './src/components/index.js';
+import { HomeView, ProfileView, AdminView, ExploreView, SessionsView } from './src/views/index.js';
+import { 
+  AuthService, MovieService, TMDBService, 
+  AchievementService, SessionService, AdminService 
+} from './src/api/index.js';
+import { ACHIEVEMENT_LIST } from './src/config/constants.js';
 
-// Configuration
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Configuration removed (now in src/config/supabase.js)
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Edge Function Proxy Helper logic is now fully in TMDBService
 
-// Edge Function Proxy Helper
-async function invokeTMDBCall(path, params = {}) {
-  // Helper for timeout
-  const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error('Request Timeout')), ms));
-  
-  try {
-    // Race between the actual call and a 12-second timeout
-    const response = await Promise.race([
-      supabase.functions.invoke('tmdb-proxy', { body: { path, params } }),
-      timeout(12000)
-    ]);
+import { store } from './src/state/store.js';
+// This routes all variable reads/writes transparently into the centralized store.
+['allMovies', 'proposedMovies', 'seenMovies', 'rankedUsers', 'sessions', 'currentSession', 'currentView', 'genreMap', 'providerMap', 'user', 'userProfile', 'isAdmin'].forEach(key => {
+  Object.defineProperty(window, key, {
+    get: () => store.getState()[key],
+    set: (v) => store.setState({ [key]: v })
+  });
+});
 
-    const { data, error } = response;
-    
-    if (error) {
-      const msg = error.message || "Unknown Proxy Error";
-      console.error(`[TMDB Proxy Error]: ${msg}`, error);
-      throw new Error(`TMDB Proxy Error: ${msg}`);
-    }
-    
-    if (data && data.error) {
-      console.error(`[TMDB Proxy Logic Error]: ${data.error}`, data.details);
-      throw new Error(data.error);
-    }
+Object.defineProperty(window, 'userVotes', {
+  get: () => store.getState().userVotes,
+  set: (v) => store.setUserVotes(v)
+});
 
-    return data;
-  } catch (e) {
-    if (e.message === 'Request Timeout') {
-      console.warn(`[TMDB Proxy] Timeout reached for ${path}`);
-    }
-    throw e;
-  }
-}
+Object.defineProperty(window, 'MAX_PROPOSALS', {
+  get: () => store.getState().maxProposals,
+  set: (v) => store.setState({ maxProposals: v })
+});
 
-// State
-let allMovies = [];
-let proposedMovies = [];
-let seenMovies = [];
-let userVotes = new Set(); // Set of movie IDs the user voted for
-let user = null;
-let userProfile = null; // Cache for profile data (name, avatar, role)
-let isAdmin = false;
-let rankedUsers = []; // Global leaderboard data
-let currentView = 'home';
-let genreMap = {}; // Map of genre ID to name
-let providerMap = {}; // Map of provider ID to data (name, logo)
-let sessions = [];
-let currentSession = null;
+Object.defineProperty(window, 'MAX_VOTES', {
+  get: () => store.getState().maxVotes,
+  set: (v) => store.setState({ maxVotes: v })
+});
 
 async function fetchAppSettings() {
   try {
-    const { data, error } = await supabase.from('app_settings').select('*');
-    if (error) throw error;
-    
-    data?.forEach(setting => {
-      if (setting.key === 'max_proposals') MAX_PROPOSALS = parseInt(setting.value);
-      if (setting.key === 'max_votes') MAX_VOTES = parseInt(setting.value);
-    });
+    const settings = await AdminService.fetchAppSettings();
+    if (settings.maxProposals) MAX_PROPOSALS = settings.maxProposals;
+    if (settings.maxVotes) MAX_VOTES = settings.maxVotes;
   } catch (err) {
-    console.error('Error fetching app settings:', err);
+    console.error('Error fetching settings:', err);
   }
 }
 
@@ -87,12 +73,9 @@ window.saveAppSettings = async () => {
   try {
     showNotification('Updating system settings...', 'warning');
     
-    await Promise.all([
-      supabase.from('app_settings').update({ value: newValProp.toString() }).eq('key', 'max_proposals'),
-      supabase.from('app_settings').update({ value: newValVote.toString() }).eq('key', 'max_votes')
-    ]);
+    await AdminService.updateAppSettings(newValProp, newValVote);
 
-    // Update local state
+    // Update local config
     MAX_PROPOSALS = parseInt(newValProp);
     MAX_VOTES = parseInt(newValVote);
 
@@ -114,14 +97,7 @@ window.saveAppSettings = async () => {
  * - Converts to lowercase
  * - Removes diacritics (accents)
  */
-const normalize = (str) => {
-  if (!str) return "";
-  return str
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-};
+// normalize imported from utils
 
 // DOM Elements
 const views = {
@@ -187,13 +163,10 @@ const profileEditForm = document.getElementById('profileEditForm');
 const editName = document.getElementById('editName');
 const editAvatar = document.getElementById('editAvatar');
 
-// Fallback image helper
-const FALLBACK_IMAGE = 'https://placehold.co/300x450/1a1a1f/94a3b8?text=Cinema+Poster';
-const TBD_POSTER = '/coming-soon.png';
-
-// Limits configuration (Dynamic from DB)
-let MAX_PROPOSALS = 3;
-let MAX_VOTES = 5;
+// Fallback images (imported from constants)
+// Limits configuration
+let MAX_PROPOSALS = DEFAULT_MAX_PROPOSALS;
+let MAX_VOTES = DEFAULT_MAX_VOTES;
 
 // Initialization
 async function init() {
@@ -236,7 +209,7 @@ async function init() {
 
 async function fetchGenreMap() {
   try {
-    const data = await invokeTMDBCall('/genre/movie/list');
+    const data = await TMDBService.invokeTMDBCall('/genre/movie/list');
     if (data.genres) {
       exploreGenreSelect.innerHTML = '<option value="">All Genres</option>';
       data.genres.forEach(g => {
@@ -254,7 +227,7 @@ async function fetchGenreMap() {
 
 async function fetchProvidersMap() {
   try {
-    const data = await invokeTMDBCall('/watch/providers/movie', { watch_region: 'ES' });
+    const data = await TMDBService.invokeTMDBCall('/watch/providers/movie', { watch_region: 'ES' });
     const select = document.getElementById('exploreProvider');
     if (data.results && select) {
       select.innerHTML = '<option value="">Any Platform</option>';
@@ -310,7 +283,7 @@ async function checkUser(session) {
     isAdmin = userProfile?.role === 'admin';
     console.log(`[ACL] User: ${user.email} | Role: ${userProfile?.role || 'user'} | Admin: ${isAdmin}`);
 
-    const { data: votes } = await supabase.from('votes').select('movie_id').eq('user_id', user.id);
+    const votes = await MovieService.fetchVotesForUser(user.id);
     userVotes = new Set(votes?.map(v => v.movie_id) || []);
   } else {
     userProfile = null;
@@ -324,14 +297,9 @@ async function checkUser(session) {
 }
 
 async function refreshData() {
-  const { data, error } = await supabase
-    .from('movies')
-    .select('*')
-    .order('created_at', { ascending: false });
-
-  if (!error) allMovies = data || [];
-
-  if (error) {
+  try {
+    allMovies = await MovieService.fetchAllMovies();
+  } catch (error) {
     console.error('Error fetching movies:', error);
     return;
   }
@@ -341,12 +309,10 @@ async function refreshData() {
   let allRatings = [];
 
   if (user) {
-    const { data: ratings } = await supabase.from('user_ratings').select('*').eq('user_id', user.id);
-    individualRatings = ratings || [];
+    individualRatings = await MovieService.getUserRatings(user.id);
   }
 
-  const { data: globalRatings } = await supabase.from('user_ratings').select('movie_id, rating');
-  allRatings = globalRatings || [];
+  allRatings = await MovieService.getGlobalRatings();
 
   allMovies.forEach(m => {
     const userV = individualRatings.find(r => r.movie_id === m.id);
@@ -368,15 +334,7 @@ async function refreshData() {
   // Background enrichment for movies with missing data
   enrichMovieData(allMovies);
 
-  // 1. TEMPORARY: Sanitization of corrupted vote counts from TMDB global data
-  const corrupted = allMovies.filter(m => !m.is_seen && m.vote_count > 50);
-  if (corrupted.length > 0) {
-    console.log(`[Migration] Sanitizing ${corrupted.length} corrupted movie counts...`);
-    supabase.from('movies').update({ vote_count: 0 }).in('id', corrupted.map(m => m.id)).then(() => {
-      corrupted.forEach(m => m.vote_count = 0);
-      renderProposals();
-    });
-  }
+
 
   proposedMovies = allMovies.filter(m => !m.is_seen && !m.is_dropped);
   seenMovies = allMovies.filter(m => m.is_seen);
@@ -393,7 +351,7 @@ async function refreshData() {
   // Achievements rendering
   renderHomeAchievements();
   renderTopVotedShowcase();
-  renderAchievementTimeline();
+  fetchRecentAchievementEvents();
   if (currentView === 'profile') renderProfileAchievements();
 
   // Sessions rendering
@@ -405,11 +363,7 @@ async function refreshData() {
 }
 
 // Rendering Helpers
-function formatScore(score) {
-  if (score === undefined || score === null || (typeof score === 'string' && score === 'N/A')) return 'N/A';
-  const num = parseFloat(score);
-  return isNaN(num) ? 'N/A' : num.toFixed(1);
-}
+// formatScore imported from utils
 
 async function enrichMovieData(movies) {
   // Find movies that need enrichment (missing scores, trailers, or providers)
@@ -425,7 +379,7 @@ async function enrichMovieData(movies) {
 
   for (const movie of moviesToEnrich) {
     try {
-      const data = await invokeTMDBCall(`/movie/${movie.tmdb_id}`, {
+      const data = await TMDBService.invokeTMDBCall(`/movie/${movie.tmdb_id}`, {
         append_to_response: 'videos,watch/providers'
       });
       
@@ -454,7 +408,8 @@ async function enrichMovieData(movies) {
       
       if (Object.keys(updates).length > 0) {
         console.log(`[Enrichment] Data updated for ${movie.title}`);
-        await supabase.from('movies').update(updates).eq('id', movie.id);
+        await MovieService.updateMovieData(movie.id, updates);
+        movie.vote_average = updates.average_rating || movie.vote_average;
       }
     } catch (e) {
       console.error(`[Enrichment] Failed for ${movie.title}:`, e);
@@ -488,6 +443,16 @@ window.navigateTo = (viewId, targetUserId = null) => {
   updateActiveNavLink(viewId);
 };
 
+function updateActiveNavLink(viewId) {
+  document.querySelectorAll('.nav-link-btn').forEach(btn => {
+    if (btn.getAttribute('onclick')?.includes(viewId)) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+}
+
 window.viewUserProfile = (userId) => {
   if (!isAdmin) return;
   console.log(`[Admin] Auditing user profile: ${userId}`);
@@ -515,249 +480,30 @@ function handleRouting() {
 }
 
 // Visual Feedback System (Toasts)
-function showNotification(message, type = 'success') {
-  let container = document.querySelector('.toast-container');
-  if (!container) {
-    container = document.createElement('div');
-    container.className = 'toast-container';
-    document.body.appendChild(container);
-  }
+// showNotification imported from utils
 
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  
-  const icons = {
-    success: 'check-circle',
-    warning: 'alert-triangle',
-    error: 'alert-circle'
-  };
-
-  toast.innerHTML = `
-    <div class="toast-icon">
-      <i data-lucide="${icons[type]}"></i>
-    </div>
-    <span>${message}</span>
-  `;
-
-  container.appendChild(toast);
-  if (window.lucide) window.lucide.createIcons();
-
-  // Auto remove
-  setTimeout(() => {
-    toast.classList.add('removing');
-    setTimeout(() => toast.remove(), 400);
-  }, 3000);
-}
-
-// Unified Movie Component
-function createMovieCardHTML(movie, options = {}) {
-  const { context = 'proposal', showDelete = false } = options;
-  
-  const hasVoted = userVotes.has(movie.id);
-  const genres = (movie.genres || []).slice(0, 3);
-  const posterUrl = movie.poster_url || (movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : FALLBACK_IMAGE);
-  const releaseYear = movie.release_year || (movie.release_date ? movie.release_date.split('-')[0] : 'N/A');
-  
-  // Watch providers
-  const providers = movie.watch_providers?.flatrate || [];
-  const providersLink = movie.watch_providers?.link || '#';
-
-  const cardClass = context === 'history' ? 'movie-card seen' : 
-                   context === 'showcase' ? 'movie-card top-highlight-card' : 
-                   context === 'cemetery' ? 'movie-card dropped' : 'movie-card';
-
-  return `
-    <div class="${cardClass}" data-id="${movie.id || ''}">
-      ${context === 'showcase' ? `
-        <div class="top-badge">
-          <i data-lucide="award"></i> #${options.rank} MOST WANTED
-        </div>
-      ` : ''}
-      <div class="poster-wrapper">
-        <img src="${posterUrl}" alt="${movie.title}" loading="lazy" onerror="this.onerror=null; this.src='${FALLBACK_IMAGE}'">
-        
-        <!-- Explore Context Overlay (Now inside poster) -->
-        ${context === 'explore' ? `
-          <div class="propose-overlay">
-            <button class="btn-propose" onclick="window.proposeMovie(${JSON.stringify(movie).replace(/"/g, '&quot;')}, this)">
-              <i data-lucide="plus"></i> Propose Movie
-            </button>
-          </div>
-        ` : ''}
-      </div>
-
-      ${isAdmin ? `
-        <div class="admin-actions-overlay">
-          <button class="delete-movie-btn drop-only" onclick="window.dropMovie('${movie.id}')" title="Move to Cemetery">
-            <i data-lucide="trash-2"></i>
-          </button>
-          <button class="delete-movie-btn perm-delete" onclick="window.deleteMovie('${movie.id}')" title="Delete Permanently">
-            <i data-lucide="x-circle"></i>
-          </button>
-        </div>
-      ` : ((showDelete || (user && movie.proposed_by === user.id)) && !movie.is_seen && context !== 'cemetery' ? `
-        <div class="admin-actions-overlay user-only">
-          <button class="delete-movie-btn drop-only" onclick="window.dropMovie('${movie.id}')" title="Move to Cemetery">
-            <i data-lucide="trash-2"></i>
-          </button>
-        </div>
-      ` : '')}
-
-      <div class="movie-info">
-        <div class="header-main">
-          <div class="title-row">
-            <div class="movie-title">${movie.title}</div>
-            <div class="rating-badge">
-              <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
-              <span class="rating-value">${formatScore(movie.vote_average)}</span>
-            </div>
-          </div>
-          <div class="movie-meta">
-            <span>${releaseYear} • ${movie.director || 'Unknown'}</span>
-            ${movie.trailer_url ? `
-              <a href="${movie.trailer_url}" target="_blank" class="trailer-link-btn ${context === 'history' ? 'mini' : ''}" title="Watch Trailer">
-                <i data-lucide="play-circle"></i> Trailer
-              </a>
-            ` : ''}
-          </div>
-        </div>
-
-        <div class="genre-tags">
-          ${genres.map(g => `<span class="genre-tag">${g}</span>`).join('')}
-        </div>
-
-        <div class="synopsis">${movie.synopsis || 'No synopsis available.'}</div>
-
-        <!-- Watch Providers -->
-        ${providers.length > 0 ? `
-          <div class="watch-providers ${context === 'history' || context === 'activity' ? 'mini' : ''}">
-            <span class="provider-label">Available on:</span>
-            <div class="provider-list">
-              ${providers.slice(0, 4).map(p => `
-                <a href="${providersLink}" target="_blank" class="provider-icon ${context === 'history' || context === 'activity' ? 'small' : ''}" title="${p.provider_name}">
-                  <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
-                </a>
-              `).join('')}
-            </div>
-          </div>
-        ` : ''}
-
-        <!-- Context Actions -->
-        ${context === 'proposal' ? `
-          <div class="voting-container">
-            <div class="vote-main-actions">
-              <button class="vote-btn like-btn ${hasVoted ? 'active' : ''}" onclick="window.toggleVote('${movie.id}')">
-                <i data-lucide="heart"></i>
-                <span>${hasVoted ? 'Voted' : 'Vote'}</span>
-              </button>
-              <span class="vote-count">${movie.vote_count || 0} votes</span>
-            </div>
-
-            ${isAdmin ? `
-              <button class="mark-seen-btn" onclick="window.markAsSeen('${movie.id}')">
-                <i data-lucide="check-circle"></i> Mark as Seen
-              </button>
-            ` : ''}
-          </div>
-        ` : ''}
-
-        ${context === 'history' ? `
-          <div class="rating-input-wrapper">
-            <div style="display:flex; justify-content:space-between; font-size: 0.8rem; margin-bottom: 0.5rem;">
-              <span style="font-weight:600; color:var(--text-secondary);">Your Rating</span>
-              <span id="rating-val-${movie.id}" style="font-weight:700; color:#fbbf24;">${movie.user_rating || 0} / 10</span>
-            </div>
-            <div class="star-rating" onmouseleave="window.resetStars('${movie.id}', ${movie.user_rating || 0})">
-              ${Array.from({ length: 10 }, (_, i) => i + 1).map(num => `
-                <button class="star-btn ${movie.user_rating >= num ? 'star-filled' : ''}" 
-                        data-star="${num}"
-                        onmouseover="window.hoverStars('${movie.id}', ${num})"
-                        onclick="window.rateMovie('${movie.id}', ${num})">
-                  <i data-lucide="star"></i>
-                </button>
-              `).join('')}
-            </div>
-            <div class="community-avg-box">
-              <span class="community-label">Festival Average</span>
-              <span class="community-score" id="comm-avg-${movie.id}">${movie.average_community_rating ? movie.average_community_rating.toFixed(1) : '0.0'}</span>
-            </div>
-          </div>
-        ` : ''}
-
-        ${context === 'history' && isAdmin ? `
-          <button class="unmark-seen-btn" onclick="window.unmarkAsSeen('${movie.id}')">
-            <i data-lucide="rotate-ccw"></i> Back to Proposals
-          </button>
-        ` : ''}
-        ${context === "cemetery" ? `
-          <div class="cemetery-status">
-            <i data-lucide="skull"></i>
-            <span>Dropped Film</span>
-          </div>
-        ` : ""}
-      </div>
-    </div>
-  `;
-}
+// createMovieCardHTML imported from components
 
 // Rendering
 function renderProposals() {
-  if (!proposedMovies.length) {
-    movieGrid.innerHTML = '<div class="empty-state">No movies proposed yet. Be the first!</div>';
-    return;
-  }
-
-  movieGrid.innerHTML = proposedMovies.map(movie => {
-    const isOwner = user && movie.proposed_by === user.id;
-    const canDelete = isOwner || isAdmin;
-    
-    return createMovieCardHTML(movie, { 
-      context: 'proposal', 
-      showDelete: canDelete 
-    });
-  }).join('');
-  
-  if (window.lucide) window.lucide.createIcons();
+  HomeView.renderProposals(proposedMovies, movieGrid, { isAdmin, user, userVotes });
   if (window.lucide) window.lucide.createIcons();
 }
 
 async function renderTopVotedShowcase() {
   const container = document.getElementById('topVotedShowcase');
   const grid = document.getElementById('topVotedGrid');
-  if (!grid || !container) return;
-
-  // Filter movies that are NOT seen and have at least 1 vote
-  const topContenders = [...proposedMovies]
-    .filter(m => (m.vote_count || 0) > 0)
-    .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0))
-    .slice(0, 3);
-
-  if (topContenders.length === 0) {
-    container.classList.add('page-hidden');
-    return;
-  }
-
-  container.classList.remove('page-hidden');
-  grid.innerHTML = topContenders.map((movie, index) => 
-    createMovieCardHTML(movie, { context: 'showcase', rank: index + 1 })
-  ).join('');
-
+  HomeView.renderTopVotedShowcase(proposedMovies, container, grid, { isAdmin, user, userVotes });
   if (window.lucide) window.lucide.createIcons();
 }
 
 function renderHistory() {
-  if (!seenMovies.length) {
-    historyGrid.innerHTML = '<div class="empty-state">No movies in history yet.</div>';
-    return;
-  }
+  HomeView.renderHistory(seenMovies, historyGrid, { isAdmin, user, userVotes });
+  if (window.lucide) window.lucide.createIcons();
+}
 
-  historyGrid.innerHTML = seenMovies.map(movie => {
-    return createMovieCardHTML(movie, { 
-      context: 'history', 
-      showDelete: false // Protected from deletion
-    });
-  }).join('');
-  
+function renderCemetery(droppedMovies) {
+  HomeView.renderCemetery(droppedMovies, cemeteryGrid, { isAdmin, user, userVotes });
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -845,7 +591,7 @@ function updateAuthUI() {
       const red = '#ef4444';
       proposalsLabel.innerHTML = `
         <span style="color:${proposalsLeft > 0 ? green : red}">
-          ${proposalsLeft > 0 ? `Available Proposals: ${proposalsLeft} / 3` : 'Limit Reached: 3 / 3 Proposals Used'}
+          ${proposalsLeft > 0 ? `Available Proposals: ${proposalsLeft} / ${MAX_PROPOSALS}` : `Limit Reached: ${MAX_PROPOSALS} / ${MAX_PROPOSALS} Proposals Used`}
         </span>
       `;
     }
@@ -900,26 +646,28 @@ window.deleteMovie = async (movieId) => {
   }
   const movie = allMovies.find(m => m.id === movieId);
   const title = movie ? movie.title : "this movie";
-  if (!confirm(`ADMIN ACTION: Permanently delete "${title}"? This cannot be undone.`)) return;
-  const { error } = await supabase.from("movies").delete().eq("id", movieId);
-  if (error) {
-    showNotification("Error deleting movie", "error");
-  } else {
-    showNotification("Movie permanently deleted", "success");
+  if (!confirm("Are you sure you want to delete this proposal? This action cannot be undone.")) return;
+
+  try {
+    await MovieService.deleteMovie(movieId);
+    showNotification("Proposal deleted successfully.");
     refreshData();
+  } catch (e) {
+    showNotification("Error deleting movie", "error");
   }
 };
 
 window.dropMovie = async (movieId) => {
   const movie = allMovies.find(m => m.id === movieId);
   if (!movie) return;
-  if (!confirm(`Move "${movie.title}" to the Cemetery? It will no longer be an active proposal.`)) return;
-  const { error } = await supabase.from("movies").update({ is_dropped: true }).eq("id", movieId);
-  if (error) {
-    showNotification("Error dropping movie", "error");
-  } else {
-    showNotification("Movie moved to the Cemetery", "info");
+  if (!confirm("Move this movie to the Cemetery? (It can be recovered later)")) return;
+
+  try {
+    await MovieService.updateMovieData(movieId, { is_dropped: true });
+    showNotification("Movie sent to Cemetery.");
     refreshData();
+  } catch (e) {
+    showNotification("Error dropping movie", "error");
   }
 };
 
@@ -974,15 +722,17 @@ async function loadUserActivity(targetUserId = null) {
   // Fetch target profile data from the DB
   const { data: profile } = await supabase.from('profiles').select('*').eq('id', activeUid).single();
   
-  const displayName = profile?.full_name || profile?.email?.split('@')[0] || 'User';
-  const displayEmail = profile?.email || 'N/A';
-  
-  // Generate high-end initial-based avatar
-  const displayAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=5850ec&color=fff&size=256&bold=true`;
-  
-  profileName.textContent = displayName;
-  profileEmail.textContent = displayEmail;
-  profileAvatar.src = displayAvatar;
+  ProfileView.renderHeader(profile, {
+    profileName,
+    profileEmail,
+    profileAvatar,
+    countProposals,
+    countVotes,
+    maxProposals: MAX_PROPOSALS,
+    maxVotes: MAX_VOTES,
+    proposalsCount: 0, // Will update after fetch
+    votesCount: 0
+  });
 
   // Show audit badge if viewing another user
   const auditBadge = document.getElementById('auditBadge') || document.createElement('div');
@@ -997,28 +747,21 @@ async function loadUserActivity(targetUserId = null) {
     document.getElementById('editProfileBtn')?.classList.remove('page-hidden');
   }
 
-  // Pre-fill edit form (only if it's our own profile)
+  // Pre-fill edit form
   if (!isAudit) {
-    editName.value = displayName;
+    editName.value = profile?.full_name || '';
     const displayEmailInput = document.getElementById('displayEmail');
     if (displayEmailInput) displayEmailInput.value = user.email;
   }
 
-  const { data: proposals } = await supabase
-    .from('movies')
-    .select('*')
-    .eq('proposed_by', activeUid)
-    .eq('is_dropped', false);
-    
+  const { data: proposals } = await supabase.from('movies').select('*').eq('proposed_by', activeUid).eq('is_dropped', false);
   const { data: votes } = await supabase.from('votes').select('movie_id, movies(*)').eq('user_id', activeUid);
 
-  countProposals.textContent = `${proposals?.length || 0} / ${MAX_PROPOSALS}`;
-  countVotes.textContent = `${votes?.length || 0} / ${MAX_VOTES}`;
+  if (countProposals) countProposals.textContent = `${proposals?.length || 0} / ${MAX_PROPOSALS}`;
+  if (countVotes) countVotes.textContent = `${votes?.length || 0} / ${MAX_VOTES}`;
 
-  // Default view is proposals
   renderActivityGrid(proposals || []);
   
-  // Set up tab switching for profile
   document.querySelectorAll('.activity-tab').forEach(tab => {
     tab.onclick = () => {
       document.querySelector('.activity-tab.active').classList.remove('active');
@@ -1028,7 +771,6 @@ async function loadUserActivity(targetUserId = null) {
     };
   });
 
-  // ADMIN DASHBOARD logic
   if (isAdmin) {
     adminDashboard.classList.remove('page-hidden');
     await fetchUserList();
@@ -1037,9 +779,7 @@ async function loadUserActivity(targetUserId = null) {
     adminDashboard.classList.add('page-hidden');
   }
 
-  // Trophies rendering
-  await renderProfileAchievements();
-
+  await renderProfileAchievements(activeUid);
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -1314,89 +1054,19 @@ async function updateGlobalRanking() {
 }
 
 function renderRankingView() {
-  if (!rankingList) return;
-  
-  rankingList.innerHTML = rankedUsers.map(p => {
-    const name = p.full_name || p.email.split('@')[0];
-    const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
-    const rankClass = p.rank <= 3 ? `top-${p.rank}` : '';
-    
-    return `
-      <tr>
-        <td><span class="user-rank ${rankClass}">#${p.rank}</span></td>
-        <td>
-          <div class="user-cell">
-            <img src="${avatar}" alt="${name}">
-            <span class="user-name">${name}</span>
-          </div>
-        </td>
-        <td>
-          <div class="score-badge" onclick="window.navigateTo('ranking')" title="View Global Ranking">
-            <i data-lucide="award" style="width:12px; height:12px; margin-right:4px;"></i>
-            ${p.score}
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join('');
-  
+  AdminView.renderRankingView(rankedUsers, rankingList);
   if (window.lucide) window.lucide.createIcons();
 }
 
 async function fetchUserList() {
   try {
-    // ranking is already updated by updateGlobalRanking() called in refreshData()
-    const profiles = rankedUsers;
-
-    adminUserCount.textContent = `${profiles?.length || 0} Users`;
-    adminUserList.innerHTML = (profiles || []).map(p => {
-      const name = p.full_name || p.email.split('@')[0];
-      const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
-      const date = p.created_at ? new Date(p.created_at).toLocaleDateString() : 'N/A';
-      const roleLabel = p.role === 'admin' ? '<span style="color:var(--success); font-size: 0.7rem; font-weight:700;">ADMIN</span>' : '<span style="color:var(--text-secondary); font-size: 0.7rem;">USER</span>';
-      const rankClass = p.rank <= 3 ? `top-${p.rank}` : '';
-
-      return `
-        <tr class="admin-user-row clickable" onclick="window.viewUserProfile('${p.id}')">
-          <td>
-            <div class="user-cell">
-              <span class="user-rank ${rankClass}">#${p.rank}</span>
-              <img src="${avatar}" alt="${p.full_name || 'User'}">
-              <div style="display:flex; flex-direction:column;">
-                <span class="user-name">${p.full_name || 'Anonymous User'}</span>
-                ${roleLabel}
-              </div>
-            </div>
-          </td>
-          <td><span class="user-email">${p.email}</span></td>
-          <td>
-            <div class="score-badge" title="View Global Ranking">
-              <i data-lucide="award" style="width:12px; height:12px; margin-right:4px;"></i>
-              ${p.score}
-            </div>
-          </td>
-          <td><span class="user-date">${date}</span></td>
-          <td>
-            <div class="user-actions-cell" onclick="event.stopPropagation()">
-              <button class="btn-icon view-btn" title="View Profile" onclick="window.viewUserProfile('${p.id}')">
-                <i data-lucide="eye"></i>
-              </button>
-              ${p.id !== user?.id ? `
-                <button class="delete-user-btn" onclick="window.deleteUser('${p.id}', '${name}')" title="Delete User">
-                  <i data-lucide="user-minus"></i>
-                </button>
-              ` : '<span style="color:var(--text-secondary); font-size:0.7rem; font-style:italic;">(You)</span>'}
-            </div>
-          </td>
-        </tr>
-      `;
-    }).join('');
-
+    const profiles = await AdminService.fetchAllProfiles();
+    // Re-calculate ranks and scores locally for display consistency
+    // (This logic could eventually move to the store/state layer)
+    AdminView.renderUserList(rankedUsers, adminUserList, adminUserCount, user);
     if (window.lucide) window.lucide.createIcons();
-
   } catch (err) {
     console.error('Error fetching user list:', err);
-    adminUserList.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:2rem; color:var(--text-secondary);">Unable to fetch user list.</td></tr>`;
   }
 }
 
@@ -1449,14 +1119,11 @@ window.markAttendance = async (userId, movieId) => {
       return;
     }
 
-    const { error } = await supabase.from('participation_log').insert([{
-      user_id: userId,
-      movie_id: movieId,
-      action_type: 'attendance',
-      points: 10
-    }]);
-
-    if (error) throw error;
+    try {
+      await AdminService.logParticipation(userId, 'attendance', movieId);
+    } catch (err) {
+      console.error(`[Participation] Failed to log attendance:`, err);
+    }
 
     showNotification('Attendance recorded! (+10 pts)', 'success');
     
@@ -1472,7 +1139,7 @@ window.markAttendance = async (userId, movieId) => {
   }
 };
 
-window.deleteUser = async (userId, userName) => {
+window.confirmDeleteUser = async (userId, userName) => {
   if (!isAdmin) return;
   
   const confirmed = window.confirm(`⚠️ DANGER ZONE: Are you sure you want to delete user "${userName}"? \n\nThis will also remove all their movie proposals, votes and ratings. This action cannot be undone.`);
@@ -1480,31 +1147,8 @@ window.deleteUser = async (userId, userName) => {
 
   try {
     showNotification(`Deleting user ${userName}...`, 'warning');
-    // 1. Delete user's votes (Standard table: votes)
-    console.log(' - Cleaning votes...');
-    await supabase.from('votes').delete().eq('user_id', userId);
     
-    // 2. Delete user's ratings (stars on seen movies)
-    console.log(' - Cleaning user_ratings...');
-    await supabase.from('user_ratings').delete().eq('user_id', userId);
-
-    // 3. Delete user's participation logs (points and attendance history)
-    console.log(' - Cleaning participation_log...');
-    await supabase.from('participation_log').delete().eq('user_id', userId);
-    
-    // 5. Delete user's movie proposals
-    console.log(' - Cleaning movie proposals...');
-    const { error: e5 } = await supabase.from('movies').delete().eq('proposed_by', userId);
-    if (e5) console.error('Error cleaning movies:', e5);
-    
-    // 6. Finally, delete user's profile
-    console.log(' - Deleting profile record...');
-    const { error: profileError } = await supabase.from('profiles').delete().eq('id', userId);
-    
-    if (profileError) {
-      console.error('CRITICAL: Error deleting profile:', profileError);
-      throw profileError;
-    }
+    await AdminService.deleteUser(userId);
 
     console.log(`[Admin] User ${userName} successfully removed from the system.`);
     showNotification(`User ${userName} and all their data have been removed.`, 'success');
@@ -1522,51 +1166,39 @@ window.deleteUser = async (userId, userName) => {
 
 window.unmarkAsSeen = async (movieId) => {
   if (!isAdmin) return;
-  const { error } = await supabase.from('movies').update({ is_seen: false }).eq('id', movieId);
-  if (error) {
-    console.error('Error unmarking as seen:', error);
-    showNotification('Failed to revert status', 'error');
-  } else {
+  try {
+    await MovieService.updateMovieData(movieId, { is_seen: false });
     showNotification('Movie moved back to proposals', 'success');
     await refreshData();
+  } catch (e) {
+    showNotification('Failed to revert status', 'error');
   }
 };
 
 function renderActivityGrid(movies) {
-  if (!movies || movies.length === 0) {
-    profileActivityGrid.innerHTML = '<div class="empty-state">Nothing to show here yet.</div>';
-    return;
-  }
-  profileActivityGrid.innerHTML = movies.map(movie => {
-    return createMovieCardHTML(movie, { 
-      context: 'activity', 
-      showDelete: true 
-    });
-  }).join('');
-  
+  ProfileView.renderActivityGrid(movies, profileActivityGrid, { isAdmin, user, userVotes });
   if (window.lucide) window.lucide.createIcons();
 }
 
 // TMDB Search Logic
 let searchTimeout;
-async function searchTMDB(query) {
+async function handleMovieSearch(query) {
   if (!user || !query) {
     searchResults.classList.remove('active');
     return;
   }
 
   try {
-    const data = await invokeTMDBCall('/search/movie', { query, include_adult: 'false' });
+    const dataResults = await TMDBService.searchTMDB(query);
     
-
     // No restrictive filtering - just sort by popularity (desc) and take top 20
-    const results = (data.results || [])
+    const results = dataResults
       .sort((a, b) => b.popularity - a.popularity)
       .slice(0, 20);
 
     const enrichedResults = await Promise.all(results.map(async movie => {
       try {
-        const creditsData = await invokeTMDBCall(`/movie/${movie.id}/credits`);
+        const creditsData = await TMDBService.invokeTMDBCall(`/movie/${movie.id}/credits`);
         const directors = creditsData.crew
           .filter(person => person.job === 'Director')
           .map(d => d.name)
@@ -1626,12 +1258,12 @@ async function fetchExploreResults() {
     // 1. Resolve Person IDs
     if (directorName || actorName) {
       const personRequests = [];
-      if (directorName) personRequests.push(invokeTMDBCall('/search/person', { query: directorName }));
-      if (actorName) personRequests.push(invokeTMDBCall('/search/person', { query: actorName }));
+      if (directorName) personRequests.push(TMDBService.invokeTMDBCall('/search/person', { query: directorName }));
+      if (actorName) personRequests.push(TMDBService.invokeTMDBCall('/search/person', { query: actorName }));
       
       const [directorRes, actorRes] = await Promise.all([
-        directorName ? invokeTMDBCall('/search/person', { query: directorName }) : null,
-        actorName ? invokeTMDBCall('/search/person', { query: actorName }) : null
+        directorName ? TMDBService.invokeTMDBCall('/search/person', { query: directorName }) : null,
+        actorName ? TMDBService.invokeTMDBCall('/search/person', { query: actorName }) : null
       ]);
 
       if (directorRes?.results?.length > 0) {
@@ -1656,7 +1288,7 @@ async function fetchExploreResults() {
       const pagesToFetch = Math.max(1, Math.ceil(limit / 20));
       const pages = await Promise.all(
         Array.from({ length: pagesToFetch }, (_, i) => 
-          invokeTMDBCall('/search/movie', { query, page: i + 1 })
+          TMDBService.invokeTMDBCall('/search/movie', { query, page: i + 1 })
         )
       );
       results = pages.flatMap(p => p.results || []);
@@ -1665,7 +1297,7 @@ async function fetchExploreResults() {
       const pagesToFetch = Math.max(1, Math.min(5, Math.ceil(limit / 20)));
       const responses = await Promise.all(
         Array.from({ length: pagesToFetch }, (_, i) => 
-          invokeTMDBCall('/discover/movie', { ...discoverParams, page: i + 1 })
+          TMDBService.invokeTMDBCall('/discover/movie', { ...discoverParams, page: i + 1 })
         )
       );
       results = responses.flatMap(r => r.results || []);
@@ -1685,7 +1317,7 @@ async function fetchExploreResults() {
       const chunk = finalResults.slice(i, i + 5);
       const chunkResults = await Promise.all(chunk.map(async movie => {
         try {
-          const details = await invokeTMDBCall(`/movie/${movie.id}`, {
+          const details = await TMDBService.invokeTMDBCall(`/movie/${movie.id}`, {
             append_to_response: 'videos,watch/providers,credits'
           });
           
@@ -1798,12 +1430,12 @@ async function fetchAIRecommendations() {
 
         try {
           // 1. Search for ID via Proxy
-          const searchData = await invokeTMDBCall('/search/movie', { query: title });
+          const searchData = await TMDBService.invokeTMDBCall('/search/movie', { query: title });
           const found = searchData.results?.[0];
 
           if (found && !renderedIds.has(found.id)) {
             // 2. Fetch Rich Details via Proxy
-            const detailData = await invokeTMDBCall(`/movie/${found.id}`, {
+            const detailData = await TMDBService.invokeTMDBCall(`/movie/${found.id}`, {
               append_to_response: 'videos,watch/providers,credits'
             });
             
@@ -1870,45 +1502,24 @@ async function fetchAIRecommendations() {
 
 function createExploreCard(movie) {
   const div = document.createElement('div');
-  div.innerHTML = createMovieCardHTML(movie, { context: 'explore' });
+  div.innerHTML = createMovieCardHTML(movie, { 
+      context: 'explore',
+      isAdmin,
+      user,
+      userVotes
+    });
   return div.firstElementChild;
 }
 
 function renderExploreResults(results) {
-  exploreGrid.innerHTML = ''; // Clear everything
-  if (!results.length) {
-    exploreGrid.innerHTML = '<div class="empty-state">No movies found matching those criteria.</div>';
-    return;
-  }
-  results.forEach(movie => {
-    exploreGrid.appendChild(createExploreCard(movie));
-  });
+  exploreGrid.innerHTML = '';
+  ExploreView.renderResults(results, exploreGrid, { isAdmin, user, userVotes });
   if (window.lucide) window.lucide.createIcons();
 }
 
 function renderSearchResults(results) {
-  if (!results.length) {
-    searchResults.innerHTML = '<div class="search-result-item">No movies found</div>';
-  } else {
-    searchResults.innerHTML = results.map(movie => `
-      <div class="search-result-item" onclick="window.proposeMovie(${JSON.stringify(movie).replace(/"/g, '&quot;')})">
-        <img class="result-poster" src="${movie.poster_path ? 'https://image.tmdb.org/t/p/w92' + movie.poster_path : FALLBACK_IMAGE}">
-        <div class="result-info">
-          <div class="result-title">${movie.title}</div>
-          <div class="result-meta">
-            <span>${movie.release_date ? movie.release_date.split('-')[0] : 'N/A'}</span>
-            <span style="color: rgba(255,255,255,0.2);">•</span>
-            <div class="rating-badge" style="margin:0; padding:0; background:transparent; border:none; font-size: 0.75rem;">
-              <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
-              <span style="color:#fbbf24;">${formatScore(movie.vote_average)}</span>
-            </div>
-          </div>
-          <div style="font-size: 0.7rem; color: var(--text-secondary); opacity: 0.7;">${movie.director}</div>
-        </div>
-      </div>
-    `).join('');
-  }
-  searchResults.classList.add('active');
+  HomeView.renderSearchResults(results, searchResults, formatScore, FALLBACK_IMAGE);
+  if (window.lucide) window.lucide.createIcons();
 }
 
 // Actions
@@ -1940,27 +1551,22 @@ window.proposeMovie = async (tmdbMovie, el) => {
   const card = el?.closest('.movie-card');
 
   // 🪦 RESURRECTION LOGIC: Check if movie is in the cemetery
-  const { data: existing, error: checkError } = await supabase
-    .from('movies')
-    .select('*')
-    .eq('tmdb_id', tmdbMovie.id)
-    .single();
+  try {
+    const existing = await MovieService.findMovieByTMDBId(tmdbMovie.id);
 
-  if (existing && existing.is_dropped) {
-    if (confirm(`"${tmdbMovie.id}" is currently in the Cinema Cemetery. Do you want to rescue it and bring it back to active proposals?`)) {
-      const { error: rescueError } = await supabase
-        .from('movies')
-        .update({ is_dropped: false, proposed_by: user.id })
-        .eq('id', existing.id);
-      
-      if (!rescueError) {
+    if (existing && existing.is_dropped) {
+      if (confirm(`"${tmdbMovie.title}" is currently in the Cinema Cemetery. Do you want to rescue it and bring it back to active proposals?`)) {
+        await MovieService.rescueMovie(existing.id, user.id);
+        
         showNotification(`"${tmdbMovie.title}" has been rescued from the cemetery!`, 'success');
         refreshData();
         return;
+      } else {
+        return; // User cancelled rescue
       }
-    } else {
-      return; // User cancelled rescue
     }
+  } catch (checkErr) {
+    console.error('Error checking for existing movie:', checkErr);
   }
 
   // SAFE INSERT LOGIC
@@ -1975,34 +1581,22 @@ window.proposeMovie = async (tmdbMovie, el) => {
     synopsis: tmdbMovie.synopsis
   };
 
-  // Insert logic matching actual schema
-  let { data, error } = await supabase.from('movies').insert([{
-    ...payload,
-    average_rating: tmdbMovie.vote_average || 0,
-    vote_count: 0 // Start with zero festival votes
-  }]).select();
-
-  if (error) {
-    if (error.code === '23505') {
-      showNotification('Already in the lineup!', 'warning');
-      if (card) {
-        card.style.animation = 'shake 0.5s ease';
-        setTimeout(() => card.style.animation = '', 500);
-      }
-    } else {
-      console.error('Error proposing movie:', error);
-      showNotification('Something went wrong', 'error');
-    }
-  } else {
+  try {
+    data = await MovieService.createMovie({
+      ...payload,
+      average_rating: tmdbMovie.vote_average || 0
+    });
+    
     showNotification(`"${tmdbMovie.title}" proposed!`, 'success');
 
     // Automatically add user's vote to their own proposal
     try {
-      if (data && data[0]) {
-        await supabase.from('votes').insert([{ user_id: user.id, movie_id: data[0].id }]);
+      if (data && data.id) {
+        await MovieService.addVote(user.id, data.id);
+        userVotes.add(data.id);
       }
     } catch (vErr) {
-      console.error('Auto-vote failed:', vErr);
+      console.warn('Auto-vote failed:', vErr);
     }
 
     if (card) {
@@ -2016,6 +1610,17 @@ window.proposeMovie = async (tmdbMovie, el) => {
     searchInput.value = '';
     searchResults.classList.remove('active');
     await refreshData();
+  } catch (error) {
+    if (error.code === '23505') {
+      showNotification('Already in the lineup!', 'warning');
+      if (card) {
+        card.style.animation = 'shake 0.5s ease';
+        setTimeout(() => card.style.animation = '', 500);
+      }
+    } else {
+      console.error('Error proposing movie:', error);
+      showNotification('Something went wrong', 'error');
+    }
   }
 };
 
@@ -2033,12 +1638,15 @@ window.toggleVote = async (movieId) => {
 
   if (userVotes.has(movieId)) {
     // Unvote is ALWAYS allowed
-    const { error } = await supabase.from('votes').delete().match({ user_id: user.id, movie_id: movieId });
-    if (!error) {
+    try {
+      await MovieService.removeVote(user.id, movieId);
       userVotes.delete(movieId);
       movie.vote_count = (movie.vote_count || 1) - 1;
       if (btn) btn.classList.remove('active');
       if (countEl) countEl.textContent = `${movie.vote_count} votes`;
+    } catch (err) {
+      console.error('Failed to remove vote:', err);
+      showNotification('Failed to remove vote', 'error');
     }
   } else {
     // Check vote limits
@@ -2050,21 +1658,29 @@ window.toggleVote = async (movieId) => {
     }
 
     // Vote
-    const { error } = await supabase.from('votes').insert([{ user_id: user.id, movie_id: movieId }]);
-    if (!error) {
+    try {
+      await MovieService.addVote(user.id, movieId);
       userVotes.add(movieId);
       movie.vote_count = (movie.vote_count || 0) + 1;
       if (btn) btn.classList.add('active');
       if (countEl) countEl.textContent = `${movie.vote_count} votes`;
+    } catch (err) {
+      console.error('Failed to add vote:', err);
+      showNotification('Failed to add vote', 'error');
     }
   }
   updateAuthUI();
 };
 
 window.markAsSeen = async (movieId) => {
-  const { error } = await supabase.from('movies').update({ is_seen: true }).eq('id', movieId);
-  if (error) console.error('Error marking as seen:', error);
-  else await refreshData();
+  if (!confirm('Mark this movie as SEEN?')) return;
+  try {
+    await MovieService.updateMovieData(movieId, { is_seen: true });
+    showNotification('Movie marked as seen!', 'success');
+    await refreshData();
+  } catch (e) {
+    console.error('Error marking as seen:', e);
+  }
 };
 
 window.rateMovie = async (movieId, rating) => {
@@ -2157,7 +1773,7 @@ function setupEventListeners() {
 
   searchInput.addEventListener('input', (e) => {
     clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => searchTMDB(e.target.value), 500);
+    searchTimeout = setTimeout(() => handleMovieSearch(e.target.value), 500);
   });
 
   document.addEventListener('click', (e) => {
@@ -2222,531 +1838,59 @@ function setupEventListeners() {
 }
 
 /* --- Achievements System Logic --- */
-const ACHIEVEMENT_LIST = [
-  {
-    id: 'oracle',
-    name: 'The Oracle',
-    desc: 'You have shaped the festival: 3 of your proposals have been screened!',
-    icon: 'sparkles',
-    target: 3,
-    type: 'visionary',
-    class: 'medal-oracle',
-    points: 50
-  },
-  {
-    id: 'visionary',
-    name: 'The Visionary',
-    desc: 'One of your proposed movies has been screened!',
-    icon: 'eye',
-    target: 1,
-    type: 'visionary',
-    class: 'medal-visionary',
-    points: 20
-  },
-  {
-    id: 'miembro',
-    name: 'Festival Member',
-    desc: 'You have joined our cinephile community.',
-    icon: 'user-check',
-    target: 1,
-    type: 'static',
-    class: 'medal-miembro',
-    points: 5
-  },
 
-  {
-    id: 'debut',
-    name: 'Grand Premiere',
-    desc: 'You attended your first physical session.',
-    icon: 'ticket',
-    target: 1,
-    type: 'attendance',
-    class: 'medal-attendance',
-    points: 10
-  },
-  {
-    id: 'regular',
-    name: 'Festival Regular',
-    desc: 'You have attended 3 physical sessions.',
-    icon: 'calendar',
-    target: 3,
-    type: 'attendance',
-    class: 'medal-attendance',
-    points: 15
-  },
-  {
-    id: 'legend',
-    name: 'Cinema Legend',
-    desc: 'You have attended 5 physical sessions.',
-    icon: 'crown',
-    target: 5,
-    type: 'attendance',
-    class: 'medal-attendance',
-    points: 25
-  },
-  {
-    id: 'first_critic',
-    name: 'First Critic',
-    desc: 'You have rated your first movie.',
-    icon: 'star',
-    target: 1,
-    type: 'ratings',
-    class: 'medal-feroz',
-    points: 5
-  },
-  {
-    id: 'feroz',
-    name: 'Fierce Critic',
-    desc: 'You have rated 5 or more movies.',
-    icon: 'clapperboard',
-    target: 5,
-    type: 'ratings',
-    class: 'medal-feroz',
-    points: 10
-  },
-  {
-    id: 'oro',
-    name: 'Golden Cinephile',
-    desc: 'You have rated 10 or more movies.',
-    icon: 'award',
-    target: 10,
-    type: 'ratings',
-    class: 'medal-oro',
-    points: 15
-  },
-  {
-    id: 'streak3',
-    name: 'Iron Streak (3x)',
-    desc: 'Attended 3 consecutive sessions without missing any.',
-    icon: 'flame',
-    target: 3,
-    type: 'streak',
-    class: 'medal-feroz',
-    points: 10
-  },
-  {
-    id: 'streak5',
-    name: 'Infinite Streak (5x)',
-    desc: 'Attended 5 consecutive sessions without missing any.',
-    icon: 'zap',
-    target: 5,
-    type: 'streak',
-    class: 'medal-oro',
-    points: 20
-  }
-];
 
 /**
  * Calculates achievement progress for a specific user.
  */
 async function calculateUserAchievements(userId) {
-  // Return all medals with 0 progress if no user
-  if (!userId) return ACHIEVEMENT_LIST.map(a => ({ ...a, progress: 0, current: 0, completed: false }));
-
-  try {
-    const { count: ratingsCount } = await supabase
-      .from('user_ratings')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId);
-
-    // Fetch attendance from participation_log
-    const { data: attendanceLogs } = await supabase
-      .from('participation_log')
-      .select('movie_id')
-      .eq('user_id', userId)
-      .eq('action_type', 'attendance');
-    
-    const attendanceCount = attendanceLogs?.length || 0;
-    const attendedMovieIds = new Set(attendanceLogs?.map(l => l.movie_id) || []);
-
-    // Visionary Logic: One of your proposals is marked as seen
-    const { count: seenCount } = await supabase
-      .from('movies')
-      .select('*', { count: 'exact', head: true })
-      .eq('proposed_by', userId)
-      .eq('is_seen', true);
-
-    // 4. Attendance Streak Logic: Find the longest sequence of attended sessions
-    const { data: allSessions } = await supabase
-      .from('sessions')
-      .select('id')
-      .order('session_date', { ascending: true });
-    
-    let maxStreak = 0;
-    let currentStreak = 0;
-    if (allSessions) {
-      allSessions.forEach(s => {
-        if (attendedMovieIds.has(s.id)) {
-          currentStreak++;
-          if (currentStreak > maxStreak) maxStreak = currentStreak;
-        } else {
-          currentStreak = 0;
-        }
-      });
-    }
-
-    return ACHIEVEMENT_LIST.map(achievement => {
-      let current = 0;
-      let completed = false;
-
-      if (achievement.type === 'static') {
-        current = 1;
-        completed = true;
-      } else if (achievement.type === 'ratings') {
-        current = ratingsCount || 0;
-        completed = current >= achievement.target;
-      } else if (achievement.type === 'attendance') {
-        current = attendanceCount;
-        completed = current >= achievement.target;
-      } else if (achievement.type === 'streak') {
-        current = maxStreak;
-        completed = current >= achievement.target;
-      } else if (achievement.type === 'visionary') {
-        current = seenCount || 0;
-        completed = current >= achievement.target;
-      }
-
-      const progress = Math.min(100, (current / achievement.target) * 100);
-      if (completed) current = achievement.target;
-
-      return { ...achievement, current, completed, progress };
-    });
-  } catch (e) {
-    console.error('Error calculating achievements:', e);
-    return ACHIEVEMENT_LIST.map(a => ({ ...a, progress: 0, current: 0, completed: false }));
-  }
+  return AchievementService.calculateUserAchievements(userId || user?.id, sessions);
 }
 
 async function calculateGlobalAchievementStats() {
-  const stats = { miembro: 0, feroz: 0, oro: 0, trend: 0, streak: 0, debut: 0, regular: 0, legend: 0 };
-  try {
-    // Count total unique profiles for 'miembro'
-    const { data: profiles } = await supabase.from('profiles').select('id');
-    stats.miembro = profiles?.length || 0;
-
-    const { data: allRatings } = await supabase.from('user_ratings').select('user_id');
-    const ratingsMap = {};
-    allRatings?.forEach(r => { ratingsMap[r.user_id] = (ratingsMap[r.user_id] || 0) + 1; });
-
-    Object.values(ratingsMap).forEach(count => {
-      if (count >= 5) stats.feroz++;
-      if (count >= 10) stats.oro++;
-    });
-
-    const top3Movies = [...proposedMovies].sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0)).slice(0, 3);
-    const trendsetters = new Set(top3Movies.map(m => m.proposed_by));
-    stats.trend = trendsetters.size;
-
-    // Attendance stats
-    const { data: allAttendance } = await supabase.from('participation_log').select('user_id').eq('action_type', 'attendance');
-    const attMap = {};
-    allAttendance?.forEach(a => { attMap[a.user_id] = (attMap[a.user_id] || 0) + 1; });
-
-    Object.values(attMap).forEach(count => {
-      if (count >= 1) stats.debut++;
-      if (count >= 3) stats.regular++;
-      if (count >= 5) stats.legend++;
-    });
-
-  } catch (e) {
-    console.error('Error calculating global stats:', e);
-  }
-  return stats;
+  return AchievementService.calculateGlobalStats(proposedMovies);
 }
 
 async function renderHomeAchievements() {
   const grid = document.getElementById('homeAchievementsGrid');
   if (!grid) return;
-
   const stats = await calculateGlobalAchievementStats();
-
-  grid.innerHTML = ACHIEVEMENT_LIST.map(a => {
-    const userCount = stats[a.id] || 0;
-    return `
-      <div class="achievement-card ${a.class} active">
-        <div class="achievement-header">
-          <div class="medal-icon-wrapper">
-            <i data-lucide="${a.icon}"></i>
-          </div>
-          <div class="achievement-info">
-            <span class="achievement-name">${a.name}</span>
-            <span class="achievement-desc">${a.desc}</span>
-            <div class="achievement-stats-badge">
-              <i data-lucide="users" style="width:12px; height:12px;"></i>
-              ${userCount} users earned this
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-
+  HomeView.renderHomeAchievements(stats, grid, ACHIEVEMENT_LIST);
   if (window.lucide) window.lucide.createIcons();
 }
 
-async function renderProfileAchievements() {
+async function renderProfileAchievements(userId) {
   const grid = document.getElementById('profileAchievementsGrid');
   if (!grid) return;
-
-  const achievements = await calculateUserAchievements(user?.id);
-
-  grid.innerHTML = achievements.map(a => `
-    <div class="achievement-card ${a.class} ${a.completed ? 'completed active' : 'locked'}">
-      <i data-lucide="check-circle" class="completed-check"></i>
-      <div class="achievement-header">
-        <div class="medal-icon-wrapper">
-          <i data-lucide="${a.icon}"></i>
-        </div>
-        <div class="achievement-info">
-          <span class="achievement-name">${a.name}</span>
-          <span class="achievement-desc">${a.desc}</span>
-        </div>
-      </div>
-      
-      <div class="achievement-progress-section">
-        <div class="progress-label-row">
-          <span>Progress</span>
-          <span>${a.current} / ${a.target}</span>
-        </div>
-        <div class="progress-track">
-          <div class="progress-fill" style="width: ${a.progress}%"></div>
-        </div>
-      </div>
-    </div>
-  `).join('');
-
+  const achievements = await calculateUserAchievements(userId || user?.id);
+  ProfileView.renderAchievements(achievements, grid);
   if (window.lucide) window.lucide.createIcons();
-}
-
-/**
- * Helper to format date as "time ago"
- */
-function timeAgo(date) {
-  const seconds = Math.floor((new Date() - date) / 1000);
-  let interval = seconds / 31536000;
-  if (interval > 1) return `${Math.floor(interval)} years ago`;
-  interval = seconds / 2592000;
-  if (interval > 1) return `${Math.floor(interval)} months ago`;
-  interval = seconds / 86400;
-  if (interval > 1) return `${Math.floor(interval)} days ago`;
-  interval = seconds / 3600;
-  if (interval > 1) return `${Math.floor(interval)} hours ago`;
-  interval = seconds / 60;
-  if (interval > 1) return `${Math.floor(interval)} min ago`;
-  return 'just now';
 }
 
 /**
  * Fetches recent achievement events
  */
 async function fetchRecentAchievementEvents() {
-  const events = [];
   try {
-    // Fetch all necessary data to calculate achievements globally
-    const [profiles, allRatings, allAttendance, allMovies, allSessions] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, email, created_at').order('created_at', { ascending: false }).limit(20),
-      supabase.from('user_ratings').select('user_id, created_at, movie_id'),
-      supabase.from('participation_log').select('user_id, created_at, action_type, movie_id'),
-      supabase.from('movies').select('proposed_by, is_seen, is_dropped, title, created_at, updated_at, vote_count'),
-      supabase.from('sessions').select('id, session_date').order('session_date', { ascending: true })
-    ]);
-
-    console.log('[Timeline] Supabase Data:', {
-      profiles: profiles.data?.length || 0,
-      ratings: allRatings.data?.length || 0,
-      logs: allAttendance.data?.length || 0,
-      movies: allMovies.data?.length || 0,
-      sessions: allSessions.data?.length || 0
-    });
-
-    if (profiles.error) return;
-
-    // 1. Join Events (Festival Member)
-    profiles.data?.forEach(p => {
-      events.push({
-        type: 'miembro',
-        icon: 'user-check',
-        userId: p.id,
-        name: p.full_name || p.email.split('@')[0],
-        date: new Date(p.created_at),
-        text: 'earned the <span class="event-medal-name">Festival Member</span> medal'
-      });
-    });
-
-    // 2. Ratings Milestones (Unique movies only, sorted by date)
-    const ratingStats = {};
-    const processedRatings = (allRatings.data || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    const events = await AchievementService.fetchRecentEvents();
     
-    processedRatings.forEach(r => {
-      if (!ratingStats[r.user_id]) ratingStats[r.user_id] = new Set();
-      ratingStats[r.user_id].add(r.movie_id);
-      
-      const count = ratingStats[r.user_id].size;
-      if (count === 1 || count === 5 || count === 10) {
-        const isOro = count === 10;
-        const isFirst = count === 1;
-        let icon = isOro ? 'award' : (isFirst ? 'star' : 'clapperboard');
-        let medal = isOro ? 'Golden Cinephile' : (isFirst ? 'First Critic' : 'Fierce Critic');
-        
-        events.push({
-          type: isOro ? 'oro' : 'feroz',
-          icon: icon,
-          userId: r.user_id,
-          date: new Date(r.created_at),
-          text: `earned the <span class="event-medal-name">${medal}</span> medal`
-        });
-      }
-    });
-
-    // 3. Attendance Milestones (Sorted by date)
-    const attendanceStats = {};
-    const processedAttendance = (allAttendance.data || [])
-      .filter(a => a.action_type === 'attendance')
-      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-
-    processedAttendance.forEach(a => {
-      if (!attendanceStats[a.user_id]) attendanceStats[a.user_id] = 0;
-      attendanceStats[a.user_id]++;
-
-      const count = attendanceStats[a.user_id];
-      if (count === 1 || count === 3 || count === 5) {
-        let medal = '';
-        let icon = '';
-        if (count === 1) { medal = 'Grand Premiere'; icon = 'ticket'; }
-        else if (count === 3) { medal = 'Festival Regular'; icon = 'calendar'; }
-        else if (count === 5) { medal = 'Cinema Legend'; icon = 'crown'; }
-
-        events.push({
-          type: 'asistencia',
-          icon: icon,
-          userId: a.user_id,
-          date: new Date(a.created_at),
-          text: `earned the <span class="event-medal-name">${medal}</span> medal`
-        });
-      }
-    });
-
-    // 4. Streak Milestones
-    const userAttendanceMap = {};
-    (allAttendance.data || []).forEach(log => {
-      if (log.action_type === 'attendance') {
-        if (!userAttendanceMap[log.user_id]) userAttendanceMap[log.user_id] = new Set();
-        userAttendanceMap[log.user_id].add(log.movie_id);
-      }
-    });
-
-    const sessions = allSessions.data || [];
-    const activeUserIds = (profiles.data || []).map(p => p.id);
-
-    activeUserIds.forEach(uId => {
-      let currentStreak = 0;
-      let maxStreak = 0;
-      let streakDates = {};
-
-      sessions.forEach(s => {
-        if (userAttendanceMap[uId]?.has(s.id)) {
-          currentStreak++;
-          if (currentStreak === 3 || currentStreak === 5) {
-            const streakName = currentStreak === 5 ? 'Infinite Streak (5x)' : 'Iron Streak (3x)';
-            events.push({
-              type: 'streak',
-              icon: currentStreak === 5 ? 'zap' : 'flame',
-              userId: uId,
-              date: new Date(s.session_date),
-              text: `earned the <span class="event-medal-name">${streakName}</span> medal`
-            });
-          }
-        } else {
-          currentStreak = 0;
-        }
-      });
-    });
-
-    // 5. Visionary Milestones (ONLY for SEEN movies, sorted by when they were proposed)
-    const visionaryStats = {};
-    const seenMoviesData = (allMovies.data || [])
-      .filter(m => m.is_seen)
-      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-
-    seenMoviesData.forEach(m => {
-      if (!visionaryStats[m.proposed_by]) visionaryStats[m.proposed_by] = 0;
-      visionaryStats[m.proposed_by]++;
-
-      const count = visionaryStats[m.proposed_by];
-      if (count === 1 || count === 3) {
-        const isOracle = count === 3;
-        events.push({
-          type: 'visionary',
-          icon: isOracle ? 'sparkles' : 'eye',
-          userId: m.proposed_by,
-          date: new Date(m.created_at || Date.now()),
-          text: `earned the <span class="event-medal-name">${isOracle ? 'The Oracle' : 'The Visionary'}</span> medal`
-        });
-      }
-    });
-
-    // Enrich names and STRICT FILTER
-    const eventUserIds = [...new Set(events.filter(e => e.userId).map(e => e.userId))];
-    
-    // Get ALL active profile IDs to ensure we don't show ghosts
-    console.log(`[Timeline] Generated ${events.length} total raw events.`);
-    const { data: activeProfiles, error: profError } = await supabase.from('profiles').select('id, full_name, email');
-    
-    if (profError) {
-      console.error('[Timeline] Error fetching active profiles:', profError);
-      // Fallback: Use what we have without strict filtering if we can't verify
-      events.sort((a, b) => b.date - a.date);
-      renderAchievementTimeline(events.slice(0, 5));
-      return;
-    }
-
-    const activeUserMap = {};
-    activeProfiles?.forEach(p => activeUserMap[p.id] = p.full_name || p.email.split('@')[0]);
-
-    // Final Filter: The user MUST exist in activeProfiles
-    const filteredEvents = events.filter(e => activeUserMap[e.userId]);
-    console.log(`[Timeline] ${filteredEvents.length} events survived the active user filter.`);
-
-    filteredEvents.forEach(e => {
-      if (e.userId) e.name = activeUserMap[e.userId] || e.name;
-    });
-
     // Sort and render
-    filteredEvents.sort((a, b) => b.date - a.date);
+    events.sort((a, b) => b.date - a.date);
     
     // Home Timeline (Top 5)
-    renderAchievementTimeline(filteredEvents.slice(0, 5));
+    renderAchievementTimeline(events.slice(0, 5));
 
     // Admin Audit List (Full history)
     const adminList = document.getElementById('adminAchievementsList');
     if (adminList) {
-      adminList.innerHTML = filteredEvents.map(e => {
-        const userName = activeUserMap[e.userId] || 'Unknown';
-        const medalName = e.text.match(/<span class="event-medal-name">(.*?)<\/span>/)?.[1] || 'Achievement';
-        return `
-          <tr>
-            <td>
-              <div style="display:flex; flex-direction:column;">
-                <span class="user-name">${userName}</span>
-                <span style="font-size:0.7rem; color:var(--text-secondary);">${e.userId}</span>
-              </div>
-            </td>
-            <td>
-              <div style="display:flex; align-items:center; gap:0.75rem;">
-                <div class="achievement-icon-small" style="background:var(--accent); color:white; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center;">
-                  <i data-lucide="${e.icon}"></i>
-                </div>
-                <span style="font-weight:600;">${medalName}</span>
-              </div>
-            </td>
-            <td>${e.date.toLocaleString()}</td>
-            <td><span class="score-badge">+10</span></td>
-          </tr>
-        `;
-      }).join('');
+      // Need a map for admin view if it expects one
+      const { data: activeProfiles } = await supabase.from('profiles').select('id, full_name, email');
+      const activeUserMap = {};
+      activeProfiles?.forEach(p => activeUserMap[p.id] = p.full_name || p.email.split('@')[0]);
+      
+      AdminView.renderAchievementsAudit(events, adminList, activeUserMap);
       if (window.lucide) window.lucide.createIcons();
     }
-
   } catch (err) {
     console.error('Error fetching achievement events:', err);
   }
@@ -2754,192 +1898,35 @@ async function fetchRecentAchievementEvents() {
 
 async function renderAchievementTimeline(events) {
   const body = document.getElementById('timelineBody');
-  if (!body) {
-    console.error('[Timeline] Target element #timelineBody not found in DOM');
-    return;
-  }
-  
-  const safeEvents = events || [];
-  
-  // CRITICAL FIX: If we already have items and the new update is empty, 
-  // do NOT clear the UI. This prevents the "flash" of empty state.
-  if (safeEvents.length === 0 && body.children.length > 1) {
-    console.log('[Timeline] Ignoring empty update to preserve existing items.');
-    return;
-  }
-
-  console.log(`[Timeline] Rendering ${safeEvents.length} items to #timelineBody:`, safeEvents);
-  
-  if (safeEvents.length === 0) {
-    body.innerHTML = `<tr><td colspan="2" style="text-align:center; padding: 2rem; color: var(--text-secondary);">No recent activity yet.</td></tr>`;
-    return;
-  }
-
-  // Simplified and more robust HTML structure
-  const html = safeEvents.map(e => `
-    <tr class="timeline-row event-${e.type}">
-      <td>
-        <div class="event-user-cell">
-          <div class="event-icon-circle">
-            <i data-lucide="${e.icon || 'star'}"></i>
-          </div>
-          <div class="event-content">
-            <div class="event-message">
-              <span class="event-name">${e.name || 'User'}</span> ${e.text}
-            </div>
-            <div class="event-date">${timeAgo(e.date)}</div>
-          </div>
-        </div>
-      </td>
-    </tr>
-  `).join('');
-
-  body.innerHTML = html;
-  console.log('[Timeline] HTML successfully injected into DOM.');
-
-  // More robust icon refresh
-  const refreshIcons = () => {
-    if (window.lucide) {
-      window.lucide.createIcons();
-      console.log('[Timeline] Lucide icons refreshed.');
-    } else {
-      console.warn('[Timeline] Lucide not found, retrying...');
-      setTimeout(refreshIcons, 200);
-    }
-  };
-  
-  setTimeout(refreshIcons, 100);
+  HomeView.renderTimeline(events, body);
+  if (window.lucide) window.lucide.createIcons();
 }
-
-// Intercept lifecycle to render achievements - REMOVED WRAPPING
-
-// Direct calls added to refreshData and loadUserActivity
-
-
-
-
 
 /* --- Session System Logic --- */
 
 async function fetchSessions() {
-  const { data, error } = await supabase
-    .from('sessions')
-    .select('*, movies(*), session_signups(user_id, profiles(full_name))')
-    .order('session_date', { ascending: false });
-
-  if (!error) {
-    sessions = data || [];
+  try {
+    sessions = await SessionService.fetchAll();
+  } catch (err) {
+    console.error('Error fetching sessions:', err);
   }
-}
-
-function renderAvatarStack(signups) {
-  if (!signups || signups.length === 0) return '';
-  
-  const limit = 3;
-  const displayed = signups.slice(0, limit);
-  const moreCount = signups.length - limit;
-  const allNames = signups.map(s => s.profiles?.full_name || 'Anonymous').join('\n');
-
-  return `
-    <div class="avatar-stack" data-tooltip="Interested:\n${allNames}">
-      ${moreCount > 0 ? `<div class="more-count">+${moreCount}</div>` : ''}
-      ${displayed.reverse().map(s => `
-        <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(s.profiles?.full_name || 'A')}&background=random" alt="Avatar">
-      `).join('')}
-    </div>
-  `;
 }
 
 function renderSessions() {
-  if (!sessionsGrid) return;
-  
-  if (sessions.length === 0) {
-    sessionsGrid.innerHTML = '<div class="empty-state">No sessions scheduled yet.</div>';
-    return;
-  }
-
-  sessionsGrid.innerHTML = sessions.map(session => {
-    const poster = session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER;
-    const title = session.movie_id ? session.movies?.title : 'Film To Be Decided';
-    
-    const isSignedUp = user && session.session_signups?.some(s => s.user_id === user.id);
-    const displayKey = session.keyword && session.keyword.trim() !== "" ? session.keyword : 'TBD';
-    const keywordDisplay = isSignedUp 
-      ? `<div class="session-keyword-unlocked"><i data-lucide="key"></i> ${displayKey}</div>`
-      : `<div class="session-keyword-locked"><i data-lucide="lock"></i> Register to see keyword</div>`;
-
-    return `
-      <div class="session-card" onclick="window.openSessionDetail('${session.id}')">
-        <div class="session-card-poster">
-          <img src="${poster}" alt="${title}">
-        </div>
-        <div class="session-card-content">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.5rem;">
-            <div class="session-date-badge">
-              ${new Date(session.session_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}
-            </div>
-            ${renderAvatarStack(session.session_signups)}
-          </div>
-          <div class="session-card-title">${title}</div>
-          <p style="color:var(--text-secondary); font-size: 0.85rem; line-height: 1.4; margin-top: 0.5rem; margin-bottom: 1rem;">
-            ${session.description || 'Join us for this special screening!'}
-          </p>
-          ${keywordDisplay}
-        </div>
-      </div>
-    `;
-  }).join('');
+  SessionsView.renderSessions(sessions, sessionsGrid, { user });
+  if (window.lucide) window.lucide.createIcons();
 }
 
 function renderNextSessionHero() {
-  if (!nextSessionHero) return;
-
   const upcoming = sessions
     .filter(s => s.is_upcoming && new Date(s.session_date) > new Date())
     .sort((a, b) => new Date(a.session_date) - new Date(b.session_date))[0];
 
-  if (!upcoming) {
-    nextSessionHero.classList.add('page-hidden');
-    return;
-  }
-
-  const poster = upcoming.movie_id ? (upcoming.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER;
-  const title = upcoming.movie_id ? upcoming.movies?.title : 'Film To Be Decided';
-  const isSignedUp = user && upcoming.session_signups?.some(s => s.user_id === user.id);
-  const signupCount = upcoming.session_signups?.length || 0;
-
-  const displayKey = upcoming.keyword && upcoming.keyword.trim() !== "" ? upcoming.keyword : 'TBD';
-  const keywordDisplay = isSignedUp 
-    ? `<div class="hero-keyword-unlocked"><i data-lucide="key"></i> Secret Code: <strong>${displayKey}</strong></div>`
-    : `<div class="hero-keyword-locked"><i data-lucide="lock"></i> Register to unlock secret code</div>`;
-
-  nextSessionHero.classList.remove('page-hidden');
-  nextSessionHero.innerHTML = `
-    <img src="${poster}" class="next-session-poster" alt="${title}">
-    <div class="next-session-info">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.5rem;">
-         <div class="session-date-badge">NEXT SESSION</div>
-         ${renderAvatarStack(upcoming.session_signups)}
-      </div>
-      <h3 style="margin-top:0.5rem;">${title}</h3>
-      <div class="next-session-meta">
-        <span><i data-lucide="calendar"></i> ${new Date(upcoming.session_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}</span>
-        <span><i data-lucide="clock"></i> ${new Date(upcoming.session_date).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</span>
-      </div>
-      <p style="color:var(--text-secondary); margin-bottom: 1.5rem;">${upcoming.description || 'No description available.'}</p>
-      
-      ${keywordDisplay}
-
-      <button class="btn-signup-hero ${isSignedUp ? 'success' : ''}" onclick="window.signupForSession('${upcoming.id}')" style="margin-top: 1rem;">
-        <i data-lucide="${isSignedUp ? 'user-check' : 'user-plus'}"></i> 
-        ${isSignedUp ? 'Already Signed Up' : 'Sign Up Now'}
-      </button>
-    </div>
-  `;
+  HomeView.renderNextSessionHero(upcoming, nextSessionHero, { user });
   if (window.lucide) window.lucide.createIcons();
 }
 
-window.openSessionDetail = async (sessionId) => {
+window.viewSessionDetails = async (sessionId) => {
   const session = sessions.find(s => s.id === sessionId);
   if (!session) return;
 
@@ -2947,78 +1934,16 @@ window.openSessionDetail = async (sessionId) => {
   sessionModal.classList.remove('page-hidden');
   document.body.style.overflow = 'hidden';
 
-  // Load comments, photos, signups
-  const [comments, photos, signups, attendance] = await Promise.all([
-    supabase.from('session_comments').select('*, profiles(full_name)').eq('session_id', sessionId).order('created_at', { ascending: false }),
-    supabase.from('session_photos').select('*, profiles(full_name)').eq('session_id', sessionId).order('created_at', { ascending: false }),
-    supabase.from('session_signups').select('*, profiles(full_name, id)').eq('session_id', sessionId),
-    supabase.from('session_attendance').select('*, profiles(full_name, id)').eq('session_id', sessionId)
-  ]);
-
-  const isSignedUp = user && signups.data?.some(s => s.user_id === user.id);
-  const isAttended = user && attendance.data?.some(a => a.user_id === user.id);
-  const signupCount = signups.data?.length || 0;
-
-  const poster = session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER;
-  const title = session.movie_id ? session.movies?.title : 'Film To Be Decided';
-
-  sessionModalBody.innerHTML = `
-    <div class="session-detail-layout">
-      <div class="session-sidebar">
-        <img src="${poster}" style="width:100%; border-radius:1.5rem; box-shadow:0 10px 30px rgba(0,0,0,0.5);" />
-        <div style="margin-top: 2rem;">
-          <h4 style="margin-bottom: 0.5rem; color:var(--text-secondary);">SESSION INFO</h4>
-          <p><i data-lucide="calendar" style="width:14px; margin-right:5px;"></i> ${new Date(session.session_date).toLocaleDateString()}</p>
-          <p><i data-lucide="map-pin" style="width:14px; margin-right:5px;"></i> ${session.location || 'Paral·lel Cinema'}</p>
-        </div>
-        
-        <div style="margin-top: 2rem;">
-          ${session.is_upcoming ? `
-            <button class="submit-btn ${isSignedUp ? 'success' : ''}" onclick="window.signupForSession('${session.id}')">
-              <i data-lucide="${isSignedUp ? 'user-check' : 'user-plus'}"></i> 
-              ${isSignedUp ? 'Already Signed Up' : 'Sign Up for Session'}
-            </button>
-            <p style="text-align:center; margin-top:1rem; font-size:0.8rem; color:var(--text-secondary);">
-              <i data-lucide="users" style="width:12px; height:12px; vertical-align:middle;"></i> ${signupCount} people interested
-            </p>
-          ` : `
-            <div class="badge ${isAttended ? 'success' : 'muted'}" style="padding: 1rem; text-align:center; border-radius:1rem; background:rgba(255,255,255,0.05);">
-              <i data-lucide="${isAttended ? 'check-circle' : 'info'}"></i>
-              ${isAttended ? 'You Attended This Session' : 'This session has passed'}
-            </div>
-          `}
-        </div>
-      </div>
-
-      <div class="session-main-info">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-          <h2>${title}</h2>
-          ${isAdmin ? `
-            <button class="edit-profile-btn" onclick="window.showEditSessionModal('${session.id}')">
-              <i data-lucide="edit"></i> Edit Session
-            </button>
-          ` : ''}
-        </div>
-        <p style="font-size: 1.1rem; color:var(--text-secondary); margin-bottom: 2rem;">${session.description || ''}</p>
-
-        <div class="session-tabs">
-          <button class="session-tab-btn active" onclick="window.switchSessionTab('comments')">Comments (${comments.data?.length || 0})</button>
-          <button class="session-tab-btn" onclick="window.switchSessionTab('photos')">Gallery (${photos.data?.length || 0})</button>
-          <button class="session-tab-btn" onclick="window.switchSessionTab('participants')">
-            ${session.is_upcoming ? 'Interested' : 'Participants'} (${session.is_upcoming ? signupCount : attendance.data?.length || 0})
-          </button>
-        </div>
-
-        <div id="sessionTabContent">
-          <!-- Comments by default -->
-          ${renderCommentsHTML(comments.data || [])}
-        </div>
-      </div>
-    </div>
-  `;
-  
-  if (window.lucide) window.lucide.createIcons();
+  try {
+    const details = await SessionService.fetchDetails(sessionId);
+    sessionModalBody.innerHTML = SessionsView.renderDetail(session, details, { user, isAdmin });
+    if (window.lucide) window.lucide.createIcons();
+  } catch (err) {
+    console.error('Error fetching session details:', err);
+  }
 };
+
+
 
 window.closeSessionModal = () => {
   sessionModal.classList.add('page-hidden');
@@ -3033,124 +1958,65 @@ window.switchSessionTab = async (tab) => {
   
   if (tab === 'comments') {
     const { data } = await supabase.from('session_comments').select('*, profiles(full_name)').eq('session_id', currentSession.id).order('created_at', { ascending: false });
-    content.innerHTML = renderCommentsHTML(data || []);
+    content.innerHTML = SessionsView.renderCommentsHTML(data || []);
   } else if (tab === 'photos') {
     const { data } = await supabase.from('session_photos').select('*, profiles(full_name)').eq('session_id', currentSession.id).order('created_at', { ascending: false });
-    content.innerHTML = renderGalleryHTML(data || []);
+    content.innerHTML = SessionsView.renderGalleryHTML(data || []);
   } else if (tab === 'participants') {
     const isUpcoming = currentSession.is_upcoming;
     const table = isUpcoming ? 'session_signups' : 'session_attendance';
     const { data } = await supabase.from(table).select('*, profiles(full_name)').eq('session_id', currentSession.id);
-    
-    content.innerHTML = `
-      <div class="participants-list" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem;">
-        ${data?.length ? data.map(p => `
-          <div class="participant-card" style="background:rgba(255,255,255,0.05); padding:1rem; border-radius:1rem; text-align:center;">
-            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(p.profiles.full_name)}&background=random" style="width:50px; height:50px; border-radius:50%; margin-bottom:0.5rem;" />
-            <div style="font-weight:600; font-size:0.8rem;">${p.profiles.full_name}</div>
-            ${isUpcoming ? '<div style="font-size:0.6rem; color:var(--text-secondary); margin-top:0.2rem;">Interested</div>' : ''}
-          </div>
-        `).join('') : `<div class="empty-state">No ${isUpcoming ? 'interest recorded' : 'participants'} yet.</div>`}
-      </div>
-    `;
+    content.innerHTML = SessionsView.renderParticipantsHTML(data || [], isUpcoming);
   }
+  
   if (window.lucide) window.lucide.createIcons();
 };
 
-function renderCommentsHTML(comments) {
-  return `
-    <div class="comments-section">
-      ${user ? `
-        <div class="comment-input-wrapper">
-          <textarea id="newCommentText" placeholder="Share your thoughts about this movie..." rows="2"></textarea>
-          <button class="submit-btn" style="width:auto; padding:0 1.5rem;" onclick="window.postComment()">
-            <i data-lucide="send"></i>
-          </button>
-        </div>
-      ` : '<p style="text-align:center; color:var(--text-secondary);">Sign in to leave a comment.</p>'}
-      
-      <div class="comments-list">
-        ${comments.length ? comments.map(c => `
-          <div class="comment-card">
-            <div class="comment-header">
-              <span class="comment-user">${c.profiles?.full_name || 'Anonymous'}</span>
-              <span style="opacity:0.5;">${new Date(c.created_at).toLocaleDateString()}</span>
-            </div>
-            <div class="comment-body">${c.content}</div>
-          </div>
-        `).join('') : '<div class="empty-state">No comments yet.</div>'}
-      </div>
-    </div>
-  `;
-}
-
-function renderGalleryHTML(photos) {
-  return `
-    <div class="gallery-section">
-      <div class="photo-gallery">
-        ${user ? `
-          <div class="upload-photo-btn" onclick="window.triggerPhotoUpload()">
-            <i data-lucide="camera" style="width:32px; height:32px;"></i>
-            <span>Add Photo</span>
-          </div>
-        ` : ''}
-        ${photos.map(p => `
-          <div class="gallery-item" onclick="window.openFullPhoto('${p.photo_url}')">
-            <img src="${p.photo_url}" loading="lazy" />
-          </div>
-        `).join('')}
-      </div>
-    </div>
-  `;
-}
-
 window.signupForSession = async (sessionId) => {
   if (!user) {
-    window.navigateTo('auth');
+    showNotification('Please log in to sign up!', 'error');
     return;
   }
 
-  const { data: existing } = await supabase.from('session_signups').select('*').match({ session_id: sessionId, user_id: user.id }).single();
-
-  if (existing) {
-    await supabase.from('session_signups').delete().match({ session_id: sessionId, user_id: user.id });
-    showNotification('Sign up cancelled', 'warning');
-  } else {
-    await supabase.from('session_signups').insert([{ session_id: sessionId, user_id: user.id }]);
-    showNotification('Signed up for the session!', 'success');
+  try {
+    const res = await SessionService.toggleSignup(sessionId, user.id);
+    showNotification(res.action === 'added' ? 'You are now signed up!' : 'Signup removed.');
+    
+    // Refresh
+    await fetchSessions();
+    renderSessions();
+    if (currentSession?.id === sessionId) window.viewSessionDetails(sessionId);
+  } catch (err) {
+    console.error('Error signing up:', err);
+    showNotification('Action failed.', 'error');
   }
-  refreshData();
 };
 
-window.postComment = async () => {
-  const text = document.getElementById('newCommentText').value.trim();
-  if (!text) return;
+window.addSessionComment = async () => {
+  const input = document.getElementById('sessionCommentInput');
+  const content = input?.value.trim();
+  if (!content || !user || !currentSession) return;
 
-  const { error } = await supabase.from('session_comments').insert([{
-    session_id: currentSession.id,
-    user_id: user.id,
-    content: text
-  }]);
-
-  if (!error) {
-    showNotification('Comment posted!');
+  try {
+    await SessionService.addComment(currentSession.id, user.id, content);
+    input.value = '';
+    showNotification('Comment added!');
     window.switchSessionTab('comments');
+  } catch (err) {
+    console.error('Error adding comment:', err);
   }
 };
 
-window.triggerPhotoUpload = async () => {
+window.addSessionPhoto = async () => {
   const url = window.prompt("Enter photo URL (implementing full upload in Supabase Storage requires more setup, so for now we use URLs):");
-  if (!url) return;
+  if (!url || !user || !currentSession) return;
 
-  const { error } = await supabase.from('session_photos').insert([{
-    session_id: currentSession.id,
-    user_id: user.id,
-    photo_url: url
-  }]);
-
-  if (!error) {
+  try {
+    await SessionService.addPhoto(currentSession.id, user.id, url);
     showNotification('Photo added to gallery!');
     window.switchSessionTab('photos');
+  } catch (err) {
+    console.error('Error adding photo:', err);
   }
 };
 
@@ -3179,32 +2045,31 @@ window.closeCreateSessionModal = () => {
 
 window.handleCreateSession = async () => {
   const movieId = sessionMovieSelect.value;
-  const date = document.getElementById('sessionDate').value;
+  const dateStr = document.getElementById('sessionDate').value;
   const desc = document.getElementById('sessionDescription').value;
-  const keywordInput = document.getElementById('sessionKeyword');
-  const keyword = keywordInput ? keywordInput.value.trim() : '';
+  const isUpcoming = true;
 
-  console.log('[Admin] Creating session:', { date, keyword });
-
-  if (!date) {
+  if (!dateStr) {
     showNotification('Date is required', 'error');
     return;
   }
 
-  const { error } = await supabase.from('sessions').insert([{
-    movie_id: movieId || null,
-    session_date: new Date(date).toISOString(),
-    description: desc,
-    keyword: keyword,
-    is_upcoming: true
-  }]);
-
-  if (!error) {
+  try {
+    await SessionService.createSession({
+      movie_id: movieId,
+      session_date: dateStr,
+      description: desc,
+      is_upcoming: isUpcoming
+    });
+    
     showNotification('Session created successfully!');
+    await fetchSessions();
+    renderSessions();
+    
     window.closeCreateSessionModal();
-    refreshData();
-  } else {
-    showNotification('Error creating session', 'error');
+  } catch (err) {
+    console.error('Error creating session:', err);
+    showNotification('Failed to create session', 'error');
   }
 };
 
@@ -3240,10 +2105,20 @@ async function updateAdminSessions() {
 window.handleDeleteSession = async (sessionId) => {
   if (!confirm('Are you sure you want to delete this session?')) return;
 
-  const { error } = await supabase.from('sessions').delete().eq('id', sessionId);
-  if (!error) {
-    showNotification('Session deleted');
-    refreshData();
+  try {
+    await SessionService.deleteSession(sessionId);
+    showNotification('Session deleted.');
+    
+    if (currentSession?.id === sessionId) {
+      document.getElementById('sessionDetailsModal')?.classList.add('page-hidden');
+      currentSession = null;
+    }
+    
+    await fetchSessions();
+    renderSessions();
+  } catch (err) {
+    console.error('Error deleting session:', err);
+    showNotification('Failed to delete session', 'error');
   }
 };
 
@@ -3281,27 +2156,24 @@ window.manageAttendance = async (sessionId) => {
 };
 
 window.toggleAttendance = async (sessionId, userId, btn) => {
-  const isConfirmed = btn.classList.contains('success');
-
-  if (isConfirmed) {
-    await supabase.from('session_attendance').delete().match({ session_id: sessionId, user_id: userId });
-    btn.classList.remove('success');
-    btn.classList.add('secondary');
-    btn.textContent = 'Confirm Attendance';
-  } else {
-    await supabase.from('session_attendance').insert([{ session_id: sessionId, user_id: userId }]);
-    btn.classList.remove('secondary');
-    btn.classList.add('success');
-    btn.textContent = 'Confirmed';
+  try {
+    const res = await SessionService.toggleAttendance(sessionId, userId);
     
-    const session = sessions.find(s => s.id === sessionId);
-    const logData = {
-      user_id: userId,
-      action_type: "attendance",
-      points: 50
-    };
-    if (session.movie_id) logData.movie_id = session.movie_id;
-    await supabase.from("participation_log").insert([logData]);
+    // Log achievement points only when checking IN
+    if (res.action === 'added') {
+      try {
+        await AdminService.logParticipation(userId, 'attendance', currentSession.movie_id);
+      } catch (logErr) {
+        console.error('Failed to log attendance points:', logErr);
+      }
+    }
+    
+    showNotification(res.action === 'added' ? 'Checked in!' : 'Check-in removed');
+    await fetchSessions();
+    window.viewSessionDetails(sessionId);
+  } catch (err) {
+    console.error('Error toggling attendance:', err);
+    showNotification('Action failed', 'error');
   }
 };
 window.showEditSessionModal = (sessionId) => {
@@ -3340,89 +2212,42 @@ window.showEditSessionModal = (sessionId) => {
 };
 
 window.handleUpdateSession = async (sessionId) => {
-  const movieId = sessionMovieSelect.value;
-  const date = document.getElementById('sessionDate').value;
   const desc = document.getElementById('sessionDescription').value;
-  const keyword = document.getElementById('sessionKeyword').value.trim();
+  const isUpcoming = true;
 
-  if (!date) {
-    showNotification('Date is required', 'error');
-    return;
-  }
-
-  const { error } = await supabase.from('sessions').update({
-    movie_id: movieId || null,
-    session_date: new Date(date).toISOString(),
-    description: desc,
-    keyword: keyword
-  }).eq('id', sessionId);
-
-  if (!error) {
-    showNotification('Session updated successfully!');
-    window.closeCreateSessionModal();
-    refreshData();
-  } else {
-    showNotification('Error updating session', 'error');
+  try {
+    await SessionService.updateSession(currentSession.id, {
+      description: desc,
+      is_upcoming: isUpcoming
+    });
+    
+    showNotification('Session updated!');
+    await fetchSessions();
+    window.viewSessionDetails(currentSession.id);
+  } catch (err) {
+    console.error('Error updating session:', err);
+    showNotification('Failed to update session', 'error');
   }
 };
 
 init();
 
-function renderCemetery(droppedMovies) {
-  const cemeteryGrid = document.getElementById('cemeteryGrid');
-  if (!cemeteryGrid) return;
-  
-  if (droppedMovies.length === 0) {
-    cemeteryGrid.innerHTML = '<div class="empty-state">The cemetery is empty. All proposed movies are still fighting!</div>';
-    return;
-  }
-
-  cemeteryGrid.innerHTML = droppedMovies.map(movie => {
-    return createMovieCardHTML(movie, { 
-      context: 'cemetery', 
-      showDelete: isAdmin // Only admins can truly delete from cemetery
-    });
-  }).join('');
-  
-  if (window.lucide) window.lucide.createIcons();
-}
+// renderCemetery removed (now handled by HomeView)
 
 window.cleanupInactiveMovies = async (silent = false) => {
   if (!isAdmin) return;
   if (!silent) showNotification('Checking for inactive movies...', 'info');
-  const fifteenDaysAgo = new Date();
-  fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
-  const { data: moviesToClean, error: fetchErr } = await supabase
-    .from('movies')
-    .select('id, title, created_at, vote_count, is_dropped, is_seen')
-    .eq('is_dropped', false)
-    .eq('is_seen', false);
-  if (fetchErr || !moviesToClean) return;
-  const { data: allVotes, error: votesErr } = await supabase
-    .from('votes')
-    .select('movie_id, created_at');
-  if (votesErr) return;
-  const toDrop = moviesToClean.filter(m => {
-    const proposalDate = new Date(m.created_at);
-    const movieVotes = (allVotes || []).filter(v => v.movie_id === m.id);
-    if (movieVotes.length === 0) {
-      return proposalDate < fifteenDaysAgo;
+  
+  try {
+    const { cleanedCount } = await AdminService.cleanupInactiveMovies();
+    if (cleanedCount > 0) {
+      if (!silent) showNotification(`Cleaned up ${cleanedCount} inactive movies`, 'success');
+      refreshData();
     } else {
-      const lastVoteDate = new Date(Math.max(...movieVotes.map(v => new Date(v.created_at))));
-      return lastVoteDate < fifteenDaysAgo;
+      if (!silent) showNotification('All movies are active!', 'success');
     }
-  });
-  if (toDrop.length === 0) {
-    if (!silent) showNotification('All movies are active!', 'success');
-    return;
-  }
-  const ids = toDrop.map(m => m.id);
-  const { error: updateErr } = await supabase
-    .from('movies')
-    .update({ is_dropped: true })
-    .in('id', ids);
-  if (!updateErr) {
-    if (!silent) showNotification(`Cleaned up ${toDrop.length} inactive movies`, 'success');
-    refreshData();
+  } catch (err) {
+    console.error('Error cleaning up movies:', err);
+    if (!silent) showNotification('Failed to clean inactive movies', 'error');
   }
 };
