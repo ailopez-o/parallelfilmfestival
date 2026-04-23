@@ -1590,7 +1590,7 @@ window.proposeMovie = async (tmdbMovie, el) => {
   };
 
   try {
-    data = await MovieService.createMovie({
+    const data = await MovieService.createMovie({
       ...payload,
       average_rating: tmdbMovie.vote_average || 0
     });
