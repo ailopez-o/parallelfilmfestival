@@ -73,10 +73,11 @@ serve(async (req) => {
     // Delete from public profiles
     await supabaseAdmin.from('profiles').delete().eq('id', targetUserId)
 
-    // 5. Delete the Auth User completely
+    // 5. Delete the Auth User completely (if it still exists)
     const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(targetUserId)
     
-    if (deleteAuthError) {
+    // Ignore error if the user was already deleted from auth.users manually
+    if (deleteAuthError && !deleteAuthError.message.includes('User not found')) {
       throw deleteAuthError
     }
 
