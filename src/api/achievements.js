@@ -114,7 +114,7 @@ export const AchievementService = {
   async fetchRecentEvents() {
     try {
       const [profiles, allRatings, allAttendance, allMovies, allSessions] = await Promise.all([
-        supabase.from('profiles').select('id, full_name, email, created_at').order('created_at', { ascending: false }).limit(20),
+        supabase.from('profiles').select('id, full_name, email, created_at').order('created_at', { ascending: false }),
         supabase.from('user_ratings').select('user_id, created_at, movie_id'),
         supabase.from('participation_log').select('user_id, created_at, action_type, movie_id'),
         supabase.from('movies').select('id, proposed_by, is_seen, created_at'),
@@ -123,17 +123,29 @@ export const AchievementService = {
 
       if (profiles.error) throw profiles.error;
 
+      const activeUsersMap = new Map();
+      profiles.data?.forEach(p => activeUsersMap.set(p.id, p.full_name || p.email.split('@')[0]));
+
       const events = [];
       
-      // 1. Join Events
-      profiles.data?.forEach(p => {
+      // 1. Join Events (Only top 20 most recent to avoid spam)
+      profiles.data?.slice(0, 20).forEach(p => {
         events.push({
           type: 'miembro', icon: 'user-check', userId: p.id,
-          name: p.full_name || p.email.split('@')[0],
+          name: activeUsersMap.get(p.id),
           date: new Date(p.created_at),
           text: 'earned the <span class="event-medal-name">Festival Member</span> medal'
         });
       });
+
+      // Helper to safely add events only for active users
+      const pushEvent = (userId, date, type, icon, medal) => {
+        if (!activeUsersMap.has(userId)) return; // Filter out deleted/ghost users
+        events.push({
+          type, icon, userId, date, name: activeUsersMap.get(userId),
+          text: `earned the <span class="event-medal-name">${medal}</span> medal`
+        });
+      };
 
       // 2. Ratings Milestones
       const ratingStats = {};
@@ -143,12 +155,7 @@ export const AchievementService = {
         const count = ratingStats[r.user_id].size;
         if (count === 1 || count === 5 || count === 10) {
           const medal = count === 10 ? 'Golden Cinephile' : (count === 1 ? 'First Critic' : 'Fierce Critic');
-          events.push({
-            type: count === 10 ? 'oro' : 'feroz',
-            icon: count === 10 ? 'award' : (count === 1 ? 'star' : 'clapperboard'),
-            userId: r.user_id, date: new Date(r.created_at),
-            text: `earned the <span class="event-medal-name">${medal}</span> medal`
-          });
+          pushEvent(r.user_id, new Date(r.created_at), count === 10 ? 'oro' : 'feroz', count === 10 ? 'award' : (count === 1 ? 'star' : 'clapperboard'), medal);
         }
       });
 
@@ -160,11 +167,7 @@ export const AchievementService = {
         const count = attendanceStats[a.user_id];
         if ([1, 3, 5].includes(count)) {
           const medal = count === 1 ? 'Grand Premiere' : (count === 3 ? 'Festival Regular' : 'Cinema Legend');
-          events.push({
-            type: 'asistencia', icon: count === 1 ? 'ticket' : (count === 3 ? 'calendar' : 'crown'),
-            userId: a.user_id, date: new Date(a.created_at),
-            text: `earned the <span class="event-medal-name">${medal}</span> medal`
-          });
+          pushEvent(a.user_id, new Date(a.created_at), 'asistencia', count === 1 ? 'ticket' : (count === 3 ? 'calendar' : 'crown'), medal);
         }
       });
 
@@ -181,11 +184,7 @@ export const AchievementService = {
           if (userAttMap[u.id]?.has(s.id)) {
             streak++;
             if ([3, 5].includes(streak)) {
-              events.push({
-                type: 'streak', icon: streak === 5 ? 'zap' : 'flame', userId: u.id,
-                date: new Date(s.session_date),
-                text: `earned the <span class="event-medal-name">${streak === 5 ? 'Infinite Streak (5x)' : 'Iron Streak (3x)'}</span> medal`
-              });
+              pushEvent(u.id, new Date(s.session_date), 'streak', streak === 5 ? 'zap' : 'flame', streak === 5 ? 'Infinite Streak (5x)' : 'Iron Streak (3x)');
             }
           } else streak = 0;
         });
@@ -196,11 +195,7 @@ export const AchievementService = {
       (allMovies.data || []).filter(m => m.is_seen).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).forEach(m => {
         visStats[m.proposed_by] = (visStats[m.proposed_by] || 0) + 1;
         if ([1, 3].includes(visStats[m.proposed_by])) {
-          events.push({
-            type: 'visionary', icon: visStats[m.proposed_by] === 3 ? 'sparkles' : 'eye', userId: m.proposed_by,
-            date: new Date(m.created_at),
-            text: `earned the <span class="event-medal-name">${visStats[m.proposed_by] === 3 ? 'The Oracle' : 'The Visionary'}</span> medal`
-          });
+          pushEvent(m.proposed_by, new Date(m.created_at), 'visionary', visStats[m.proposed_by] === 3 ? 'sparkles' : 'eye', visStats[m.proposed_by] === 3 ? 'The Oracle' : 'The Visionary');
         }
       });
 
