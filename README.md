@@ -18,21 +18,27 @@ The application features a cutting-edge **Glassmorphism** interface with:
 
 ### 🔍 Discovery & Proposals
 - **TMDB Smart Search:** Real-time search powered by The Movie Database API, enriched with director credits, genres, and synopses.
-- **Curated Results:** Intelligent popularity filtering to prioritize well-known titles.
+- **Multiverse Explore:** Advanced filtering by year, genre, watch provider, and AI-powered recommendations.
 - **Proposal System:** Logged-in users can propose films to the shared dashboard.
 
 ### 🗳️ Living Lineup
 - **Dynamic Voting:** Real-time community voting with heart-based micro-animations.
+- **Cinema Cemetery:** Inactive or unpopular movies are automatically archived but can be resurrected.
 - **Vote Persistence:** Powered by Supabase to ensure every vote counts across sessions.
 
-### 🛡️ Authentication & Profiles
-- **Secure Access:** Integrated with Supabase Auth (Email & Social).
-- **Personal Dashboard:** Track your proposals and voting activity in a personalized profile view.
-- **Role-Based Controls:** Automated admin roles for festival management (e.g., marking movies as seen).
+### 📅 Sessions & Attendance
+- **Event Management:** Create and manage real-world festival sessions.
+- **RSVP & Check-in:** Users can sign up for upcoming sessions, and admins can mark physical attendance.
+- **Session Hub:** Upload photos and comments to commemorate past screenings.
+
+### 🏆 Gamification & Profiles
+- **Achievement Medals:** Earn dynamic titles (e.g., "The Visionary", "Iron Streak") based on attendance, voting accuracy, and proposal success.
+- **Personal Dashboard:** Track your proposals, voting activity, and score progression.
+- **Role-Based Controls:** Automated admin roles for festival management and destructive actions.
 
 ### 🎬 Seen History
 - **Archival Feed:** Move films from the live lineup to the history section once they've been watched.
-- **Community Rating:** (Coming Soon) Rate films in the history section once viewed.
+- **Community Rating:** Rate films and view aggregate scores for all watched cinema.
 
 ---
 
@@ -92,6 +98,9 @@ To enable the full feature set, ensure your Supabase instance includes the follo
 - `movies`: Stores proposals, genres, and metadata.
 - `votes`: Tracks user interaction.
 - `profiles`: Manages user roles and festival permissions.
+- `user_ratings`: Tracks post-viewing movie ratings.
+- `sessions`, `session_signups`, `session_attendance`, `session_comments`, `session_photos`: Event management.
+- `participation_log`: Audit trail for calculating gamification scores.
 
 ---
 
