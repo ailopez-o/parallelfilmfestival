@@ -56,15 +56,62 @@ export const AdminView = {
 
     container.innerHTML = logs.map(log => {
       const name = log.profiles?.full_name || 'User';
-      const actionLabel = log.action_type === 'vote' ? 'Voted' : 
-                          log.action_type === 'proposal' ? 'Proposed' : 
-                          log.action_type === 'attendance' ? 'Attended' : log.action_type;
+      let actionLabel = log.action_type;
+      let points = '0';
+      let pointsClass = 'muted';
+
+      if (log.action_type === 'vote') {
+        actionLabel = 'Voted';
+        points = '+1';
+        pointsClass = 'info';
+      } else if (log.action_type === 'proposal') {
+        actionLabel = 'Proposed';
+        points = '+5';
+        pointsClass = 'success';
+      } else if (log.action_type === 'attendance') {
+        actionLabel = 'Attended';
+        points = '+10';
+        pointsClass = 'success';
+      } else if (log.action_type === 'cemetery_drop') {
+        actionLabel = 'Proposal Dropped';
+        points = '-4';
+        pointsClass = 'danger';
+      } else if (log.action_type === 'cemetery_vote_loss') {
+        actionLabel = 'Vote Invalidated';
+        points = '-1';
+        pointsClass = 'danger';
+      } else if (log.action_type === 'proposal_rescue') {
+        actionLabel = 'Proposal Rescued';
+        points = '+4';
+        pointsClass = 'success';
+      } else if (log.action_type === 'proposal_lost') {
+        actionLabel = 'Proposal Lost';
+        points = '-1';
+        pointsClass = 'danger';
+      } else if (log.action_type === 'vote_removed') {
+        actionLabel = 'Vote Removed';
+        points = '-1';
+        pointsClass = 'danger';
+      }
       
+      const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
+      
+      const movieTitle = log.movies?.title || (log.movie_id ? 'Archived Movie' : 'System');
+      const movieDisplay = log.movies?.tmdb_id 
+        ? `<a href="https://www.themoviedb.org/movie/${log.movies.tmdb_id}" target="_blank" class="movie-title-cell link">${movieTitle}</a>`
+        : `<span class="movie-title-cell">${movieTitle}</span>`;
+
       return `
         <tr>
-          <td><span style="font-weight:600;">${name}</span></td>
+          <td>
+            <div class="user-cell">
+              <img src="${avatar}" alt="${name}">
+              <span class="user-name">${name}</span>
+            </div>
+          </td>
           <td><span class="audit-action-tag ${log.action_type}">${actionLabel}</span></td>
-          <td><span style="font-size:0.85rem;">${log.movies?.title || 'System'}</span></td>
+          <td>${movieDisplay}</td>
+          <td><span class="score-badge ${pointsClass}">${points}</span></td>
           <td style="font-size:0.8rem; color:var(--text-tertiary);">${new Date(log.created_at).toLocaleString()}</td>
         </tr>
       `;

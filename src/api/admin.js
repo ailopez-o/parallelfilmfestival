@@ -42,7 +42,7 @@ export const AdminService = {
   async fetchParticipationLogs(limit = 50) {
     const { data, error } = await supabase
       .from('participation_log')
-      .select('*, profiles(full_name), movies(title)')
+      .select('*, profiles(full_name), movies(title, tmdb_id)')
       .order('created_at', { ascending: false })
       .limit(limit);
     
@@ -94,7 +94,7 @@ export const AdminService = {
     
     const { data: moviesToClean, error: fetchErr } = await supabase
       .from('movies')
-      .select('id, title, created_at, is_dropped, is_seen')
+      .select('id, title, created_at, is_dropped, is_seen, proposed_by')
       .eq('is_dropped', false)
       .eq('is_seen', false);
       
@@ -128,6 +128,44 @@ export const AdminService = {
       .in('id', ids);
 
     if (updateErr) throw updateErr;
+
+    // Log the points loss for each movie proposer and voter
+    try {
+      const logs = [];
+      
+      // Points loss for proposers (-4)
+      toDrop.forEach(m => {
+        logs.push({
+          user_id: m.proposed_by,
+          action_type: 'cemetery_drop',
+          movie_id: m.id
+        });
+      });
+
+      // Points loss for voters (-1)
+      const { data: voters } = await supabase
+        .from('votes')
+        .select('user_id, movie_id')
+        .in('movie_id', ids);
+
+      voters?.forEach(v => {
+        logs.push({
+          user_id: v.user_id,
+          action_type: 'cemetery_vote_loss',
+          movie_id: v.movie_id
+        });
+      });
+
+      if (logs.length > 0) {
+        await supabase.from('participation_log').insert(logs);
+      }
+
+      // NEW: Permanently delete votes for dropped movies to free up user vote slots
+      await supabase.from('votes').delete().in('movie_id', ids);
+      
+    } catch (logErr) {
+      console.error('Error logging automatic drops:', logErr);
+    }
     
     return { cleanedCount: toDrop.length };
   }

@@ -664,6 +664,30 @@ window.dropMovie = async (movieId) => {
 
   try {
     await MovieService.updateMovieData(movieId, { is_dropped: true });
+    
+    // Log the points loss (-4) for the proposer
+    if (movie.proposed_by) {
+      await AdminService.logParticipation(movie.proposed_by, 'cemetery_drop', movieId);
+    }
+
+    // Log the points loss (-1) for each voter
+    try {
+      const { data: voters } = await supabase.from('votes').select('user_id').eq('movie_id', movieId);
+      if (voters && voters.length > 0) {
+        const voteLogs = voters.map(v => ({
+          user_id: v.user_id,
+          action_type: 'cemetery_vote_loss',
+          movie_id: movieId
+        }));
+        await supabase.from('participation_log').insert(voteLogs);
+      }
+    } catch (vLogErr) {
+      console.error('Error logging vote losses:', vLogErr);
+    }
+
+    // Permanently delete votes for this movie to free up slots
+    await supabase.from('votes').delete().eq('movie_id', movieId);
+
     showNotification("Movie sent to Cemetery.");
     refreshData();
   } catch (e) {
@@ -836,115 +860,12 @@ async function fetchParticipationLog() {
   if (!isAdmin) return;
   
   try {
-    // Fetch everything in parallel since automatic joins are failing due to missing schema FKs
-    const [proposalsRes, votesRes, ratingsRes, profilesRes] = await Promise.all([
-      supabase.from('movies').select('title, created_at, proposed_by, tmdb_id').order('created_at', { ascending: false }).limit(30),
-      supabase.from('votes').select('created_at, user_id, movie_id').order('created_at', { ascending: false }).limit(30),
-      supabase.from('user_ratings').select('created_at, rating, user_id, movie_id').order('created_at', { ascending: false }).limit(30),
-      supabase.from('profiles').select('id, full_name, email')
-    ]);
-
-    if (profilesRes.error) throw profilesRes.error;
-
-    // Create a quick lookup map for profiles and movies
-    const profileMap = {};
-    (profilesRes.data || []).forEach(p => profileMap[p.id] = p);
-
-    // We also need movie data for lookup
-    const allMovies = [...proposedMovies, ...seenMovies];
-    const movieLookup = {};
-    allMovies.forEach(m => movieLookup[m.id] = { title: m.title, tmdb_id: m.tmdb_id });
-
-    let logItems = [];
-
-    // Process Proposals
-    if (proposalsRes.data) {
-      proposalsRes.data.forEach(p => {
-        const prof = profileMap[p.proposed_by];
-        logItems.push({
-          user: prof?.full_name || prof?.email?.split('@')[0] || 'Unknown User',
-          email: prof?.email || 'N/A',
-          action: '<span class="action-tag proposal">Proposed</span>',
-          points: '+5',
-          movieTitle: p.title,
-          tmdbId: p.tmdb_id,
-          date: new Date(p.created_at)
-        });
-      });
-    }
-
-    // Process Votes
-    if (votesRes.data) {
-      votesRes.data.forEach(v => {
-        const prof = profileMap[v.user_id];
-        const mData = movieLookup[v.movie_id];
-        logItems.push({
-          user: prof?.full_name || prof?.email?.split('@')[0] || 'Unknown User',
-          email: prof?.email || 'N/A',
-          action: '<span class="action-tag vote">Voted</span>',
-          points: '+1',
-          movieTitle: mData?.title || 'Unknown Movie',
-          tmdbId: mData?.tmdb_id,
-          date: new Date(v.created_at)
-        });
-      });
-    }
-
-    // Process Ratings
-    if (ratingsRes.data) {
-      ratingsRes.data.forEach(r => {
-        const prof = profileMap[r.user_id];
-        const mData = movieLookup[r.movie_id];
-        logItems.push({
-          user: prof?.full_name || prof?.email?.split('@')[0] || 'Unknown User',
-          email: prof?.email || 'N/A',
-          action: `<span class="action-tag rating">Rated (${r.rating}/10)</span>`,
-          points: '+3',
-          movieTitle: mData?.title || 'Unknown Movie',
-          tmdbId: mData?.tmdb_id,
-          date: new Date(r.created_at)
-        });
-      });
-    }
-
-    // Sort combined log by date descending
-    logItems.sort((a, b) => b.date - a.date);
-    
-    // Take top 40 recent actions
-    const recentItems = logItems.slice(0, 40);
-
-    if (recentItems.length === 0) {
-      adminParticipationLog.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--text-secondary);">No recent activity recorded.</td></tr>`;
-      return;
-    }
-
-    adminParticipationLog.innerHTML = recentItems.map(item => {
-      const name = item.user;
-      const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
-      const movieLink = item.tmdbId ? `https://www.themoviedb.org/movie/${item.tmdbId}` : null;
-      
-      const movieDisplay = movieLink 
-        ? `<a href="${movieLink}" target="_blank" class="movie-title-cell link">${item.movieTitle}</a>`
-        : `<span class="movie-title-cell">${item.movieTitle}</span>`;
-
-      return `
-        <tr>
-          <td>
-            <div class="user-cell">
-              <img src="${avatar}" alt="${name}">
-              <span class="user-name">${name}</span>
-            </div>
-          </td>
-          <td>${item.action}</td>
-          <td>${movieDisplay}</td>
-          <td><span class="points-badge">${item.points}</span></td>
-          <td><span class="user-date">${item.date.toLocaleString()}</span></td>
-        </tr>
-      `;
-    }).join('');
-
+    const logs = await AdminService.fetchParticipationLogs(50);
+    AdminView.renderParticipationLog(logs, adminParticipationLog);
+    if (window.lucide) window.lucide.createIcons();
   } catch (err) {
-    adminParticipationLog.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--error);">Failed to load participation log. Check console for details.</td></tr>`;
+    console.error('Error fetching activity log:', err);
+    adminParticipationLog.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--error);">Failed to load activity log.</td></tr>`;
   }
 }
 
@@ -952,7 +873,7 @@ async function updateGlobalRanking() {
   try {
     const [profilesRes, votesRes, moviesRes, ratingsRes, participationRes] = await Promise.all([
       supabase.from('profiles').select('*'),
-      supabase.from('votes').select('user_id, movie_id, movies(is_seen)'),
+      supabase.from('votes').select('user_id, movie_id, movies(is_seen, is_dropped)'),
       supabase.from('movies').select('proposed_by, is_dropped, is_seen'),
       supabase.from('user_ratings').select('user_id'),
       supabase.from('participation_log').select('user_id, action_type')
@@ -984,6 +905,9 @@ async function updateGlobalRanking() {
 
     votes.forEach(v => {
       if (!userStats[v.user_id]) return;
+      // If the movie is in the cemetery, the vote doesn't count for points
+      if (v.movies?.is_dropped) return;
+      
       if (v.movies?.is_seen) userStats[v.user_id].votesSeen++;
       else userStats[v.user_id].votesNormal++;
     });
@@ -1566,6 +1490,28 @@ window.proposeMovie = async (tmdbMovie, el) => {
       if (confirm(`"${tmdbMovie.title}" is currently in the Cinema Cemetery. Do you want to rescue it and bring it back to active proposals?`)) {
         await MovieService.rescueMovie(existing.id, user.id);
         
+        // Log the correct point adjustment
+        if (existing.proposed_by === user.id) {
+          // If I rescue my own movie, I gain +4 (I already had +1 for being in cemetery)
+          await AdminService.logParticipation(user.id, 'proposal_rescue', existing.id);
+        } else {
+          // If I rescue someone else's movie, I gain +5
+          await AdminService.logParticipation(user.id, 'proposal', existing.id);
+          
+          // And the old proposer loses the +1 they were keeping for the cemetery movie
+          if (existing.proposed_by) {
+            await AdminService.logParticipation(existing.proposed_by, 'proposal_lost', existing.id);
+          }
+        }
+
+        // Ensure user has a vote on the rescued movie (auto-vote)
+        const hasVoted = await MovieService.fetchVotesForUser(user.id);
+        if (!hasVoted.some(v => v.movie_id === existing.id)) {
+          await MovieService.addVote(user.id, existing.id);
+          await AdminService.logParticipation(user.id, 'vote', existing.id);
+          userVotes.add(existing.id);
+        }
+
         showNotification(`"${tmdbMovie.title}" has been rescued from the cemetery!`, 'success');
         refreshData();
         return;
@@ -1597,11 +1543,16 @@ window.proposeMovie = async (tmdbMovie, el) => {
     
     showNotification(`"${tmdbMovie.title}" proposed!`, 'success');
 
+    // Log the proposal activity
+    await AdminService.logParticipation(user.id, 'proposal', data.id);
+
     // Automatically add user's vote to their own proposal
     try {
       if (data && data.id) {
         await MovieService.addVote(user.id, data.id);
         userVotes.add(data.id);
+        // Log the auto-vote activity
+        await AdminService.logParticipation(user.id, 'vote', data.id);
       }
     } catch (vErr) {
       console.warn('Auto-vote failed:', vErr);
@@ -1649,6 +1600,9 @@ window.toggleVote = async (movieId) => {
     try {
       await MovieService.removeVote(user.id, movieId);
       userVotes.delete(movieId);
+      
+      // Log the unvote activity
+      await AdminService.logParticipation(user.id, 'vote_removed', movieId);
       movie.vote_count = (movie.vote_count || 1) - 1;
       if (btn) btn.classList.remove('active');
       if (countEl) countEl.textContent = `${movie.vote_count} votes`;
@@ -1669,6 +1623,9 @@ window.toggleVote = async (movieId) => {
     try {
       await MovieService.addVote(user.id, movieId);
       userVotes.add(movieId);
+      
+      // Log the vote activity
+      await AdminService.logParticipation(user.id, 'vote', movieId);
       movie.vote_count = (movie.vote_count || 0) + 1;
       if (btn) btn.classList.add('active');
       if (countEl) countEl.textContent = `${movie.vote_count} votes`;
