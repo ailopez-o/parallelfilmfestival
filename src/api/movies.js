@@ -67,6 +67,26 @@ export const MovieService = {
     if (error) throw error;
   },
 
+  async findMovieByTMDBId(tmdbId) {
+    const { data, error } = await supabase
+      .from('movies')
+      .select('*')
+      .eq('tmdb_id', tmdbId)
+      .maybeSingle();
+      
+    if (error) throw error;
+    return data;
+  },
+
+  async rescueMovie(movieId, userId) {
+    const { error } = await supabase
+      .from('movies')
+      .update({ is_dropped: false, proposed_by: userId })
+      .eq('id', movieId);
+      
+    if (error) throw error;
+  },
+
   async fetchVotesForUser(userId) {
     const { data, error } = await supabase
       .from('votes')

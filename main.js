@@ -1551,27 +1551,22 @@ window.proposeMovie = async (tmdbMovie, el) => {
   const card = el?.closest('.movie-card');
 
   // 🪦 RESURRECTION LOGIC: Check if movie is in the cemetery
-  const { data: existing, error: checkError } = await supabase
-    .from('movies')
-    .select('*')
-    .eq('tmdb_id', tmdbMovie.id)
-    .single();
+  try {
+    const existing = await MovieService.findMovieByTMDBId(tmdbMovie.id);
 
-  if (existing && existing.is_dropped) {
-    if (confirm(`"${tmdbMovie.id}" is currently in the Cinema Cemetery. Do you want to rescue it and bring it back to active proposals?`)) {
-      const { error: rescueError } = await supabase
-        .from('movies')
-        .update({ is_dropped: false, proposed_by: user.id })
-        .eq('id', existing.id);
-      
-      if (!rescueError) {
+    if (existing && existing.is_dropped) {
+      if (confirm(`"${tmdbMovie.title}" is currently in the Cinema Cemetery. Do you want to rescue it and bring it back to active proposals?`)) {
+        await MovieService.rescueMovie(existing.id, user.id);
+        
         showNotification(`"${tmdbMovie.title}" has been rescued from the cemetery!`, 'success');
         refreshData();
         return;
+      } else {
+        return; // User cancelled rescue
       }
-    } else {
-      return; // User cancelled rescue
     }
+  } catch (checkErr) {
+    console.error('Error checking for existing movie:', checkErr);
   }
 
   // SAFE INSERT LOGIC
