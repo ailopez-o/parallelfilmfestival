@@ -19,18 +19,21 @@ export const AdminService = {
   },
 
   /**
-   * Deletes a user and all their associated data explicitly.
+   * Deletes a user and all their associated data completely via Edge Function.
    */
   async deleteUser(userId) {
-    await supabase.from('votes').delete().eq('user_id', userId);
-    await supabase.from('user_ratings').delete().eq('user_id', userId);
-    await supabase.from('participation_log').delete().eq('user_id', userId);
-    await supabase.from('session_signups').delete().eq('user_id', userId);
-    await supabase.from('session_attendance').delete().eq('user_id', userId);
-    await supabase.from('movies').delete().eq('proposed_by', userId);
+    const { data, error } = await supabase.functions.invoke('delete-user', {
+      body: { targetUserId: userId }
+    });
     
-    const { error } = await supabase.from('profiles').delete().eq('id', userId);
-    if (error) throw error;
+    if (error) {
+      console.error('Edge function error:', error);
+      throw error;
+    }
+    
+    if (data && data.error) {
+      throw new Error(data.error);
+    }
   },
 
   /**
