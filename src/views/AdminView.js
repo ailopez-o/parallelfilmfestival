@@ -26,7 +26,7 @@ export const AdminView = {
               <span class="user-rank ${rankClass}">#${p.rank}</span>
               <img src="${avatar}" alt="${p.full_name || 'User'}">
               <div style="display:flex; flex-direction:column;">
-                <span class="user-name">${p.full_name || 'Anonymous User'}</span>
+                <span class="user-name">${name}</span>
                 ${roleLabel}
               </div>
             </div>
@@ -55,7 +55,9 @@ export const AdminView = {
     }
 
     container.innerHTML = logs.map(log => {
-      const name = log.profiles?.full_name || 'User';
+      // Handle cases where profiles might be an object or an array (Supabase join behavior)
+      const profile = Array.isArray(log.profiles) ? log.profiles[0] : log.profiles;
+      const name = profile?.full_name || profile?.email?.split('@')[0] || 'User';
       let actionLabel = log.action_type;
       let points = '0';
       let pointsClass = 'muted';
@@ -136,7 +138,6 @@ export const AdminView = {
           <td>
             <div style="display:flex; flex-direction:column;">
               <span class="user-name">${userName}</span>
-              <span style="font-size:0.7rem; color:var(--text-secondary);">${e.userId}</span>
             </div>
           </td>
           <td>

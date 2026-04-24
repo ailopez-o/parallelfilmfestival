@@ -42,7 +42,7 @@ export const AdminService = {
   async fetchParticipationLogs(limit = 50) {
     const { data, error } = await supabase
       .from('participation_log')
-      .select('*, profiles(full_name), movies(title, tmdb_id)')
+      .select('*, profiles!user_id(full_name, email), movies(title, tmdb_id)')
       .order('created_at', { ascending: false })
       .limit(limit);
     
