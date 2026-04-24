@@ -91,11 +91,16 @@ export const SessionsView = {
         <div class="session-main-info">
           <div class="session-header-row" style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1rem;">
             <h2 style="margin:0; font-size:2.5rem;">${title}</h2>
-            ${isAdmin ? `
-              <button class="edit-profile-btn" onclick="window.showEditSessionModal('${session.id}')">
-                <i data-lucide="edit"></i> Edit Session
+            <div style="display:flex; gap:0.75rem;">
+              <button class="edit-profile-btn" onclick="window.shareSession('${session.id}')" style="background:rgba(255,255,255,0.05);">
+                <i data-lucide="share-2"></i> Share
               </button>
-            ` : ''}
+              ${isAdmin ? `
+                <button class="edit-profile-btn" onclick="window.showEditSessionModal('${session.id}')">
+                  <i data-lucide="edit"></i> Edit Session
+                </button>
+              ` : ''}
+            </div>
           </div>
           <p class="session-description" style="font-size: 1.1rem; color:var(--text-secondary); line-height:1.6; margin-bottom: 2rem;">${session.description || 'No description provided for this session.'}</p>
 

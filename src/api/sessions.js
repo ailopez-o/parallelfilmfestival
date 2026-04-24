@@ -19,6 +19,20 @@ export const SessionService = {
   },
 
   /**
+   * Fetches a single session by ID.
+   */
+  async fetchSessionById(sessionId) {
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('*, movies(*), session_signups(user_id, profiles(full_name))')
+      .eq('id', sessionId)
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  /**
    * Fetches detailed data for a specific session (comments, photos, participants).
    */
   async fetchDetails(sessionId) {

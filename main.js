@@ -294,6 +294,13 @@ async function checkUser(session) {
   if (isAdmin) {
     window.cleanupInactiveMovies(true);
   }
+
+  // Handle Deep-Linking for sessions
+  const urlParams = new URLSearchParams(window.location.search);
+  const sessionId = urlParams.get('session');
+  if (sessionId) {
+    setTimeout(() => window.viewSessionDetails(sessionId), 1200);
+  }
 }
 
 async function refreshData() {
@@ -1901,17 +1908,31 @@ function renderNextSessionHero() {
 }
 
 window.viewSessionDetails = async (sessionId) => {
-  const session = sessions.find(s => s.id === sessionId);
-  if (!session) return;
+  // Defensive check for global state
+  const availableSessions = window.sessions || [];
+  const session = availableSessions.find(s => s.id === sessionId);
+  
+  if (!session) {
+    console.warn('Session not found in local state:', sessionId);
+    return;
+  }
 
   currentSession = session;
-  sessionModal.classList.remove('page-hidden');
-  document.body.style.overflow = 'hidden';
+  
+  if (sessionModal) {
+    sessionModal.classList.remove('page-hidden');
+    document.body.style.overflow = 'hidden';
+  }
 
   try {
     const details = await SessionService.fetchDetails(sessionId);
-    sessionModalBody.innerHTML = SessionsView.renderDetail(session, details, { user, isAdmin });
-    if (window.lucide) window.lucide.createIcons();
+    if (sessionModalBody) {
+      sessionModalBody.innerHTML = SessionsView.renderDetail(session, details, { 
+        user: window.user, 
+        isAdmin: window.isAdmin 
+      });
+      if (window.lucide) window.lucide.createIcons();
+    }
   } catch (err) {
     console.error('Error fetching session details:', err);
   }
@@ -1944,6 +1965,18 @@ window.switchSessionTab = async (tab) => {
   }
   
   if (window.lucide) window.lucide.createIcons();
+};
+
+window.shareSession = (sessionId) => {
+  // Direct link to the standalone session page
+  const shareUrl = `${window.location.origin}/session.html?id=${sessionId}`;
+  
+  navigator.clipboard.writeText(shareUrl).then(() => {
+    showNotification('¡Enlace de la sesión copiado al portapapeles!', 'success');
+  }).catch(err => {
+    console.error('Error al copiar el enlace:', err);
+    showNotification('No se pudo copiar el enlace automáticamente.', 'error');
+  });
 };
 
 window.signupForSession = async (sessionId) => {
