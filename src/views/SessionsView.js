@@ -266,7 +266,7 @@ export const SessionsView = {
                 <i data-lucide="maximize-2"></i>
               </div>
               ${isAdmin ? `
-                <button class="delete-photo-btn" onclick="window.deleteSessionPhoto('${p.id}', '${p.photo_url}')" title="Delete Photo">
+                <button class="delete-photo-btn admin-force-show" onclick="window.deleteSessionPhoto('${p.id}', '${p.photo_url}')" title="Delete Photo">
                   <i data-lucide="trash-2"></i>
                 </button>
               ` : ''}

@@ -175,8 +175,13 @@ export const SessionService = {
    */
   async deletePhoto(photoId, photoUrl) {
     // 1. Delete from DB
-    const { error: dbError } = await supabase.from('session_photos').delete().eq('id', photoId);
+    const { error: dbError, count } = await supabase
+      .from('session_photos')
+      .delete({ count: 'exact' })
+      .eq('id', photoId);
+
     if (dbError) throw dbError;
+    if (count === 0) throw new Error('Permission denied or photo already removed.');
 
     // 2. Try to delete from Storage (extract path from URL)
     try {
