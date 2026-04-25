@@ -181,8 +181,15 @@ export const AdminService = {
     const posterUrl = movie?.poster_url;
     if (!posterUrl) throw new Error('Session has no movie poster');
 
-    const response = await fetch(posterUrl);
+    // Use weserv.nl as a CORS proxy to fetch the image from TMDB
+    const proxyUrl = `https://images.weserv.nl/?url=${encodeURIComponent(posterUrl)}`;
+    console.log('[Admin] Fetching image via proxy:', proxyUrl);
+    
+    const response = await fetch(proxyUrl);
+    if (!response.ok) throw new Error(`Failed to download image (Proxy Error: ${response.status})`);
+    
     const imageBlob = await response.blob();
+    console.log('[Admin] Image downloaded, size:', imageBlob.size);
     
     const { error } = await supabase.storage
       .from('social')
@@ -191,7 +198,11 @@ export const AdminService = {
         upsert: true
       });
     
-    if (error) throw error;
+    if (error) {
+      console.error('[Supabase Storage Error]', error);
+      throw new Error(`Storage error: ${error.message}`);
+    }
+    
     return { success: true };
   }
 };

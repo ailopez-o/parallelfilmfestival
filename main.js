@@ -2236,24 +2236,33 @@ window.handleUpdateSession = async (sessionId) => {
 };
 
 window.handleDeployMetadata = async () => {
-  if (!isAdmin) return;
+  console.log('[Admin] handleDeployMetadata triggered');
+  if (!isAdmin) {
+    showNotification('Admin privileges required', 'error');
+    return;
+  }
   
   const upcoming = sessions
     .filter(s => s.is_upcoming && new Date(s.session_date) > new Date())
     .sort((a, b) => new Date(a.session_date) - new Date(b.session_date))[0];
 
   if (!upcoming) {
-    showNotification('No upcoming sessions to deploy metadata for.', 'warning');
+    showNotification('No upcoming sessions found to update.', 'warning');
     return;
   }
 
   try {
     showNotification('Updating social preview image...', 'warning');
-    await AdminService.updateSocialImage(upcoming);
-    showNotification('Social preview updated!', 'success');
+    console.log('[Admin] Target session:', upcoming.id, upcoming.movies?.title);
+    
+    const result = await AdminService.updateSocialImage(upcoming);
+    
+    if (result.success) {
+      showNotification('Social preview updated successfully!', 'success');
+    }
   } catch (err) {
-    console.error('Error updating social image:', err);
-    showNotification('Failed to update image: ' + err.message, 'error');
+    console.error('[Admin] Metadata update failed:', err);
+    showNotification(`Update failed: ${err.message}`, 'error');
   }
 };
 
