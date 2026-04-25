@@ -92,9 +92,6 @@ export const SessionsView = {
           <div class="session-header-row" style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1rem;">
             <h2 style="margin:0; font-size:2.5rem;">${title}</h2>
             <div style="display:flex; gap:0.75rem;">
-              <button class="edit-profile-btn" onclick="window.shareSession('${session.id}')" style="background:rgba(255,255,255,0.05);">
-                <i data-lucide="share-2"></i> Share
-              </button>
               ${isAdmin ? `
                 <button class="edit-profile-btn" onclick="window.showEditSessionModal('${session.id}')">
                   <i data-lucide="edit"></i> Edit Session
@@ -114,6 +111,98 @@ export const SessionsView = {
 
           <div id="sessionTabContent">
             ${this.renderCommentsHTML(comments)}
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  /**
+   * Renders a premium, cinematic landing page for the next session.
+   */
+  renderNextSessionPage(session, data, state) {
+    const { comments, photos, signups } = data;
+    const { user, isAdmin } = state;
+    const isSignedUp = user && signups.some(s => s.user_id === user.id);
+    const signupCount = signups.length || 0;
+
+    const poster = session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER;
+    const title = session.movie_id ? session.movies?.title : 'Film To Be Decided';
+    const releaseYear = session.movies?.release_date ? new Date(session.movies.release_date).getFullYear() : '';
+    
+    return `
+      <div class="cinematic-view">
+        <!-- BACKGROUND LAYER -->
+        <div class="cinematic-bg" style="background-image: url('${poster}')"></div>
+        <div class="cinematic-overlay"></div>
+
+        <div class="cinematic-content container">
+          <!-- HERO HEADER -->
+          <div class="cinematic-hero">
+            <div class="hero-left">
+              <div class="cinematic-badge">NEXT EXPERIENCE</div>
+              <h1 class="cinematic-title">${title} ${releaseYear ? `<span class="year">${releaseYear}</span>` : ''}</h1>
+              <div class="cinematic-meta">
+                <div class="meta-pill">
+                   <i data-lucide="calendar"></i>
+                   <span>${new Date(session.session_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}</span>
+                </div>
+                <div class="meta-pill">
+                   <i data-lucide="clock"></i>
+                   <span>${new Date(session.session_date).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <div class="meta-pill">
+                   <i data-lucide="map-pin"></i>
+                   <span>${session.location || 'Paral·lel Cinema'}</span>
+                </div>
+              </div>
+              <p class="cinematic-description">${session.description || 'Prepare for an unforgettable night of cinema at our festival.'}</p>
+              
+              <div class="hero-actions">
+                <button class="cta-btn ${isSignedUp ? 'success' : ''}" onclick="window.signupForSession('${session.id}')">
+                   <i data-lucide="${isSignedUp ? 'user-check' : 'ticket'}"></i>
+                   ${isSignedUp ? 'Reserved Spot' : 'Get My Ticket Now'}
+                </button>
+                <div class="interest-stats">
+                   <div class="avatar-group">
+                     ${signups.slice(0, 4).map(s => `<img src="https://ui-avatars.com/api/?name=${encodeURIComponent(s.profiles?.full_name || 'A')}&background=random" />`).join('')}
+                     ${signupCount > 4 ? `<div class="avatar-more">+${signupCount - 4}</div>` : ''}
+                   </div>
+                   <span>${signupCount} people are attending</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="hero-right">
+              <div class="cinematic-poster-frame">
+                <img src="${poster}" class="cinematic-poster" />
+                <div class="poster-glow"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- CONTENT TABS SECTION -->
+          <div class="cinematic-details glass-card">
+            <div class="cinematic-tabs">
+              <button class="cinematic-tab active" onclick="window.switchSessionTab('comments')">
+                 <i data-lucide="message-square"></i> Discussion
+              </button>
+              <button class="cinematic-tab" onclick="window.switchSessionTab('photos')">
+                 <i data-lucide="camera"></i> Gallery
+              </button>
+              <button class="cinematic-tab" onclick="window.switchSessionTab('participants')">
+                 <i data-lucide="users"></i> Who's Coming
+              </button>
+              ${isAdmin ? `
+                <button class="cinematic-tab admin" onclick="window.showEditSessionModal('${session.id}')">
+                   <i data-lucide="settings"></i> Manage
+                </button>
+              ` : ''}
+            </div>
+
+            <div id="sessionTabContent" class="tab-fade-in">
+              ${this.renderCommentsHTML(comments)}
+            </div>
           </div>
         </div>
       </div>

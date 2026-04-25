@@ -168,5 +168,30 @@ export const AdminService = {
     }
     
     return { cleanedCount: toDrop.length };
+  },
+
+  /**
+   * Updates the social preview image for the next upcoming session.
+   * Requires a 'social' bucket in Supabase Storage with public access.
+   */
+  async updateSocialImage(session) {
+    if (!session) throw new Error('No session provided');
+    
+    const movie = session.movies;
+    const posterUrl = movie?.poster_url;
+    if (!posterUrl) throw new Error('Session has no movie poster');
+
+    const response = await fetch(posterUrl);
+    const imageBlob = await response.blob();
+    
+    const { error } = await supabase.storage
+      .from('social')
+      .upload('current-poster.jpg', imageBlob, {
+        contentType: 'image/jpeg',
+        upsert: true
+      });
+    
+    if (error) throw error;
+    return { success: true };
   }
 };

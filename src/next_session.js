@@ -24,41 +24,33 @@ async function init() {
     }
   };
 
-  const urlParams = new URLSearchParams(window.location.search);
-  const sessionId = urlParams.get('id');
   const container = document.getElementById('sessionContainer');
 
-  if (!sessionId) {
-    container.innerHTML = '<div class="empty-state">No session specified.</div>';
-    dismissPreloader();
-    return;
-  }
-
   try {
-    // 1. Auth check (MANDATORY)
+    // 1. Auth check (OPTIONAL for viewing)
     const { data: { user } } = await supabase.auth.getUser();
     
-    if (!user) {
-      window.showLoginModal();
-      dismissPreloader();
-      return;
+    if (user) {
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      state.user = user;
+      state.userProfile = profile;
+      state.isAdmin = profile?.role === 'admin';
+      updateAuthUI();
     }
 
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-    state.user = user;
-    state.userProfile = profile;
-    state.isAdmin = profile?.role === 'admin';
-    updateAuthUI();
+    // 2. Fetch "Next" Session Data (Soonest Upcoming)
+    const allSessions = await SessionService.fetchAll();
+    currentSession = allSessions
+      .filter(s => s.is_upcoming && new Date(s.session_date) > new Date())
+      .sort((a, b) => new Date(a.session_date) - new Date(b.session_date))[0];
 
-    // 2. Fetch Session Data
-    currentSession = await SessionService.fetchSessionById(sessionId);
     if (!currentSession) {
-      container.innerHTML = '<div class="empty-state">Session not found.</div>';
+      container.innerHTML = '<div class="empty-state">No upcoming sessions found.</div>';
       dismissPreloader();
       return;
     }
 
-    sessionData = await SessionService.fetchDetails(sessionId);
+    sessionData = await SessionService.fetchDetails(currentSession.id);
 
     // 3. Render Initial Detail
     renderAll();
@@ -101,7 +93,7 @@ function renderAll() {
   const container = document.getElementById('sessionContainer');
   if (!container || !currentSession || !sessionData) return;
 
-  container.innerHTML = SessionsView.renderDetail(currentSession, sessionData, state);
+  container.innerHTML = SessionsView.renderNextSessionPage(currentSession, sessionData, state);
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -204,12 +196,6 @@ window.addSessionComment = async () => {
   }
 };
 
-window.shareSession = (sessionId) => {
-  const shareUrl = `${window.location.origin}/session.html?id=${sessionId}`;
-  navigator.clipboard.writeText(shareUrl).then(() => {
-    showNotification('Link copied to clipboard!', 'success');
-  });
-};
 
 window.addSessionPhoto = async (input) => {
   if (!state.user) {

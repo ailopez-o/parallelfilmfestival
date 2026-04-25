@@ -97,10 +97,16 @@ export function createSessionHeroHTML(session, options = {}) {
       
       ${keywordDisplay}
 
-      <button class="btn-signup-hero ${isSignedUp ? 'success' : ''}" onclick="window.signupForSession('${session.id}')" style="margin-top: 1rem;">
-        <i data-lucide="${isSignedUp ? 'user-check' : 'user-plus'}"></i> 
-        ${isSignedUp ? 'Already Signed Up' : 'Sign Up Now'}
-      </button>
+      <div style="display:flex; gap:0.75rem; margin-top: 1.5rem;">
+        <button class="btn-signup-hero ${isSignedUp ? 'success' : ''}" onclick="window.signupForSession('${session.id}')" style="flex:1;">
+          <i data-lucide="${isSignedUp ? 'user-check' : 'user-plus'}"></i> 
+          ${isSignedUp ? 'Already Signed Up' : 'Sign Up Now'}
+        </button>
+        <button class="btn-signup-hero secondary" onclick="window.location.href='/next-session.html'" style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1);">
+          <i data-lucide="info"></i> 
+          View Details
+        </button>
+      </div>
     </div>
   `;
 }

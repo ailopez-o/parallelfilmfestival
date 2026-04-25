@@ -1967,17 +1967,6 @@ window.switchSessionTab = async (tab) => {
   if (window.lucide) window.lucide.createIcons();
 };
 
-window.shareSession = (sessionId) => {
-  // Direct link to the standalone session page
-  const shareUrl = `${window.location.origin}/session.html?id=${sessionId}`;
-  
-  navigator.clipboard.writeText(shareUrl).then(() => {
-    showNotification('¡Enlace de la sesión copiado al portapapeles!', 'success');
-  }).catch(err => {
-    console.error('Error al copiar el enlace:', err);
-    showNotification('No se pudo copiar el enlace automáticamente.', 'error');
-  });
-};
 
 window.signupForSession = async (sessionId) => {
   if (!user) {
@@ -2243,6 +2232,28 @@ window.handleUpdateSession = async (sessionId) => {
   } catch (err) {
     console.error('Error updating session:', err);
     showNotification('Failed to update session', 'error');
+  }
+};
+
+window.handleDeployMetadata = async () => {
+  if (!isAdmin) return;
+  
+  const upcoming = sessions
+    .filter(s => s.is_upcoming && new Date(s.session_date) > new Date())
+    .sort((a, b) => new Date(a.session_date) - new Date(b.session_date))[0];
+
+  if (!upcoming) {
+    showNotification('No upcoming sessions to deploy metadata for.', 'warning');
+    return;
+  }
+
+  try {
+    showNotification('Updating social preview image...', 'warning');
+    await AdminService.updateSocialImage(upcoming);
+    showNotification('Social preview updated!', 'success');
+  } catch (err) {
+    console.error('Error updating social image:', err);
+    showNotification('Failed to update image: ' + err.message, 'error');
   }
 };
 

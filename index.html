@@ -432,9 +432,14 @@
               <div class="admin-panel glass">
                 <div class="panel-header">
                   <h3>Session Management</h3>
-                  <button class="btn-create-session" onclick="window.showCreateSessionModal()">
-                    <i data-lucide="plus"></i> New Session
-                  </button>
+                  <div style="display:flex; gap:0.75rem;">
+                    <button class="btn-create-session" style="background:var(--accent); color:white;" onclick="window.handleDeployMetadata()" title="Generate shareable link for social media previews">
+                      <i data-lucide="share-2"></i> Update Social Metadata
+                    </button>
+                    <button class="btn-create-session" onclick="window.showCreateSessionModal()">
+                      <i data-lucide="plus"></i> New Session
+                    </button>
+                  </div>
                 </div>
                 
                 <div id="adminSessionsList" class="admin-sessions-list">

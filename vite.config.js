@@ -6,7 +6,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
-        session: resolve(__dirname, 'session.html'),
+        session: resolve(__dirname, 'next-session.html'),
       },
     },
   },
