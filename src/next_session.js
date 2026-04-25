@@ -128,16 +128,13 @@ window.switchSessionTab = (tab) => {
   const content = document.getElementById('sessionTabContent');
   if (!content || !sessionData) return;
 
-  const tabs = document.querySelectorAll('.session-tab-btn');
-  tabs.forEach(t => t.classList.remove('active'));
-  
-  const activeBtn = Array.from(tabs).find(t => t.innerText.toLowerCase().includes(tab));
-  if (activeBtn) activeBtn.classList.add('active');
+  const tabs = document.querySelectorAll('.session-tab-btn, .cinematic-tab');
+  tabs.forEach(t => t.classList.toggle('active', t.getAttribute('data-tab') === tab));
 
   if (tab === 'comments') {
     content.innerHTML = SessionsView.renderCommentsHTML(sessionData.comments);
   } else if (tab === 'photos') {
-    content.innerHTML = SessionsView.renderGalleryHTML(sessionData.photos);
+    content.innerHTML = SessionsView.renderGalleryHTML(sessionData.photos, state.user, state.isAdmin);
   } else if (tab === 'participants') {
     // Show interested (signups) if it's upcoming, otherwise show attendance
     const isUpcoming = currentSession.is_upcoming;
@@ -145,6 +142,27 @@ window.switchSessionTab = (tab) => {
     content.innerHTML = SessionsView.renderParticipantsHTML(participants || [], isUpcoming);
   }
   
+  if (window.lucide) window.lucide.createIcons();
+};
+
+window.openPhotoLightbox = (url) => {
+  let lightbox = document.getElementById('photoLightbox');
+  if (!lightbox) {
+    lightbox = document.createElement('div');
+    lightbox.id = 'photoLightbox';
+    lightbox.className = 'photo-lightbox';
+    lightbox.onclick = () => lightbox.classList.remove('active');
+    document.body.appendChild(lightbox);
+  }
+  
+  lightbox.innerHTML = `
+    <div class="lightbox-content">
+      <img src="${url}" alt="Full size photo">
+      <button class="close-lightbox"><i data-lucide="x"></i></button>
+    </div>
+  `;
+  
+  lightbox.classList.add('active');
   if (window.lucide) window.lucide.createIcons();
 };
 
@@ -209,20 +227,32 @@ window.addSessionPhoto = async (input) => {
 
   try {
     showNotification('Uploading photo...', 'warning');
-    
-    // Simulate upload or use a real storage service. 
-    // In this app, we typically use a URL for simplicity or Supabase Storage.
-    // For now, let's assume we use a placeholder or the logic in main.js
-    // I'll just show a notification that it's a feature coming soon or use a placeholder.
-    const placeholderUrl = 'https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&q=80&w=800';
-    await SessionService.addPhoto(currentSession.id, state.user.id, placeholderUrl);
+    await SessionService.uploadSessionPhoto(currentSession.id, state.user.id, file);
     
     sessionData = await SessionService.fetchDetails(currentSession.id);
     window.switchSessionTab('photos');
     showNotification('Photo uploaded successfully!', 'success');
   } catch (err) {
     console.error('Error uploading photo:', err);
-    showNotification('Error uploading your photo.', 'error');
+    showNotification('Error uploading photo: ' + err.message, 'error');
+  } finally {
+    input.value = '';
+  }
+};
+
+window.deleteSessionPhoto = async (photoId, photoUrl) => {
+  if (!state.isAdmin || !confirm('Are you sure you want to delete this photo?')) return;
+
+  try {
+    showNotification('Deleting photo...', 'warning');
+    await SessionService.deletePhoto(photoId, photoUrl);
+    
+    sessionData = await SessionService.fetchDetails(currentSession.id);
+    window.switchSessionTab('photos');
+    showNotification('Photo deleted successfully!', 'success');
+  } catch (err) {
+    console.error('Error deleting photo:', err);
+    showNotification('Error deleting photo: ' + err.message, 'error');
   }
 };
 

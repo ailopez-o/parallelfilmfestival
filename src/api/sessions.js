@@ -139,5 +139,55 @@ export const SessionService = {
   async deleteSession(sessionId) {
     const { error } = await supabase.from('sessions').delete().eq('id', sessionId);
     if (error) throw error;
+  },
+
+  /**
+   * Uploads a photo to Supabase Storage and adds it to the session gallery.
+   */
+  async uploadSessionPhoto(sessionId, userId, file) {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${sessionId}/${userId}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    // 1. Upload to Storage
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('session-photos')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false
+      });
+
+    if (uploadError) throw uploadError;
+
+    // 2. Get Public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('session-photos')
+      .getPublicUrl(filePath);
+
+    // 3. Save to Database
+    await this.addPhoto(sessionId, userId, publicUrl);
+
+    return { publicUrl };
+  },
+
+  /**
+   * Deletes a photo from both database and storage.
+   */
+  async deletePhoto(photoId, photoUrl) {
+    // 1. Delete from DB
+    const { error: dbError } = await supabase.from('session_photos').delete().eq('id', photoId);
+    if (dbError) throw dbError;
+
+    // 2. Try to delete from Storage (extract path from URL)
+    try {
+      const pathParts = photoUrl.split('/session-photos/');
+      if (pathParts.length > 1) {
+        const filePath = pathParts[1];
+        await supabase.storage.from('session-photos').remove([filePath]);
+      }
+    } catch (err) {
+      console.warn('Could not delete file from storage:', err);
+      // We don't throw here to ensure DB deletion is at least successful
+    }
   }
 };

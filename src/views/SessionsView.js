@@ -102,10 +102,10 @@ export const SessionsView = {
           <p class="session-description" style="font-size: 1.1rem; color:var(--text-secondary); line-height:1.6; margin-bottom: 2rem;">${session.description || 'No description provided for this session.'}</p>
 
           <div class="session-tabs">
-            <button class="session-tab-btn active" onclick="window.switchSessionTab('comments')">Comments (${comments.length || 0})</button>
-            <button class="session-tab-btn" onclick="window.switchSessionTab('photos')">Gallery (${photos.length || 0})</button>
-            <button class="session-tab-btn" onclick="window.switchSessionTab('participants')">
-              ${session.is_upcoming ? 'Interested' : 'Participants'} (${session.is_upcoming ? signupCount : attendance.length || 0})
+            <button class="session-tab-btn active" data-tab="comments" onclick="window.switchSessionTab('comments')">Comments (${comments.length || 0})</button>
+            <button class="session-tab-btn" data-tab="photos" onclick="window.switchSessionTab('photos')">Gallery (${photos.length || 0})</button>
+            <button class="session-tab-btn" data-tab="participants" onclick="window.switchSessionTab('participants')">
+              ${session.is_upcoming ? 'Interested' : 'Participants'} (${session.is_upcoming ? signupCount : (attendance?.length || 0)})
             </button>
           </div>
 
@@ -184,13 +184,13 @@ export const SessionsView = {
           <!-- CONTENT TABS SECTION -->
           <div class="cinematic-details glass-card">
             <div class="cinematic-tabs">
-              <button class="cinematic-tab active" onclick="window.switchSessionTab('comments')">
+              <button class="cinematic-tab active" data-tab="comments" onclick="window.switchSessionTab('comments')">
                  <i data-lucide="message-square"></i> Discussion
               </button>
-              <button class="cinematic-tab" onclick="window.switchSessionTab('photos')">
+              <button class="cinematic-tab" data-tab="photos" onclick="window.switchSessionTab('photos')">
                  <i data-lucide="camera"></i> Gallery
               </button>
-              <button class="cinematic-tab" onclick="window.switchSessionTab('participants')">
+              <button class="cinematic-tab" data-tab="participants" onclick="window.switchSessionTab('participants')">
                  <i data-lucide="users"></i> Who's Coming
               </button>
               ${isAdmin ? `
@@ -248,24 +248,30 @@ export const SessionsView = {
   /**
    * Renders the photo gallery HTML.
    */
-  renderGalleryHTML(photos) {
+  renderGalleryHTML(photos, user, isAdmin) {
     return `
-      <div class="gallery-section">
-        <div class="gallery-actions" style="margin-bottom:1.5rem;">
-          <button class="auth-btn" onclick="document.getElementById('sessionPhotoInput').click()">
-            <i data-lucide="image-plus"></i> Upload Photo
-          </button>
-          <input type="file" id="sessionPhotoInput" style="display:none" accept="image/*" onchange="window.addSessionPhoto(this)" />
-        </div>
-        <div class="photo-gallery">
+      <div class="gallery-container">
+        ${user ? `
+          <div class="upload-zone">
+            <i data-lucide="camera"></i>
+            <span>Share your experience...</span>
+            <input type="file" accept="image/*" onchange="window.addSessionPhoto(this)">
+          </div>
+        ` : ''}
+        <div class="gallery-grid">
           ${photos.length ? photos.map(p => `
             <div class="gallery-item">
-              <img src="${p.photo_url}" alt="Session Photo" />
-              <div class="photo-overlay">
-                ${p.profiles?.full_name || 'Anonymous'}
+              <img src="${p.photo_url}" alt="Session photo" loading="lazy" onclick="window.openPhotoLightbox('${p.photo_url}')">
+              <div class="photo-overlay" onclick="window.openPhotoLightbox('${p.photo_url}')">
+                <i data-lucide="maximize-2"></i>
               </div>
+              ${isAdmin ? `
+                <button class="delete-photo-btn" onclick="window.deleteSessionPhoto('${p.id}', '${p.photo_url}')" title="Delete Photo">
+                  <i data-lucide="trash-2"></i>
+                </button>
+              ` : ''}
             </div>
-          `).join('') : '<div class="empty-state">No photos yet.</div>'}
+          `).join('') : '<p class="empty-state">No photos shared yet.</p>'}
         </div>
       </div>
     `;

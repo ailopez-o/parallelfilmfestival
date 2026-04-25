@@ -1946,8 +1946,8 @@ window.closeSessionModal = () => {
 };
 
 window.switchSessionTab = async (tab) => {
-  const btns = document.querySelectorAll('.session-tab-btn');
-  btns.forEach(b => b.classList.toggle('active', b.textContent.toLowerCase().includes(tab)));
+  const btns = document.querySelectorAll('.session-tab-btn, .cinematic-tab');
+  btns.forEach(b => b.classList.toggle('active', b.getAttribute('data-tab') === tab));
 
   const content = document.getElementById('sessionTabContent');
   
@@ -1956,7 +1956,7 @@ window.switchSessionTab = async (tab) => {
     content.innerHTML = SessionsView.renderCommentsHTML(data || []);
   } else if (tab === 'photos') {
     const { data } = await supabase.from('session_photos').select('*, profiles(full_name)').eq('session_id', currentSession.id).order('created_at', { ascending: false });
-    content.innerHTML = SessionsView.renderGalleryHTML(data || []);
+    content.innerHTML = SessionsView.renderGalleryHTML(data || [], user, isAdmin);
   } else if (tab === 'participants') {
     const isUpcoming = currentSession.is_upcoming;
     const table = isUpcoming ? 'session_signups' : 'session_attendance';
@@ -1964,6 +1964,27 @@ window.switchSessionTab = async (tab) => {
     content.innerHTML = SessionsView.renderParticipantsHTML(data || [], isUpcoming);
   }
   
+  if (window.lucide) window.lucide.createIcons();
+};
+
+window.openPhotoLightbox = (url) => {
+  let lightbox = document.getElementById('photoLightbox');
+  if (!lightbox) {
+    lightbox = document.createElement('div');
+    lightbox.id = 'photoLightbox';
+    lightbox.className = 'photo-lightbox';
+    lightbox.onclick = () => lightbox.classList.remove('active');
+    document.body.appendChild(lightbox);
+  }
+  
+  lightbox.innerHTML = `
+    <div class="lightbox-content">
+      <img src="${url}" alt="Full size photo">
+      <button class="close-lightbox"><i data-lucide="x"></i></button>
+    </div>
+  `;
+  
+  lightbox.classList.add('active');
   if (window.lucide) window.lucide.createIcons();
 };
 
@@ -2003,16 +2024,35 @@ window.addSessionComment = async () => {
   }
 };
 
-window.addSessionPhoto = async () => {
-  const url = window.prompt("Enter photo URL (implementing full upload in Supabase Storage requires more setup, so for now we use URLs):");
-  if (!url || !user || !currentSession) return;
+window.addSessionPhoto = async (input) => {
+  if (!input.files || input.files.length === 0) return;
+  const file = input.files[0];
+  if (!user || !currentSession) return;
 
   try {
-    await SessionService.addPhoto(currentSession.id, user.id, url);
-    showNotification('Photo added to gallery!');
+    showNotification('Uploading photo...', 'warning');
+    await SessionService.uploadSessionPhoto(currentSession.id, user.id, file);
+    showNotification('Photo uploaded successfully!', 'success');
     window.switchSessionTab('photos');
   } catch (err) {
-    console.error('Error adding photo:', err);
+    console.error('Error uploading photo:', err);
+    showNotification('Error uploading photo: ' + err.message, 'error');
+  } finally {
+    input.value = ''; // Reset input
+  }
+};
+
+window.deleteSessionPhoto = async (photoId, photoUrl) => {
+  if (!isAdmin || !confirm('Are you sure you want to delete this photo?')) return;
+
+  try {
+    showNotification('Deleting photo...', 'warning');
+    await SessionService.deletePhoto(photoId, photoUrl);
+    showNotification('Photo deleted!', 'success');
+    window.switchSessionTab('photos');
+  } catch (err) {
+    console.error('Error deleting photo:', err);
+    showNotification('Error deleting photo: ' + err.message, 'error');
   }
 };
 
