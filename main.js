@@ -2051,9 +2051,10 @@ window.closeCreateSessionModal = () => {
 };
 
 window.handleCreateSession = async () => {
-  const movieId = sessionMovieSelect.value;
+  const movieId = sessionMovieSelect.value || null;
   const dateStr = document.getElementById('sessionDate').value;
   const desc = document.getElementById('sessionDescription').value;
+  const keyword = document.getElementById('sessionKeyword')?.value || null;
   const isUpcoming = true;
 
   if (!dateStr) {
@@ -2066,6 +2067,8 @@ window.handleCreateSession = async () => {
       movie_id: movieId,
       session_date: dateStr,
       description: desc,
+      keyword: keyword,
+      location: 'Paral·lel Cinema',
       is_upcoming: isUpcoming
     });
     
@@ -2219,12 +2222,18 @@ window.showEditSessionModal = (sessionId) => {
 };
 
 window.handleUpdateSession = async (sessionId) => {
+  const movieId = sessionMovieSelect.value || null;
+  const dateStr = document.getElementById('sessionDate').value;
   const desc = document.getElementById('sessionDescription').value;
+  const keyword = document.getElementById('sessionKeyword')?.value || null;
   const isUpcoming = true;
 
   try {
     await SessionService.updateSession(currentSession.id, {
+      movie_id: movieId,
+      session_date: dateStr,
       description: desc,
+      keyword: keyword,
       is_upcoming: isUpcoming
     });
     
