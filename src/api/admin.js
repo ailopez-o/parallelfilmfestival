@@ -171,38 +171,76 @@ export const AdminService = {
   },
 
   /**
-   * Updates the social preview image for the next upcoming session.
-   * Requires a 'social' bucket in Supabase Storage with public access.
+   * Updates the social preview metadata (image and HTML) for the next upcoming session.
+   * 1. Updates the poster image in Supabase Storage.
+   * 2. Fetches the current next-session.html as a template.
+   * 3. Replaces OG tags with dynamic content.
+   * 4. Uploads the updated HTML to Supabase Storage.
    */
-  async updateSocialImage(session) {
+  async updateSocialMetadata(session) {
     if (!session) throw new Error('No session provided');
     
     const movie = session.movies;
     const posterUrl = movie?.poster_url;
     if (!posterUrl) throw new Error('Session has no movie poster');
 
-    // Use weserv.nl as a CORS proxy to fetch the image from TMDB
+    // --- Part 1: Update Image ---
     const proxyUrl = `https://images.weserv.nl/?url=${encodeURIComponent(posterUrl)}`;
-    console.log('[Admin] Fetching image via proxy:', proxyUrl);
-    
     const response = await fetch(proxyUrl);
     if (!response.ok) throw new Error(`Failed to download image (Proxy Error: ${response.status})`);
     
     const imageBlob = await response.blob();
-    console.log('[Admin] Image downloaded, size:', imageBlob.size);
-    
-    const { error } = await supabase.storage
+    const { error: storageError } = await supabase.storage
       .from('social')
       .upload('current-poster.jpg', imageBlob, {
         contentType: 'image/jpeg',
         upsert: true
       });
     
-    if (error) {
-      console.error('[Supabase Storage Error]', error);
-      throw new Error(`Storage error: ${error.message}`);
-    }
+    if (storageError) throw new Error(`Storage error (image): ${storageError.message}`);
+
+    // --- Part 2: Update HTML Metadata ---
+    // Fetch the current HTML to use as a template
+    const htmlResponse = await fetch('/next-session.html');
+    if (!htmlResponse.ok) throw new Error('Failed to fetch next-session.html template');
+    let html = await htmlResponse.text();
+
+    const dateObj = new Date(session.session_date);
+    const dateStr = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+    const timeStr = dateObj.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     
-    return { success: true };
+    const title = `${movie.title} | Paral·lel Film Festival`;
+    const description = `📅 ${dateStr} at ${timeStr} (Movie start time). 📍 ${session.location || 'Paral·lel Cinema'}. ℹ️ Doors open 30 mins before start. Join us!`;
+    const imageUrl = `https://ljbvamhqpeozkdbgwyzt.supabase.co/storage/v1/object/public/social/current-poster.jpg?v=${Date.now()}`;
+
+    // Precise surgical replacement of OG tags only
+    const replacements = [
+      { regex: /<meta property="og:title" content="[^"]*">/i, replacement: `<meta property="og:title" content="${title}">` },
+      { regex: /<meta property="og:description" content="[^"]*">/i, replacement: `<meta property="og:description" content="${description}">` },
+      { regex: /<meta property="og:image" content="[^"]*">/i, replacement: `<meta property="og:image" content="${imageUrl}">` },
+      { regex: /<meta name="twitter:title" content="[^"]*">/i, replacement: `<meta name="twitter:title" content="${title}">` },
+      { regex: /<meta name="twitter:description" content="[^"]*">/i, replacement: `<meta name="twitter:description" content="${description}">` },
+      { regex: /<meta name="twitter:image" content="[^"]*">/i, replacement: `<meta name="twitter:image" content="${imageUrl}">` }
+    ];
+
+    replacements.forEach(r => {
+      html = html.replace(r.regex, r.replacement);
+    });
+
+    // --- Part 3: Upload HTML to Storage ---
+    const htmlBlob = new Blob([html], { type: 'text/html' });
+    const { error: htmlStorageError } = await supabase.storage
+      .from('social')
+      .upload('next-session.html', htmlBlob, {
+        contentType: 'text/html',
+        upsert: true
+      });
+
+    if (htmlStorageError) throw new Error(`Storage error (html): ${htmlStorageError.message}`);
+
+    return { 
+      success: true, 
+      movieTitle: movie.title 
+    };
   }
 };

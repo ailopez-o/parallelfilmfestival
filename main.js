@@ -2292,13 +2292,13 @@ window.handleDeployMetadata = async () => {
   }
 
   try {
-    showNotification('Updating social preview image...', 'warning');
-    console.log('[Admin] Target session:', upcoming.id, upcoming.movies?.title);
+    showNotification('Updating social metadata in Supabase...', 'warning');
     
-    const result = await AdminService.updateSocialImage(upcoming);
+    // Update image and generate/upload HTML to Supabase Storage
+    const result = await AdminService.updateSocialMetadata(upcoming);
     
     if (result.success) {
-      showNotification('Social preview updated successfully!', 'success');
+      showNotification(`Social preview for "${result.movieTitle}" updated successfully!`, 'success');
     }
   } catch (err) {
     console.error('[Admin] Metadata update failed:', err);
