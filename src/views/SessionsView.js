@@ -185,19 +185,14 @@ export const SessionsView = {
           <div class="cinematic-details glass-card">
             <div class="cinematic-tabs">
               <button class="cinematic-tab active" data-tab="comments" onclick="window.switchSessionTab('comments')">
-                 <i data-lucide="message-square"></i> Discussion
+                 Discussion
               </button>
               <button class="cinematic-tab" data-tab="photos" onclick="window.switchSessionTab('photos')">
-                 <i data-lucide="camera"></i> Gallery
+                 Gallery
               </button>
               <button class="cinematic-tab" data-tab="participants" onclick="window.switchSessionTab('participants')">
-                 <i data-lucide="users"></i> Who's Coming
+                 Who's Coming
               </button>
-              ${isAdmin ? `
-                <button class="cinematic-tab admin" onclick="window.showEditSessionModal('${session.id}')">
-                   <i data-lucide="settings"></i> Manage
-                </button>
-              ` : ''}
             </div>
 
             <div id="sessionTabContent" class="tab-fade-in">

@@ -35,7 +35,15 @@ async function init() {
       state.user = user;
       state.userProfile = profile;
       state.isAdmin = profile?.role === 'admin';
-      updateAuthUI();
+    }
+    
+    updateAuthUI();
+
+    if (!state.user) {
+      // MANDATORY LOGIN
+      dismissPreloader();
+      window.showLoginModal();
+      return;
     }
 
     // 2. Fetch "Next" Session Data (Soonest Upcoming)
@@ -98,6 +106,9 @@ function renderAll() {
 }
 
 function updateAuthUI() {
+  const userHeader = document.getElementById('userHeader');
+  if (!userHeader) return;
+
   if (state.user) {
     const name = state.userProfile?.full_name || state.user.email.split('@')[0];
     const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
