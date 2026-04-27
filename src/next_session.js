@@ -2,7 +2,7 @@ import { supabase } from './config/supabase.js';
 import { SessionService } from './api/sessions.js';
 import { SessionsView } from './views/SessionsView.js';
 import { AuthService } from './api/auth.js';
-import { showNotification } from './utils/ui.js';
+import { showNotification, getUserDisplayName } from './utils/index.js';
 
 // Global state for the standalone page
 const state = {
@@ -110,7 +110,7 @@ function updateAuthUI() {
   if (!userHeader) return;
 
   if (state.user) {
-    const name = state.userProfile?.full_name || state.user.email.split('@')[0];
+    const name = getUserDisplayName(state.userProfile, state.user);
     const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
     
     userHeader.innerHTML = `

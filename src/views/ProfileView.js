@@ -1,4 +1,5 @@
 import { createMovieCardHTML, createAchievementCardHTML } from '../components/index.js';
+import { getUserDisplayName } from '../utils/index.js';
 
 /**
  * Profile View Module.
@@ -21,7 +22,7 @@ export const ProfileView = {
       votesCount
     } = options;
 
-    const displayName = profile?.full_name || profile?.email?.split('@')[0] || 'User';
+    const displayName = getUserDisplayName(profile);
     const displayEmail = profile?.email || 'N/A';
     const displayAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=5850ec&color=fff&size=256&bold=true`;
 

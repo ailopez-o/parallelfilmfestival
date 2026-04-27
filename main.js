@@ -1,5 +1,5 @@
 import { supabase } from './src/config/supabase.js';
-import { normalize, formatScore, timeAgo, showNotification } from './src/utils/index.js';
+import { normalize, formatScore, timeAgo, showNotification, getUserDisplayName } from './src/utils/index.js';
 import { FALLBACK_IMAGE, TBD_POSTER, DEFAULT_MAX_PROPOSALS, DEFAULT_MAX_VOTES } from './src/config/constants.js';
 import { 
   createMovieCardHTML, 
@@ -265,18 +265,32 @@ async function checkUser(session) {
     // If no profile exists (e.g., new Google login), create one automatically
     if (!profile) {
       console.log('[Auth] Profile missing, creating default profile...');
-      const metadata = user.user_metadata || {};
+      const displayName = getUserDisplayName(null, user);
+      
       const { data: newProfile, error: insertError } = await supabase
         .from('profiles')
         .insert([{
           id: user.id,
-          full_name: metadata.full_name || user.email.split('@')[0],
+          full_name: displayName,
+          email: user.email,
           role: 'user'
         }])
         .select()
         .single();
       
       if (!insertError) profile = newProfile;
+    } else if (profile.full_name === null) {
+      // Self-healing: if profile exists but has no name, update it
+      const displayName = getUserDisplayName(null, user);
+      console.log(`[Auth] Profile exists but full_name is null. Healing to: ${displayName}`);
+      const { data: updatedProfile, error: updateError } = await supabase
+        .from('profiles')
+        .update({ full_name: displayName, email: user.email })
+        .eq('id', user.id)
+        .select()
+        .single();
+      
+      if (!updateError) profile = updatedProfile;
     }
 
     userProfile = profile;
@@ -516,7 +530,7 @@ function renderCemetery(droppedMovies) {
 
 function updateAuthUI() {
   if (user) {
-    const name = userProfile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0];
+    const name = getUserDisplayName(userProfile, user);
     const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
     const myScore = userProfile?.score || 0;
     

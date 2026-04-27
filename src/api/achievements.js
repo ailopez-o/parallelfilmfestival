@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase.js';
 import { ACHIEVEMENT_LIST } from '../config/constants.js';
+import { getUserDisplayName } from '../utils/user.js';
 
 /**
  * Achievement Service.
@@ -124,7 +125,7 @@ export const AchievementService = {
       if (profiles.error) throw profiles.error;
 
       const activeUsersMap = new Map();
-      profiles.data?.forEach(p => activeUsersMap.set(p.id, p.full_name || p.email.split('@')[0]));
+      profiles.data?.forEach(p => activeUsersMap.set(p.id, getUserDisplayName(p)));
 
       const events = [];
       

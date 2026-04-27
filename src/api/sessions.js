@@ -11,7 +11,7 @@ export const SessionService = {
   async fetchAll() {
     const { data, error } = await supabase
       .from('sessions')
-      .select('*, movies(*), session_signups(user_id, profiles(full_name))')
+      .select('*, movies(*), session_signups(user_id, profiles(full_name, email))')
       .order('session_date', { ascending: false });
 
     if (error) throw error;
@@ -24,7 +24,7 @@ export const SessionService = {
   async fetchSessionById(sessionId) {
     const { data, error } = await supabase
       .from('sessions')
-      .select('*, movies(*), session_signups(user_id, profiles(full_name))')
+      .select('*, movies(*), session_signups(user_id, profiles(full_name, email))')
       .eq('id', sessionId)
       .single();
 
@@ -37,10 +37,10 @@ export const SessionService = {
    */
   async fetchDetails(sessionId) {
     const [comments, photos, signups, attendance] = await Promise.all([
-      supabase.from('session_comments').select('*, profiles(full_name)').eq('session_id', sessionId).order('created_at', { ascending: false }),
-      supabase.from('session_photos').select('*, profiles(full_name)').eq('session_id', sessionId).order('created_at', { ascending: false }),
-      supabase.from('session_signups').select('*, profiles(full_name, id)').eq('session_id', sessionId),
-      supabase.from('session_attendance').select('*, profiles(full_name, id)').eq('session_id', sessionId)
+      supabase.from('session_comments').select('*, profiles(full_name, email)').eq('session_id', sessionId).order('created_at', { ascending: false }),
+      supabase.from('session_photos').select('*, profiles(full_name, email)').eq('session_id', sessionId).order('created_at', { ascending: false }),
+      supabase.from('session_signups').select('*, profiles(full_name, email, id)').eq('session_id', sessionId),
+      supabase.from('session_attendance').select('*, profiles(full_name, email, id)').eq('session_id', sessionId)
     ]);
 
     return {

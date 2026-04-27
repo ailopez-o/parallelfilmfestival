@@ -1,4 +1,5 @@
 import { FALLBACK_IMAGE, TBD_POSTER } from '../config/constants.js';
+import { getUserDisplayName } from '../utils/index.js';
 
 /**
  * Renders a stack of user avatars for session signups.
@@ -11,14 +12,15 @@ export function renderAvatarStack(signups = [], limit = 3) {
   if (!signups || signups.length === 0) return '';
   const displayed = signups.slice(0, limit);
   const moreCount = signups.length - limit;
-  const allNames = signups.map(s => s.profiles?.full_name || 'Anonymous').join('\n');
+  const allNames = signups.map(s => getUserDisplayName(s.profiles)).join('\n');
 
   return `
     <div class="avatar-stack" data-tooltip="Interested:\n${allNames}">
       ${moreCount > 0 ? `<div class="more-count">+${moreCount}</div>` : ''}
-      ${displayed.reverse().map(s => `
-        <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(s.profiles?.full_name || 'A')}&background=random" alt="Avatar">
-      `).join('')}
+      ${displayed.reverse().map(s => {
+        const name = getUserDisplayName(s.profiles);
+        return `<img src="https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random" alt="Avatar">`;
+      }).join('')}
     </div>
   `;
 }

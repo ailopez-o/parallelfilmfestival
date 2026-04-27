@@ -1,5 +1,6 @@
 import { createSessionCardHTML } from '../components/index.js';
 import { FALLBACK_IMAGE, TBD_POSTER } from '../config/constants.js';
+import { getUserDisplayName } from '../utils/index.js';
 
 /**
  * Sessions View Module.
@@ -165,7 +166,7 @@ export const SessionsView = {
                 </button>
                 <div class="interest-stats">
                    <div class="avatar-group">
-                     ${signups.slice(0, 4).map(s => `<img src="https://ui-avatars.com/api/?name=${encodeURIComponent(s.profiles?.full_name || 'A')}&background=random" />`).join('')}
+                     ${signups.slice(0, 4).map(s => `<img src="https://ui-avatars.com/api/?name=${encodeURIComponent(getUserDisplayName(s.profiles))}&background=random" />`).join('')}
                      ${signupCount > 4 ? `<div class="avatar-more">+${signupCount - 4}</div>` : ''}
                    </div>
                    <span>${signupCount} people are attending</span>
@@ -218,7 +219,7 @@ export const SessionsView = {
         </div>
         <div class="comments-list">
           ${comments.length ? comments.map(c => {
-            const userName = c.profiles?.full_name || 'Anonymous';
+            const userName = getUserDisplayName(c.profiles);
             const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=random&size=64`;
             const date = new Date(c.created_at).toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' });
             
@@ -278,13 +279,15 @@ export const SessionsView = {
   renderParticipantsHTML(data, isUpcoming) {
     return `
       <div class="participants-list" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem;">
-        ${data?.length ? data.map(p => `
+        ${data?.length ? data.map(p => {
+          const userName = getUserDisplayName(p.profiles);
+          return `
           <div class="participant-card" style="background:rgba(255,255,255,0.05); padding:1rem; border-radius:1rem; text-align:center;">
-            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(p.profiles?.full_name || 'A')}&background=random" style="width:50px; height:50px; border-radius:50%; margin-bottom:0.5rem;" />
-            <div style="font-weight:600; font-size:0.8rem;">${p.profiles?.full_name || 'Anonymous'}</div>
+            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=random" style="width:50px; height:50px; border-radius:50%; margin-bottom:0.5rem;" />
+            <div style="font-weight:600; font-size:0.8rem;">${userName}</div>
             ${isUpcoming ? '<div style="font-size:0.6rem; color:var(--text-secondary); margin-top:0.2rem;">Interested</div>' : ''}
           </div>
-        `).join('') : '<div class="empty-state">No participants yet.</div>'}
+        `}).join('') : '<div class="empty-state">No participants yet.</div>'}
       </div>
     `;
   }

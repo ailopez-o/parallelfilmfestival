@@ -1,3 +1,5 @@
+import { getUserDisplayName } from '../utils/index.js';
+
 /**
  * Generates HTML for a ranking row.
  * 
@@ -5,7 +7,7 @@
  * @returns {string} HTML string for the table row.
  */
 export function createRankingRowHTML(user) {
-  const name = user.full_name || (user.email ? user.email.split('@')[0] : 'Anonymous');
+  const name = getUserDisplayName(user);
   const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
   const rankClass = user.rank <= 3 ? `top-${user.rank}` : '';
   
