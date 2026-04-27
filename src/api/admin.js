@@ -200,17 +200,21 @@ export const AdminService = {
     if (storageError) throw new Error(`Storage error (image): ${storageError.message}`);
 
     // --- Part 2: Update HTML Metadata ---
-    // Fetch the current HTML to use as a template
-    const htmlResponse = await fetch('/next-session.html');
+    // Fetch the current HTML to use as a template (fresh from the server)
+    const htmlResponse = await fetch(`/next-session.html?v=${Date.now()}`);
     if (!htmlResponse.ok) throw new Error('Failed to fetch next-session.html template');
     let html = await htmlResponse.text();
 
+    // IMPORTANT: Convert relative assets to absolute URLs so they work when hosted on Supabase Storage
+    const domain = window.location.origin;
+    html = html.replace(/(src|href)="\/(assets\/|style\.css|src\/)/gi, `$1="${domain}/$2`);
+
     const dateObj = new Date(session.session_date);
-    const dateStr = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
-    const timeStr = dateObj.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
+    const timeStr = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
     
     const title = `${movie.title} | Paral·lel Film Festival`;
-    const description = `📅 ${dateStr} at ${timeStr} (Movie start time). 📍 ${session.location || 'Paral·lel Cinema'}. ℹ️ Doors open 30 mins before start. Join us!`;
+    const description = `📅 ${dateStr} a las ${timeStr}. 📍 ${session.location || 'Paral·lel Cinema'}. ¡Únete a nosotros!`;
     const imageUrl = `https://ljbvamhqpeozkdbgwyzt.supabase.co/storage/v1/object/public/social/current-poster.jpg?v=${Date.now()}`;
 
     // Precise surgical replacement of OG tags only
