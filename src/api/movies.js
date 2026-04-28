@@ -29,7 +29,7 @@ export const MovieService = {
   async getGlobalRatings() {
     const { data, error } = await supabase
       .from('user_ratings')
-      .select('movie_id, rating');
+      .select('movie_id, rating, comment, created_at, user_id');
     
     if (error) throw error;
     return data || [];
@@ -115,7 +115,7 @@ export const MovieService = {
     if (error) throw error;
   },
 
-  async upsertRating(userId, movieId, rating) {
+  async upsertRating(userId, movieId, rating, comment = null) {
     // First check if a rating already exists
     const { data: existing } = await supabase
       .from('user_ratings')
@@ -127,13 +127,13 @@ export const MovieService = {
     if (existing) {
       const { error } = await supabase
         .from('user_ratings')
-        .update({ rating })
+        .update({ rating, comment })
         .eq('id', existing.id);
       if (error) throw error;
     } else {
       const { error } = await supabase
         .from('user_ratings')
-        .insert([{ user_id: userId, movie_id: movieId, rating }]);
+        .insert([{ user_id: userId, movie_id: movieId, rating, comment }]);
       if (error) throw error;
     }
   }

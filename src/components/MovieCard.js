@@ -1,5 +1,6 @@
 import { FALLBACK_IMAGE } from '../config/constants.js';
 import { formatScore } from '../utils/formatters.js';
+import { getUserDisplayName } from '../utils/index.js';
 
 /**
  * Generates the HTML for a movie card.
@@ -32,7 +33,7 @@ export function createMovieCardHTML(movie, options = {}) {
   const providers = movie.watch_providers?.flatrate || [];
   const providersLink = movie.watch_providers?.link || '#';
 
-  const cardClass = context === 'history' ? 'movie-card seen' : 
+  const cardClass = context === 'history' ? 'movie-card seen horizontal' : 
                    context === 'showcase' ? 'movie-card top-highlight-card' : 
                    context === 'cemetery' ? 'movie-card dropped' : 'movie-card';
 
@@ -74,29 +75,31 @@ export function createMovieCardHTML(movie, options = {}) {
       ` : '')}
 
       <div class="movie-info">
-        <div class="header-main">
-          <div class="title-row">
-            <div class="movie-title">${movie.title}</div>
-            <div class="rating-badge">
-              <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
-              <span class="rating-value">${formatScore(movie.vote_average)}</span>
+        ${context === 'history' ? '' : `
+          <div class="header-main">
+            <div class="title-row">
+              <div class="movie-title">${movie.title}</div>
+              <div class="rating-badge">
+                <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
+                <span class="rating-value">${formatScore(movie.vote_average)}</span>
+              </div>
+            </div>
+            <div class="movie-meta">
+              <span>${releaseYear} • ${movie.director || 'Unknown'}</span>
+              ${movie.trailer_url ? `
+                <a href="${movie.trailer_url}" target="_blank" class="trailer-link-btn" title="Watch Trailer">
+                  <i data-lucide="play-circle"></i> Trailer
+                </a>
+              ` : ''}
             </div>
           </div>
-          <div class="movie-meta">
-            <span>${releaseYear} • ${movie.director || 'Unknown'}</span>
-            ${movie.trailer_url ? `
-              <a href="${movie.trailer_url}" target="_blank" class="trailer-link-btn ${context === 'history' ? 'mini' : ''}" title="Watch Trailer">
-                <i data-lucide="play-circle"></i> Trailer
-              </a>
-            ` : ''}
+
+          <div class="genre-tags">
+            ${genres.map(g => `<span class="genre-tag">${g}</span>`).join('')}
           </div>
-        </div>
 
-        <div class="genre-tags">
-          ${genres.map(g => `<span class="genre-tag">${g}</span>`).join('')}
-        </div>
-
-        <div class="synopsis">${movie.synopsis || 'No synopsis available.'}</div>
+          <div class="synopsis">${movie.synopsis || 'No synopsis available.'}</div>
+        `}
 
         <!-- Watch Providers -->
         ${providers.length > 0 ? `
@@ -132,24 +135,89 @@ export function createMovieCardHTML(movie, options = {}) {
         ` : ''}
 
         ${context === 'history' ? `
-          <div class="rating-input-wrapper">
-            <div style="display:flex; justify-content:space-between; font-size: 0.8rem; margin-bottom: 0.5rem;">
-              <span style="font-weight:600; color:var(--text-secondary);">Your Rating</span>
-              <span id="rating-val-${movie.id}" style="font-weight:700; color:#fbbf24;">${movie.user_rating || 0} / 10</span>
+          <div class="history-full-layout">
+            <div class="history-header-compact">
+              <div class="title-row">
+                <div class="movie-title">${movie.title}</div>
+                <div class="rating-badge">
+                  <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
+                  <span class="rating-value">${formatScore(movie.vote_average)}</span>
+                </div>
+              </div>
+              <div class="movie-meta">
+                <span>${releaseYear} • ${movie.director || 'Unknown'}</span>
+                ${movie.trailer_url ? `<a href="${movie.trailer_url}" target="_blank" class="trailer-link-btn mini"><i data-lucide="play-circle"></i></a>` : ''}
+              </div>
             </div>
-            <div class="star-rating" onmouseleave="window.resetStars('${movie.id}', ${movie.user_rating || 0})">
-              ${Array.from({ length: 10 }, (_, i) => i + 1).map(num => `
-                <button class="star-btn ${movie.user_rating >= num ? 'star-filled' : ''}" 
-                        data-star="${num}"
-                        onmouseover="window.hoverStars('${movie.id}', ${num})"
-                        onclick="window.rateMovie('${movie.id}', ${num})">
-                  <i data-lucide="star"></i>
-                </button>
-              `).join('')}
+
+            <div class="history-content-row">
+              <div class="history-synopsis-compact">${movie.synopsis || 'No synopsis available.'}</div>
+              
+              <div class="history-metadata-right">
+                <div class="avg-pill large"><i data-lucide="star"></i> ${movie.average_community_rating ? movie.average_community_rating.toFixed(1) : '0.0'}</div>
+                ${!options.hasAttended ? `
+                  <div class="attendance-notice-inline">
+                    <i data-lucide="info"></i> Not attended
+                  </div>
+                ` : ''}
+              </div>
             </div>
-            <div class="community-avg-box">
-              <span class="community-label">Festival Average</span>
-              <span class="community-score" id="comm-avg-${movie.id}">${movie.average_community_rating ? movie.average_community_rating.toFixed(1) : '0.0'}</span>
+
+            <div class="history-reviews-section">
+              <div class="reviews-title-row">
+                <span>Community Reviews (${movie.reviews?.length || 0})</span>
+              </div>
+              
+              ${options.hasAttended ? `
+                <div class="your-review-line-editor">
+                  <div class="rev-avatar-mini" style="background:var(--accent); display:flex; align-items:center; justify-content:center;">
+                    <i data-lucide="edit-3" style="width:12px; height:12px; color:white;"></i>
+                  </div>
+                  <div class="rev-main">
+                    <div class="rev-top">
+                      <span class="rev-name" style="color:var(--accent);">Your Review</span>
+                      <div class="star-rating mini" onmouseleave="window.resetStars('${movie.id}', ${movie.user_rating || 0})">
+                        ${Array.from({ length: 10 }, (_, i) => i + 1).map(num => `
+                          <button class="star-btn ${movie.user_rating >= num ? 'star-filled' : ''}" 
+                                  data-star="${num}"
+                                  onmouseover="window.hoverStars('${movie.id}', ${num})"
+                                  onclick="window.selectRating('${movie.id}', ${num})">
+                            <i data-lucide="star"></i>
+                          </button>
+                        `).join('')}
+                      </div>
+                    </div>
+                    <div class="comment-row-compact">
+                      <textarea id="comment-input-${movie.id}" class="review-comment-textarea compact" placeholder="How was the film?">${movie.user_comment || ''}</textarea>
+                      <button class="save-review-btn mini" onclick="window.rateMovie('${movie.id}', document.getElementById('rating-val-${movie.id}')?.textContent || ${movie.user_rating || 0})">
+                        <i data-lucide="send"></i>
+                      </button>
+                      <span id="rating-val-${movie.id}" style="display:none;">${movie.user_rating || 0}</span>
+                    </div>
+                  </div>
+                </div>
+              ` : ''}
+
+              <div class="google-reviews-horizontal">
+                ${movie.reviews?.length ? movie.reviews.map(rev => {
+                  const name = getUserDisplayName(rev.profiles);
+                  const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&size=32`;
+                  return `
+                    <div class="review-line">
+                      <img src="${avatar}" class="rev-avatar-mini" />
+                      <div class="rev-main">
+                        <div class="rev-top">
+                          <span class="rev-name">${name}</span>
+                          <div class="rev-stars-bar">
+                            ${Array.from({length: 10}).map((_, i) => `<div class="star-dot ${rev.rating > i ? 'active' : ''}"></div>`).join('')}
+                          </div>
+                        </div>
+                        ${rev.comment ? `<p class="rev-text-compact">${rev.comment}</p>` : ''}
+                      </div>
+                    </div>
+                  `;
+                }).join('') : '<div class="empty-reviews-compact">No reviews yet.</div>'}
+              </div>
             </div>
           </div>
         ` : ''}

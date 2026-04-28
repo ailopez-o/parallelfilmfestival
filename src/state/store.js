@@ -20,6 +20,7 @@ class Store {
       userProfile: null,
       isAdmin: false,
       userVotes: new Set(),
+      userAttendance: new Set(),
       
       // UI state
       currentView: 'home',

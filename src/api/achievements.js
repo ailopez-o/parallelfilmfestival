@@ -14,16 +14,20 @@ export const AchievementService = {
     if (!userId) return ACHIEVEMENT_LIST.map(a => ({ ...a, progress: 0, current: 0, completed: false }));
 
     try {
-      const [ratingsRes, attendanceRes, visionaryRes] = await Promise.all([
+      const [ratingsRes, tableRes, visionaryRes] = await Promise.all([
         supabase.from('user_ratings').select('*', { count: 'exact', head: true }).eq('user_id', userId),
-        supabase.from('participation_log').select('movie_id').eq('user_id', userId).eq('action_type', 'attendance'),
+        supabase.from('session_attendance').select('sessions(movie_id)').eq('user_id', userId),
         supabase.from('movies').select('*', { count: 'exact', head: true }).eq('proposed_by', userId).eq('is_seen', true)
       ]);
 
       const ratingsCount = ratingsRes.count || 0;
-      const attendanceLogs = attendanceRes.data || [];
-      const attendanceCount = attendanceLogs.length || 0;
-      const attendedMovieIds = new Set(attendanceLogs.map(l => l.movie_id));
+      
+      // session_attendance is the source of truth
+      const attendedMovieIds = new Set(
+        (tableRes.data || []).map(a => a.sessions?.movie_id).filter(id => id)
+      );
+      
+      const attendanceCount = attendedMovieIds.size;
       const seenCount = visionaryRes.count || 0;
 
       // 4. Attendance Streak Logic: Find the longest sequence of attended sessions
@@ -75,13 +79,13 @@ export const AchievementService = {
   /**
    * Calculates global achievement statistics for the community.
    */
-  async calculateGlobalStats(proposedMovies = []) {
-    const stats = { miembro: 0, feroz: 0, oro: 0, trend: 0, streak: 0, debut: 0, regular: 0, legend: 0 };
+  async calculateGlobalStats(allMovies = []) {
+    const stats = { miembro: 0, feroz: 0, oro: 0, trend: 0, streak: 0, debut: 0, regular: 0, legend: 0, visionary: 0, oracle: 0 };
     try {
       const [profilesRes, ratingsRes, attendanceRes] = await Promise.all([
         supabase.from('profiles').select('id'),
         supabase.from('user_ratings').select('user_id'),
-        supabase.from('participation_log').select('user_id').eq('action_type', 'attendance')
+        supabase.from('session_attendance').select('user_id, sessions(movie_id)')
       ]);
 
       stats.miembro = profilesRes.data?.length || 0;
@@ -97,11 +101,26 @@ export const AchievementService = {
       stats.trend = new Set(top3Movies.map(m => m.proposed_by)).size;
 
       const attMap = {};
-      attendanceRes.data?.forEach(a => { attMap[a.user_id] = (attMap[a.user_id] || 0) + 1; });
-      Object.values(attMap).forEach(count => {
+      attendanceRes.data?.forEach(a => { 
+        if (!attMap[a.user_id]) attMap[a.user_id] = new Set();
+        if (a.sessions?.movie_id) attMap[a.user_id].add(a.sessions.movie_id);
+      });
+      Object.values(attMap).forEach(movieSet => {
+        const count = movieSet.size;
         if (count >= 1) stats.debut++;
         if (count >= 3) stats.regular++;
         if (count >= 5) stats.legend++;
+      });
+
+      // Visionary / Oracle stats
+      const visMap = {};
+      allMovies.filter(m => m.is_seen).forEach(m => {
+        if (!m.proposed_by) return;
+        visMap[m.proposed_by] = (visMap[m.proposed_by] || 0) + 1;
+      });
+      Object.values(visMap).forEach(count => {
+        if (count >= 1) stats.visionary++;
+        if (count >= 3) stats.oracle++;
       });
     } catch (e) {
       console.error('Error calculating global stats:', e);
@@ -114,12 +133,13 @@ export const AchievementService = {
    */
   async fetchRecentEvents() {
     try {
-      const [profiles, allRatings, allAttendance, allMovies, allSessions] = await Promise.all([
+      const [profiles, allRatings, allAttendance, allMovies, allSessions, allAttendanceTable] = await Promise.all([
         supabase.from('profiles').select('id, full_name, email, created_at').order('created_at', { ascending: false }),
         supabase.from('user_ratings').select('user_id, created_at, movie_id'),
         supabase.from('participation_log').select('user_id, created_at, action_type, movie_id'),
         supabase.from('movies').select('id, proposed_by, is_seen, created_at'),
-        supabase.from('sessions').select('id, session_date').order('session_date', { ascending: true })
+        supabase.from('sessions').select('id, session_date, movie_id').order('session_date', { ascending: true }),
+        supabase.from('session_attendance').select('user_id, session_id, sessions(movie_id, session_date)')
       ]);
 
       if (profiles.error) throw profiles.error;
@@ -129,8 +149,8 @@ export const AchievementService = {
 
       const events = [];
       
-      // 1. Join Events (Only top 20 most recent to avoid spam)
-      profiles.data?.slice(0, 20).forEach(p => {
+      // 1. Join Events (Only top 5 most recent to avoid spam)
+      profiles.data?.slice(0, 5).forEach(p => {
         events.push({
           type: 'miembro', icon: 'user-check', userId: p.id,
           name: activeUsersMap.get(p.id),
@@ -160,12 +180,36 @@ export const AchievementService = {
         }
       });
 
-      // 3. Attendance Milestones
+      // 3. Attendance Milestones (Source of Truth: session_attendance + logs)
       const attendanceStats = {};
+      const processedAttendanceKeys = new Set();
+      
+      // First, process official session_attendance (Authority)
+      (allAttendanceTable?.data || []).forEach(a => {
+        const movieId = a.sessions?.movie_id;
+        const date = a.sessions?.session_date ? new Date(a.sessions.session_date) : new Date();
+        if (!movieId) return;
+        
+        if (!attendanceStats[a.user_id]) attendanceStats[a.user_id] = new Set();
+        attendanceStats[a.user_id].add(movieId);
+        const count = attendanceStats[a.user_id].size;
+        processedAttendanceKeys.add(`${a.user_id}_${movieId}`);
+        
+        if ([1, 3, 5].includes(count)) {
+          const medal = count === 1 ? 'Grand Premiere' : (count === 3 ? 'Festival Regular' : 'Cinema Legend');
+          pushEvent(a.user_id, date, 'asistencia', count === 1 ? 'ticket' : (count === 3 ? 'calendar' : 'crown'), medal);
+        }
+      });
+
+      // Second, process logs (for historical ones that might not be in session_attendance)
       (allAttendance.data || []).filter(a => a.action_type === 'attendance')
         .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).forEach(a => {
-        attendanceStats[a.user_id] = (attendanceStats[a.user_id] || 0) + 1;
-        const count = attendanceStats[a.user_id];
+        if (processedAttendanceKeys.has(`${a.user_id}_${a.movie_id}`)) return;
+        
+        if (!attendanceStats[a.user_id]) attendanceStats[a.user_id] = new Set();
+        attendanceStats[a.user_id].add(a.movie_id);
+        const count = attendanceStats[a.user_id].size;
+        
         if ([1, 3, 5].includes(count)) {
           const medal = count === 1 ? 'Grand Premiere' : (count === 3 ? 'Festival Regular' : 'Cinema Legend');
           pushEvent(a.user_id, new Date(a.created_at), 'asistencia', count === 1 ? 'ticket' : (count === 3 ? 'calendar' : 'crown'), medal);
@@ -193,14 +237,22 @@ export const AchievementService = {
 
       // 5. Visionary Milestones
       const visStats = {};
+      const movieSessionMap = {};
+      (allSessions.data || []).forEach(s => {
+        if (s.movie_id) movieSessionMap[s.movie_id] = s.session_date;
+      });
+
       (allMovies.data || []).filter(m => m.is_seen).sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).forEach(m => {
         visStats[m.proposed_by] = (visStats[m.proposed_by] || 0) + 1;
         if ([1, 3].includes(visStats[m.proposed_by])) {
-          pushEvent(m.proposed_by, new Date(m.created_at), 'visionary', visStats[m.proposed_by] === 3 ? 'sparkles' : 'eye', visStats[m.proposed_by] === 3 ? 'The Oracle' : 'The Visionary');
+          // Use session date if available, else fallback to creation date
+          const eventDate = movieSessionMap[m.id] ? new Date(movieSessionMap[m.id]) : new Date(m.created_at);
+          pushEvent(m.proposed_by, eventDate, 'visionary', visStats[m.proposed_by] === 3 ? 'sparkles' : 'eye', visStats[m.proposed_by] === 3 ? 'The Oracle' : 'The Visionary');
         }
       });
-
-      return events;
+      
+      // Sort all events by date descending (most recent first)
+      return events.sort((a, b) => (b.date || 0) - (a.date || 0));
     } catch (e) {
       console.error('Error fetching achievement events:', e);
       return [];

@@ -83,7 +83,7 @@ export const ACHIEVEMENT_LIST = [
     target: 1,
     type: 'ratings',
     class: 'medal-feroz',
-    points: 5
+    points: 10
   },
   {
     id: 'feroz',
@@ -93,7 +93,7 @@ export const ACHIEVEMENT_LIST = [
     target: 5,
     type: 'ratings',
     class: 'medal-feroz',
-    points: 10
+    points: 20
   },
   {
     id: 'oro',
@@ -103,7 +103,7 @@ export const ACHIEVEMENT_LIST = [
     target: 10,
     type: 'ratings',
     class: 'medal-oro',
-    points: 15
+    points: 30
   },
   {
     id: 'streak3',

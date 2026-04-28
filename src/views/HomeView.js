@@ -72,12 +72,14 @@ export const HomeView = {
     }
 
     container.innerHTML = seenMovies.map(movie => {
+      const hasAttended = state.userAttendance && state.userAttendance.has(movie.id);
       return createMovieCardHTML(movie, { 
         context: 'history', 
         showDelete: false,
         isAdmin: state.isAdmin,
         user: state.user,
-        userVotes: state.userVotes
+        userVotes: state.userVotes,
+        hasAttended: hasAttended
       });
     }).join('');
   },

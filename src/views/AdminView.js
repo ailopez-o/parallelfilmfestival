@@ -94,6 +94,10 @@ export const AdminView = {
         actionLabel = 'Vote Removed';
         points = '-1';
         pointsClass = 'danger';
+      } else if (log.action_type === 'review') {
+        actionLabel = 'Reviewed';
+        points = '+5';
+        pointsClass = 'success';
       }
       
       const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;

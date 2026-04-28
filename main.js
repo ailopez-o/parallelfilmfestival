@@ -23,7 +23,7 @@ import { ACHIEVEMENT_LIST } from './src/config/constants.js';
 
 import { store } from './src/state/store.js';
 // This routes all variable reads/writes transparently into the centralized store.
-['allMovies', 'proposedMovies', 'seenMovies', 'rankedUsers', 'sessions', 'currentSession', 'currentView', 'genreMap', 'providerMap', 'user', 'userProfile', 'isAdmin'].forEach(key => {
+['allMovies', 'proposedMovies', 'seenMovies', 'rankedUsers', 'sessions', 'currentSession', 'currentView', 'genreMap', 'providerMap', 'user', 'userProfile', 'isAdmin', 'userAttendance'].forEach(key => {
   Object.defineProperty(window, key, {
     get: () => store.getState()[key],
     set: (v) => store.setState({ [key]: v })
@@ -299,10 +299,14 @@ async function checkUser(session) {
 
     const votes = await MovieService.fetchVotesForUser(user.id);
     userVotes = new Set(votes?.map(v => v.movie_id) || []);
+
+    const attendance = await SessionService.fetchUserAttendance(user.id);
+    userAttendance = new Set(attendance || []);
   } else {
     userProfile = null;
     isAdmin = false;
     userVotes = new Set();
+    userAttendance = new Set();
   }
   updateAuthUI();
   if (isAdmin) {
@@ -334,12 +338,18 @@ async function refreshData() {
   }
 
   allRatings = await MovieService.getGlobalRatings();
+  const allProfiles = await AdminService.fetchAllProfiles();
 
   allMovies.forEach(m => {
     const userV = individualRatings.find(r => r.movie_id === m.id);
     m.user_rating = userV ? userV.rating : 0;
+    m.user_comment = userV ? userV.comment : '';
     
-    const mRatings = allRatings.filter(r => r.movie_id === m.id);
+    const mRatings = allRatings.filter(r => r.movie_id === m.id).map(r => ({
+      ...r,
+      profiles: allProfiles.find(p => p.id === r.user_id)
+    }));
+    m.reviews = mRatings;
     m.average_community_rating = mRatings.length > 0 
       ? mRatings.reduce((sum, r) => sum + r.rating, 0) / mRatings.length 
       : 0;
@@ -353,7 +363,7 @@ async function refreshData() {
   });
 
   // Background enrichment for movies with missing data
-  enrichMovieData(allMovies);
+  await enrichMovieData(allMovies);
 
 
 
@@ -519,7 +529,7 @@ async function renderTopVotedShowcase() {
 }
 
 function renderHistory() {
-  HomeView.renderHistory(seenMovies, historyGrid, { isAdmin, user, userVotes });
+  HomeView.renderHistory(seenMovies, historyGrid, { isAdmin, user, userVotes, userAttendance });
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -976,7 +986,7 @@ async function updateGlobalRanking() {
                 (s.proposalsDropped * 1) + 
                 (s.votesNormal * 1) + 
                 (s.votesSeen * 2) + 
-                (s.ratings * 3) + 
+                (s.ratings * 5) + 
                 (s.achievementPoints);
     });
 
@@ -1669,6 +1679,18 @@ window.markAsSeen = async (movieId) => {
   }
 };
 
+window.selectRating = (movieId, rating) => {
+  const valLabel = document.getElementById(`rating-val-${movieId}`);
+  if (valLabel) valLabel.textContent = rating;
+  
+  const container = document.querySelector(`[onmouseleave*="${movieId}"]`);
+  if (container) {
+    container.setAttribute('onmouseleave', `window.resetStars('${movieId}', ${rating})`);
+  }
+  
+  window.resetStars(movieId, rating);
+};
+
 window.rateMovie = async (movieId, rating) => {
   if (!user) return;
   
@@ -1676,12 +1698,16 @@ window.rateMovie = async (movieId, rating) => {
   const movie = seenMovies.find(m => m.id === movieId);
   if (movie) movie.user_rating = rating;
 
+  const commentInput = document.getElementById(`comment-input-${movieId}`);
+  const comment = commentInput ? commentInput.value : null;
+
   const { error } = await supabase
     .from('user_ratings')
     .upsert({ 
       movie_id: movieId, 
       user_id: user.id, 
-      rating: parseInt(rating) 
+      rating: parseInt(rating),
+      comment: comment
     }, { onConflict: 'movie_id,user_id' });
 
   if (error) {
@@ -1689,21 +1715,13 @@ window.rateMovie = async (movieId, rating) => {
     showNotification('Error saving rating', 'error');
   } else {
     showNotification('Rating saved!', 'success');
-    // Instant UI update
-    syncLocalRating(movieId, rating);
-    const valLabel = document.getElementById(`rating-val-${movieId}`);
-    if (valLabel) valLabel.textContent = `${rating} / 10`;
-    
-    const container = document.querySelector(`[onmouseleave*="${movieId}"]`);
-    if (container) {
-      container.setAttribute('onmouseleave', `window.resetStars('${movieId}', ${rating})`);
+    // Log the review activity
+    try {
+      await AdminService.logParticipation(user.id, 'review', movieId);
+    } catch (logErr) {
+      console.error('Failed to log review activity:', logErr);
     }
-    
-    // Refresh the star visuals
-    window.resetStars(movieId, rating);
-    
-    // Update community average
-    await updateCommunityAverage(movieId);
+    await refreshData();
   }
 };
 
@@ -1834,7 +1852,7 @@ async function calculateUserAchievements(userId) {
 }
 
 async function calculateGlobalAchievementStats() {
-  return AchievementService.calculateGlobalStats(proposedMovies);
+  return AchievementService.calculateGlobalStats(allMovies);
 }
 
 async function renderHomeAchievements() {
@@ -1869,8 +1887,8 @@ async function fetchRecentAchievementEvents() {
     // Sort and render
     events.sort((a, b) => b.date - a.date);
     
-    // Home Timeline (Top 5)
-    renderAchievementTimeline(events.slice(0, 5));
+    // Home Timeline (Top 15)
+    renderAchievementTimeline(events.slice(0, 15));
 
     // Admin Audit List (Full history)
     const adminList = document.getElementById('adminAchievementsList');

@@ -194,5 +194,23 @@ export const SessionService = {
       console.warn('Could not delete file from storage:', err);
       // We don't throw here to ensure DB deletion is at least successful
     }
+  },
+
+  /**
+   * Fetches all sessions a user has attended.
+   */
+  async fetchUserAttendance(userId) {
+    const { data, error } = await supabase
+      .from('session_attendance')
+      .select('session_id, sessions(movie_id)')
+      .eq('user_id', userId);
+    
+    if (error) throw error;
+    // Extract movie IDs from the joined sessions
+    const movieIds = data
+      ?.map(a => a.sessions?.movie_id)
+      .filter(id => id !== null) || [];
+    
+    return movieIds;
   }
 };
