@@ -83,10 +83,16 @@ export const AdminService = {
    * Updates multiple application settings.
    */
   async updateAppSettings(newMaxProposals, newMaxVotes) {
-    await Promise.all([
+    const [maxProposalsResult, maxVotesResult] = await Promise.all([
       supabase.from('app_settings').update({ value: newMaxProposals.toString() }).eq('key', 'max_proposals'),
       supabase.from('app_settings').update({ value: newMaxVotes.toString() }).eq('key', 'max_votes')
     ]);
+
+    const errors = [maxProposalsResult.error, maxVotesResult.error].filter(Boolean);
+    if (errors.length > 0) {
+      const joinedMessage = errors.map(e => e.message || 'Unknown settings update error').join(' | ');
+      throw new Error(`Failed to update app settings: ${joinedMessage}`);
+    }
   },
   
   /**
