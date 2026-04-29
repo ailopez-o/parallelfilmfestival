@@ -30,8 +30,10 @@ export const ProfileView = {
     if (profileEmail) profileEmail.textContent = displayEmail;
     if (profileAvatar) profileAvatar.src = displayAvatar;
 
-    if (countProposals) countProposals.textContent = `${proposalsCount || 0} / ${maxProposals}`;
-    if (countVotes) countVotes.textContent = `${votesCount || 0} / ${maxVotes}`;
+    const proposalsLimitLabel = Number.isInteger(maxProposals) ? maxProposals : '—';
+    const votesLimitLabel = Number.isInteger(maxVotes) ? maxVotes : '—';
+    if (countProposals) countProposals.textContent = `${proposalsCount || 0} / ${proposalsLimitLabel}`;
+    if (countVotes) countVotes.textContent = `${votesCount || 0} / ${votesLimitLabel}`;
   },
 
   /**
