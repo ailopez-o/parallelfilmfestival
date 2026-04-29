@@ -1585,16 +1585,11 @@ window.proposeMovie = async (tmdbMovie, el) => {
     
     showNotification(`"${tmdbMovie.title}" proposed!`, 'success');
 
-    // Log the proposal activity
-    await AdminService.logParticipation(user.id, 'proposal', data.id);
-
     // Automatically add user's vote to their own proposal
     try {
       if (data && data.id) {
         await MovieService.addVote(user.id, data.id);
         userVotes.add(data.id);
-        // Log the auto-vote activity
-        await AdminService.logParticipation(user.id, 'vote', data.id);
       }
     } catch (vErr) {
       console.warn('Auto-vote failed:', vErr);
@@ -1643,8 +1638,6 @@ window.toggleVote = async (movieId) => {
       await MovieService.removeVote(user.id, movieId);
       userVotes.delete(movieId);
       
-      // Log the unvote activity
-      await AdminService.logParticipation(user.id, 'vote_removed', movieId);
       movie.vote_count = (movie.vote_count || 1) - 1;
       if (btn) btn.classList.remove('active');
       if (countEl) countEl.textContent = `${movie.vote_count} votes`;
@@ -1666,8 +1659,6 @@ window.toggleVote = async (movieId) => {
       await MovieService.addVote(user.id, movieId);
       userVotes.add(movieId);
       
-      // Log the vote activity
-      await AdminService.logParticipation(user.id, 'vote', movieId);
       movie.vote_count = (movie.vote_count || 0) + 1;
       if (btn) btn.classList.add('active');
       if (countEl) countEl.textContent = `${movie.vote_count} votes`;
@@ -1726,12 +1717,6 @@ window.rateMovie = async (movieId, rating) => {
     showNotification('Error saving rating', 'error');
   } else {
     showNotification('Rating saved!', 'success');
-    // Log the review activity
-    try {
-      await AdminService.logParticipation(user.id, 'review', movieId);
-    } catch (logErr) {
-      console.error('Failed to log review activity:', logErr);
-    }
     await refreshData();
   }
 };
@@ -2241,17 +2226,14 @@ window.toggleAttendance = async (sessionId, userId, btn) => {
   try {
     const res = await SessionService.toggleAttendance(sessionId, userId);
     
-    // Log achievement points only when checking IN
     if (res.action === 'added') {
-      try {
-        await AdminService.logParticipation(userId, 'attendance', currentSession.movie_id);
-      } catch (logErr) {
-        console.error('Failed to log attendance points:', logErr);
-      }
+      showNotification('Attendance confirmed!', 'success');
+    } else {
+      showNotification('Attendance removed', 'info');
     }
     
-    showNotification(res.action === 'added' ? 'Checked in!' : 'Check-in removed');
     await fetchSessions();
+    renderSessions();
     window.viewSessionDetails(sessionId);
   } catch (err) {
     console.error('Error toggling attendance:', err);
