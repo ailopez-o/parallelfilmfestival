@@ -72,6 +72,10 @@ export const AdminService = {
       if (setting.key === 'max_proposals') settings.maxProposals = parseInt(setting.value);
       if (setting.key === 'max_votes') settings.maxVotes = parseInt(setting.value);
     });
+    if (!Number.isInteger(settings.maxProposals) || !Number.isInteger(settings.maxVotes)) {
+      throw new Error('Missing required app settings in DB: max_proposals and/or max_votes');
+    }
+
     return settings;
   },
   

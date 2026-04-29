@@ -1,6 +1,6 @@
 import { supabase } from './src/config/supabase.js';
 import { normalize, formatScore, timeAgo, showNotification, getUserDisplayName } from './src/utils/index.js';
-import { FALLBACK_IMAGE, TBD_POSTER, DEFAULT_MAX_PROPOSALS, DEFAULT_MAX_VOTES } from './src/config/constants.js';
+import { FALLBACK_IMAGE, TBD_POSTER } from './src/config/constants.js';
 import { 
   createMovieCardHTML, 
   createSessionCardHTML, 
@@ -61,12 +61,10 @@ function setAuthContext(nextUser, nextUserProfile, nextIsAdmin) {
 async function fetchAppSettings() {
   try {
     const settings = await AdminService.fetchAppSettings();
-    setAppLimits(
-      settings.maxProposals || store.getState().maxProposals,
-      settings.maxVotes || store.getState().maxVotes
-    );
+    setAppLimits(settings.maxProposals, settings.maxVotes);
   } catch (err) {
     console.error('Error fetching settings:', err);
+    showNotification('Error: faltan ajustes de límites en la BBDD (app_settings).', 'error');
   }
 }
 
@@ -179,7 +177,6 @@ const editAvatar = document.getElementById('editAvatar');
 
 // Fallback images (imported from constants)
 // Limits configuration
-setAppLimits(DEFAULT_MAX_PROPOSALS, DEFAULT_MAX_VOTES);
 
 // Initialization
 async function init() {
@@ -832,8 +829,10 @@ async function loadUserActivity(targetUserId = null) {
   const { data: proposals } = await supabase.from('movies').select('*').eq('proposed_by', activeUid).eq('is_dropped', false);
   const { data: votes } = await supabase.from('votes').select('movie_id, movies(*)').eq('user_id', activeUid);
 
-  if (countProposals) countProposals.textContent = `${proposals?.length || 0} / ${MAX_PROPOSALS}`;
-  if (countVotes) countVotes.textContent = `${votes?.length || 0} / ${MAX_VOTES}`;
+  const proposalsLimitLabel = Number.isInteger(MAX_PROPOSALS) ? MAX_PROPOSALS : '—';
+  const votesLimitLabel = Number.isInteger(MAX_VOTES) ? MAX_VOTES : '—';
+  if (countProposals) countProposals.textContent = `${proposals?.length || 0} / ${proposalsLimitLabel}`;
+  if (countVotes) countVotes.textContent = `${votes?.length || 0} / ${votesLimitLabel}`;
 
   renderActivityGrid(proposals || []);
   
