@@ -237,7 +237,12 @@ async function fetchGenreMap() {
 
 async function fetchProvidersMap() {
   try {
-    const data = await TMDBService.invokeTMDBCall('/watch/providers/movie', { watch_region: 'ES' });
+    const envRegion = import.meta.env.VITE_DEFAULT_WATCH_REGION?.toUpperCase();
+    const localeRegion = navigator.language?.split('-')?.[1]?.toUpperCase();
+    const watchRegion = /^[A-Z]{2}$/.test(envRegion || '')
+      ? envRegion
+      : (/^[A-Z]{2}$/.test(localeRegion || '') ? localeRegion : 'ES');
+    const data = await TMDBService.invokeTMDBCall('/watch/providers/movie', { watch_region: watchRegion });
     const select = document.getElementById('exploreProvider');
     if (data.results && select) {
       select.innerHTML = '<option value="">Any Platform</option>';
