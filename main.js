@@ -221,14 +221,16 @@ async function fetchGenreMap() {
   try {
     const data = await TMDBService.invokeTMDBCall('/genre/movie/list');
     if (data.genres) {
+      const nextGenreMap = {};
       exploreGenreSelect.innerHTML = '<option value="">All Genres</option>';
       data.genres.forEach(g => {
-        genreMap[g.id] = g.name;
+        nextGenreMap[g.id] = g.name;
         const option = document.createElement('option');
         option.value = g.id;
         option.textContent = g.name;
         exploreGenreSelect.appendChild(option);
       });
+      genreMap = nextGenreMap;
     }
   } catch (e) {
     console.error('Error fetching genre map:', e);
@@ -245,16 +247,18 @@ async function fetchProvidersMap() {
     const data = await TMDBService.invokeTMDBCall('/watch/providers/movie', { watch_region: watchRegion });
     const select = document.getElementById('exploreProvider');
     if (data.results && select) {
+      const nextProviderMap = {};
       select.innerHTML = '<option value="">Any Platform</option>';
       // Sort and take top providers or specific ones
       const topProviders = data.results.slice(0, 50); 
       topProviders.forEach(p => {
-        providerMap[p.provider_id] = p;
+        nextProviderMap[p.provider_id] = p;
         const option = document.createElement('option');
         option.value = p.provider_id;
         option.textContent = p.provider_name;
         select.appendChild(option);
       });
+      providerMap = nextProviderMap;
     }
   } catch (e) {
     console.error('Error fetching providers map:', e);
@@ -318,26 +322,29 @@ async function refreshData() {
   allRatings = await MovieService.getGlobalRatings();
   const allProfiles = await AdminService.fetchAllProfiles();
 
-  allMovies.forEach(m => {
-    const userV = individualRatings.find(r => r.movie_id === m.id);
-    m.user_rating = userV ? userV.rating : 0;
-    m.user_comment = userV ? userV.comment : '';
-    
-    const mRatings = allRatings.filter(r => r.movie_id === m.id).map(r => ({
+  allMovies = allMovies.map((movie) => {
+    const userV = individualRatings.find(r => r.movie_id === movie.id);
+    const mRatings = allRatings.filter(r => r.movie_id === movie.id).map(r => ({
       ...r,
       profiles: allProfiles.find(p => p.id === r.user_id)
     }));
-    m.reviews = mRatings;
-    m.average_community_rating = mRatings.length > 0 
-      ? mRatings.reduce((sum, r) => sum + r.rating, 0) / mRatings.length 
-      : 0;
 
-    // Harmonize score fields (favoring vote_average if present, then average_rating)
-    if (m.vote_average === undefined || m.vote_average === null || m.vote_average === 0) {
-      if (typeof m.average_rating === 'number' && m.average_rating !== 0) {
-        m.vote_average = m.average_rating;
-      }
-    }
+    const voteAverage = (movie.vote_average === undefined || movie.vote_average === null || movie.vote_average === 0)
+      && typeof movie.average_rating === 'number'
+      && movie.average_rating !== 0
+      ? movie.average_rating
+      : movie.vote_average;
+
+    return {
+      ...movie,
+      user_rating: userV ? userV.rating : 0,
+      user_comment: userV ? userV.comment : '',
+      reviews: mRatings,
+      average_community_rating: mRatings.length > 0
+        ? mRatings.reduce((sum, r) => sum + r.rating, 0) / mRatings.length
+        : 0,
+      vote_average: voteAverage
+    };
   });
 
   // Background enrichment for movies with missing data
