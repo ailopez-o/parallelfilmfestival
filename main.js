@@ -1,6 +1,6 @@
 import { supabase } from './src/config/supabase.js';
 import { normalize, formatScore, timeAgo, showNotification, getUserDisplayName } from './src/utils/index.js';
-import { FALLBACK_IMAGE, TBD_POSTER, DEFAULT_MAX_PROPOSALS, DEFAULT_MAX_VOTES } from './src/config/constants.js';
+import { FALLBACK_IMAGE, TBD_POSTER } from './src/config/constants.js';
 import { 
   createMovieCardHTML, 
   createSessionCardHTML, 
@@ -23,10 +23,21 @@ import { ACHIEVEMENT_LIST } from './src/config/constants.js';
 
 import { store } from './src/state/store.js';
 // This routes all variable reads/writes transparently into the centralized store.
-['allMovies', 'proposedMovies', 'seenMovies', 'rankedUsers', 'sessions', 'currentSession', 'currentView', 'genreMap', 'providerMap', 'user', 'userProfile', 'isAdmin', 'userAttendance'].forEach(key => {
+['allMovies', 'proposedMovies', 'seenMovies', 'rankedUsers', 'sessions', 'currentSession', 'currentView', 'genreMap', 'providerMap', 'userAttendance'].forEach(key => {
   Object.defineProperty(window, key, {
     get: () => store.getState()[key],
     set: (v) => store.setState({ [key]: v })
+  });
+});
+
+['user', 'userProfile', 'isAdmin', 'MAX_PROPOSALS', 'MAX_VOTES'].forEach((key) => {
+  Object.defineProperty(window, key, {
+    get: () => {
+      const state = store.getState();
+      if (key === 'MAX_PROPOSALS') return state.maxProposals;
+      if (key === 'MAX_VOTES') return state.maxVotes;
+      return state[key];
+    }
   });
 });
 
@@ -35,23 +46,25 @@ Object.defineProperty(window, 'userVotes', {
   set: (v) => store.setUserVotes(v)
 });
 
-Object.defineProperty(window, 'MAX_PROPOSALS', {
-  get: () => store.getState().maxProposals,
-  set: (v) => store.setState({ maxProposals: v })
-});
+function setAppLimits(maxProposals, maxVotes) {
+  store.setState({ maxProposals, maxVotes });
+}
 
-Object.defineProperty(window, 'MAX_VOTES', {
-  get: () => store.getState().maxVotes,
-  set: (v) => store.setState({ maxVotes: v })
-});
+function setAuthContext(nextUser, nextUserProfile, nextIsAdmin) {
+  store.setState({
+    user: nextUser,
+    userProfile: nextUserProfile,
+    isAdmin: nextIsAdmin
+  });
+}
 
 async function fetchAppSettings() {
   try {
     const settings = await AdminService.fetchAppSettings();
-    if (settings.maxProposals) MAX_PROPOSALS = settings.maxProposals;
-    if (settings.maxVotes) MAX_VOTES = settings.maxVotes;
+    setAppLimits(settings.maxProposals, settings.maxVotes);
   } catch (err) {
     console.error('Error fetching settings:', err);
+    showNotification('Error: faltan ajustes de límites en la BBDD (app_settings).', 'error');
   }
 }
 
@@ -76,8 +89,7 @@ window.saveAppSettings = async () => {
     await AdminService.updateAppSettings(newValProp, newValVote);
 
     // Update local config
-    MAX_PROPOSALS = parseInt(newValProp);
-    MAX_VOTES = parseInt(newValVote);
+    setAppLimits(parseInt(newValProp), parseInt(newValVote));
 
     showNotification('System settings updated successfully!', 'success');
     
@@ -165,8 +177,6 @@ const editAvatar = document.getElementById('editAvatar');
 
 // Fallback images (imported from constants)
 // Limits configuration
-let MAX_PROPOSALS = DEFAULT_MAX_PROPOSALS;
-let MAX_VOTES = DEFAULT_MAX_VOTES;
 
 // Initialization
 async function init() {
@@ -248,63 +258,26 @@ async function fetchProvidersMap() {
 
 async function checkUser(session) {
   if (session === undefined) {
-    const { data } = await supabase.auth.getSession();
-    session = data.session;
+    session = await AuthService.getCurrentSession();
   }
   
-  user = session?.user || null;
+  const currentUser = session?.user || null;
   
-  if (user) {
-    // 🛡️ Dynamic RBAC: Fetch role from profiles table
-    let { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
+  if (currentUser) {
+    const displayName = getUserDisplayName(null, currentUser);
+    const profile = await AuthService.getOrCreateUserProfile(currentUser, displayName);
 
-    // If no profile exists (e.g., new Google login), create one automatically
-    if (!profile) {
-      console.log('[Auth] Profile missing, creating default profile...');
-      const displayName = getUserDisplayName(null, user);
-      
-      const { data: newProfile, error: insertError } = await supabase
-        .from('profiles')
-        .insert([{
-          id: user.id,
-          full_name: displayName,
-          email: user.email,
-          role: 'user'
-        }])
-        .select()
-        .single();
-      
-      if (!insertError) profile = newProfile;
-    } else if (profile.full_name === null) {
-      // Self-healing: if profile exists but has no name, update it
-      const displayName = getUserDisplayName(null, user);
-      console.log(`[Auth] Profile exists but full_name is null. Healing to: ${displayName}`);
-      const { data: updatedProfile, error: updateError } = await supabase
-        .from('profiles')
-        .update({ full_name: displayName, email: user.email })
-        .eq('id', user.id)
-        .select()
-        .single();
-      
-      if (!updateError) profile = updatedProfile;
-    }
+    const currentIsAdmin = profile?.role === 'admin';
+    setAuthContext(currentUser, profile, currentIsAdmin);
+    console.log(`[ACL] User: ${currentUser.email} | Role: ${profile?.role || 'user'} | Admin: ${currentIsAdmin}`);
 
-    userProfile = profile;
-    isAdmin = userProfile?.role === 'admin';
-    console.log(`[ACL] User: ${user.email} | Role: ${userProfile?.role || 'user'} | Admin: ${isAdmin}`);
-
-    const votes = await MovieService.fetchVotesForUser(user.id);
+    const votes = await MovieService.fetchVotesForUser(currentUser.id);
     userVotes = new Set(votes?.map(v => v.movie_id) || []);
 
-    const attendance = await SessionService.fetchUserAttendance(user.id);
+    const attendance = await SessionService.fetchUserAttendance(currentUser.id);
     userAttendance = new Set(attendance || []);
   } else {
-    userProfile = null;
-    isAdmin = false;
+    setAuthContext(null, null, false);
     userVotes = new Set();
     userAttendance = new Set();
   }
@@ -820,8 +793,10 @@ async function loadUserActivity(targetUserId = null) {
   const { data: proposals } = await supabase.from('movies').select('*').eq('proposed_by', activeUid).eq('is_dropped', false);
   const { data: votes } = await supabase.from('votes').select('movie_id, movies(*)').eq('user_id', activeUid);
 
-  if (countProposals) countProposals.textContent = `${proposals?.length || 0} / ${MAX_PROPOSALS}`;
-  if (countVotes) countVotes.textContent = `${votes?.length || 0} / ${MAX_VOTES}`;
+  const proposalsLimitLabel = Number.isInteger(MAX_PROPOSALS) ? MAX_PROPOSALS : '—';
+  const votesLimitLabel = Number.isInteger(MAX_VOTES) ? MAX_VOTES : '—';
+  if (countProposals) countProposals.textContent = `${proposals?.length || 0} / ${proposalsLimitLabel}`;
+  if (countVotes) countVotes.textContent = `${votes?.length || 0} / ${votesLimitLabel}`;
 
   renderActivityGrid(proposals || []);
   
