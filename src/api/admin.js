@@ -109,6 +109,7 @@ export const AdminService = {
   async cleanupInactiveMovies() {
     const fifteenDaysAgo = new Date();
     fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
+    const thresholdIso = fifteenDaysAgo.toISOString();
     
     const { data: moviesToClean, error: fetchErr } = await supabase
       .from('movies')
@@ -118,21 +119,23 @@ export const AdminService = {
       
     if (fetchErr || !moviesToClean) throw fetchErr || new Error('No movies found');
 
-    const { data: allVotes, error: votesErr } = await supabase
+    if (moviesToClean.length === 0) {
+      return { cleanedCount: 0 };
+    }
+
+    const candidateIds = moviesToClean.map(m => m.id);
+    const { data: recentVotes, error: votesErr } = await supabase
       .from('votes')
-      .select('movie_id, created_at');
+      .select('movie_id')
+      .in('movie_id', candidateIds)
+      .gte('created_at', thresholdIso);
       
     if (votesErr) throw votesErr;
 
+    const activeMovieIds = new Set((recentVotes || []).map(v => v.movie_id));
     const toDrop = moviesToClean.filter(m => {
       const proposalDate = new Date(m.created_at);
-      const movieVotes = (allVotes || []).filter(v => v.movie_id === m.id);
-      if (movieVotes.length === 0) {
-        return proposalDate < fifteenDaysAgo;
-      } else {
-        const lastVoteDate = new Date(Math.max(...movieVotes.map(v => new Date(v.created_at))));
-        return lastVoteDate < fifteenDaysAgo;
-      }
+      return proposalDate < fifteenDaysAgo && !activeMovieIds.has(m.id);
     });
 
     if (toDrop.length === 0) {
