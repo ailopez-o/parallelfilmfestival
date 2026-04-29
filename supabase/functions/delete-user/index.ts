@@ -6,6 +6,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function throwIfMutationFailed(error: { message: string } | null, context: string) {
+  if (error) {
+    throw new Error(`${context}: ${error.message}`)
+  }
+}
+
 serve(async (req) => {
   // Handle CORS options request
   if (req.method === 'OPTIONS') {
@@ -59,19 +65,31 @@ serve(async (req) => {
       throw new Error("Forbidden: Only administrators can perform this action")
     }
 
-    // 4. Perform the Cascade Deletion manually as Admin
-    console.log(`[Admin Delete] Initiating deletion for user: ${targetUserId}`)
+	    // 4. Perform the Cascade Deletion manually as Admin
+	    console.log(`[Admin Delete] Initiating deletion for user: ${targetUserId}`)
 
-    // Delete orphaned data first to maintain referential integrity if needed
-    await supabaseAdmin.from('votes').delete().eq('user_id', targetUserId)
-    await supabaseAdmin.from('user_ratings').delete().eq('user_id', targetUserId)
-    await supabaseAdmin.from('participation_log').delete().eq('user_id', targetUserId)
-    await supabaseAdmin.from('session_signups').delete().eq('user_id', targetUserId)
-    await supabaseAdmin.from('session_attendance').delete().eq('user_id', targetUserId)
-    await supabaseAdmin.from('movies').delete().eq('proposed_by', targetUserId)
-    
-    // Delete from public profiles
-    await supabaseAdmin.from('profiles').delete().eq('id', targetUserId)
+	    // Delete orphaned data first to maintain referential integrity if needed
+	    const voteDelete = await supabaseAdmin.from('votes').delete().eq('user_id', targetUserId)
+	    throwIfMutationFailed(voteDelete.error, 'Failed to delete votes')
+
+	    const ratingsDelete = await supabaseAdmin.from('user_ratings').delete().eq('user_id', targetUserId)
+	    throwIfMutationFailed(ratingsDelete.error, 'Failed to delete user ratings')
+
+	    const logDelete = await supabaseAdmin.from('participation_log').delete().eq('user_id', targetUserId)
+	    throwIfMutationFailed(logDelete.error, 'Failed to delete participation logs')
+
+	    const signupsDelete = await supabaseAdmin.from('session_signups').delete().eq('user_id', targetUserId)
+	    throwIfMutationFailed(signupsDelete.error, 'Failed to delete session signups')
+
+	    const attendanceDelete = await supabaseAdmin.from('session_attendance').delete().eq('user_id', targetUserId)
+	    throwIfMutationFailed(attendanceDelete.error, 'Failed to delete session attendance')
+
+	    const moviesDelete = await supabaseAdmin.from('movies').delete().eq('proposed_by', targetUserId)
+	    throwIfMutationFailed(moviesDelete.error, 'Failed to delete proposed movies')
+	    
+	    // Delete from public profiles
+	    const profileDelete = await supabaseAdmin.from('profiles').delete().eq('id', targetUserId)
+	    throwIfMutationFailed(profileDelete.error, 'Failed to delete profile')
 
     // 5. Delete the Auth User completely (if it still exists)
     const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(targetUserId)

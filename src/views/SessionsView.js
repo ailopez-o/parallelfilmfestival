@@ -1,6 +1,6 @@
 import { createSessionCardHTML } from '../components/index.js';
 import { FALLBACK_IMAGE, TBD_POSTER } from '../config/constants.js';
-import { getUserDisplayName } from '../utils/index.js';
+import { escapeHtml, getUserDisplayName, sanitizeUrl } from '../utils/index.js';
 
 /**
  * Sessions View Module.
@@ -48,8 +48,10 @@ export const SessionsView = {
     const isAttended = user && attendance.some(a => a.user_id === user.id);
     const signupCount = signups.length || 0;
 
-    const poster = session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER;
-    const title = session.movie_id ? session.movies?.title : 'Film To Be Decided';
+    const poster = sanitizeUrl(session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER, TBD_POSTER);
+    const title = escapeHtml(session.movie_id ? session.movies?.title : 'Film To Be Decided');
+    const safeLocation = escapeHtml(session.location || 'Paral·lel Cinema');
+    const safeDescription = escapeHtml(session.description || 'No description provided for this session.');
 
     return `
       <div class="session-detail-layout">
@@ -63,7 +65,7 @@ export const SessionsView = {
             </div>
             <div class="meta-item" style="margin-bottom:0.75rem; display:flex; align-items:center; gap:0.5rem; color:var(--text-secondary);">
               <i data-lucide="map-pin" style="width:16px; color:var(--accent);"></i>
-              <span>${session.location || 'Paral·lel Cinema'}</span>
+              <span>${safeLocation}</span>
             </div>
             <div class="meta-item" style="display:flex; align-items:center; gap:0.5rem; color:var(--text-secondary);">
               <i data-lucide="clock" style="width:16px; color:var(--accent);"></i>
@@ -100,7 +102,7 @@ export const SessionsView = {
               ` : ''}
             </div>
           </div>
-          <p class="session-description" style="font-size: 1.1rem; color:var(--text-secondary); line-height:1.6; margin-bottom: 2rem;">${session.description || 'No description provided for this session.'}</p>
+          <p class="session-description" style="font-size: 1.1rem; color:var(--text-secondary); line-height:1.6; margin-bottom: 2rem;">${safeDescription}</p>
 
           <div class="session-tabs">
             <button class="session-tab-btn active" data-tab="comments" onclick="window.switchSessionTab('comments')">Comments (${comments.length || 0})</button>
@@ -127,9 +129,11 @@ export const SessionsView = {
     const isSignedUp = user && signups.some(s => s.user_id === user.id);
     const signupCount = signups.length || 0;
 
-    const poster = session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER;
-    const title = session.movie_id ? session.movies?.title : 'Film To Be Decided';
+    const poster = sanitizeUrl(session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER, TBD_POSTER);
+    const title = escapeHtml(session.movie_id ? session.movies?.title : 'Film To Be Decided');
     const releaseYear = session.movies?.release_date ? new Date(session.movies.release_date).getFullYear() : '';
+    const safeLocation = escapeHtml(session.location || 'Paral·lel Cinema');
+    const safeDescription = escapeHtml(session.description || 'Prepare for an unforgettable night of cinema at our festival.');
     
     return `
       <div class="cinematic-view">
@@ -154,10 +158,10 @@ export const SessionsView = {
                 </div>
                 <div class="meta-pill">
                    <i data-lucide="map-pin"></i>
-                   <span>${session.location || 'Paral·lel Cinema'}</span>
+                   <span>${safeLocation}</span>
                 </div>
               </div>
-              <p class="cinematic-description">${session.description || 'Prepare for an unforgettable night of cinema at our festival.'}</p>
+              <p class="cinematic-description">${safeDescription}</p>
               
               <div class="hero-actions">
                 <button class="cta-btn ${isSignedUp ? 'success' : ''}" onclick="window.signupForSession('${session.id}')">
@@ -220,6 +224,7 @@ export const SessionsView = {
         <div class="comments-list">
           ${comments.length ? comments.map(c => {
             const userName = getUserDisplayName(c.profiles);
+            const safeUserName = escapeHtml(userName);
             const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=random&size=64`;
             const date = new Date(c.created_at).toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' });
             
@@ -228,10 +233,10 @@ export const SessionsView = {
                 <img src="${avatar}" class="comment-avatar" />
                 <div class="comment-body">
                   <div class="comment-meta">
-                    <span class="comment-author">${userName}</span>
+                    <span class="comment-author">${safeUserName}</span>
                     <span class="comment-time">${date}</span>
                   </div>
-                  <div class="comment-content">${c.content || ''}</div>
+                  <div class="comment-content">${escapeHtml(c.content || '')}</div>
                 </div>
               </div>
             `;
@@ -254,21 +259,25 @@ export const SessionsView = {
             <input type="file" accept="image/*" onchange="window.addSessionPhoto(this)">
           </div>
         ` : ''}
-        <div class="gallery-grid">
-          ${photos.length ? photos.map(p => `
-            <div class="gallery-item">
-              <img src="${p.photo_url}" alt="Session photo" loading="lazy" onclick="window.openPhotoLightbox('${p.photo_url}')">
-              <div class="photo-overlay" onclick="window.openPhotoLightbox('${p.photo_url}')">
-                <i data-lucide="maximize-2"></i>
-              </div>
-              ${isAdmin ? `
-                <button class="delete-photo-btn admin-force-show" onclick="window.deleteSessionPhoto('${p.id}', '${p.photo_url}')" title="Delete Photo">
-                  <i data-lucide="trash-2"></i>
-                </button>
-              ` : ''}
-            </div>
-          `).join('') : '<p class="empty-state">No photos shared yet.</p>'}
-        </div>
+	        <div class="gallery-grid">
+	          ${photos.length ? photos.map(p => {
+              const photoUrl = sanitizeUrl(p.photo_url, '');
+              const photoArg = escapeHtml(JSON.stringify(photoUrl));
+              return `
+	            <div class="gallery-item">
+	              <img src="${photoUrl}" alt="Session photo" loading="lazy" onclick="window.openPhotoLightbox(${photoArg})">
+	              <div class="photo-overlay" onclick="window.openPhotoLightbox(${photoArg})">
+	                <i data-lucide="maximize-2"></i>
+	              </div>
+	              ${isAdmin ? `
+	                <button class="delete-photo-btn admin-force-show" onclick="window.deleteSessionPhoto('${p.id}', ${photoArg})" title="Delete Photo">
+	                  <i data-lucide="trash-2"></i>
+	                </button>
+	              ` : ''}
+	            </div>
+	          `;
+            }).join('') : '<p class="empty-state">No photos shared yet.</p>'}
+	        </div>
       </div>
     `;
   },
@@ -279,14 +288,15 @@ export const SessionsView = {
   renderParticipantsHTML(data, isUpcoming) {
     return `
       <div class="participants-list" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem;">
-        ${data?.length ? data.map(p => {
-          const userName = getUserDisplayName(p.profiles);
-          return `
-          <div class="participant-card" style="background:rgba(255,255,255,0.05); padding:1rem; border-radius:1rem; text-align:center;">
-            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=random" style="width:50px; height:50px; border-radius:50%; margin-bottom:0.5rem;" />
-            <div style="font-weight:600; font-size:0.8rem;">${userName}</div>
-            ${isUpcoming ? '<div style="font-size:0.6rem; color:var(--text-secondary); margin-top:0.2rem;">Interested</div>' : ''}
-          </div>
+	        ${data?.length ? data.map(p => {
+	          const userName = getUserDisplayName(p.profiles);
+            const safeUserName = escapeHtml(userName);
+	          return `
+	          <div class="participant-card" style="background:rgba(255,255,255,0.05); padding:1rem; border-radius:1rem; text-align:center;">
+	            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=random" style="width:50px; height:50px; border-radius:50%; margin-bottom:0.5rem;" />
+	            <div style="font-weight:600; font-size:0.8rem;">${safeUserName}</div>
+	            ${isUpcoming ? '<div style="font-size:0.6rem; color:var(--text-secondary); margin-top:0.2rem;">Interested</div>' : ''}
+	          </div>
         `}).join('') : '<div class="empty-state">No participants yet.</div>'}
       </div>
     `;

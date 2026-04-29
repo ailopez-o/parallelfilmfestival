@@ -4,7 +4,7 @@ import {
   createAchievementCardHTML, 
   createTimelineItemHTML 
 } from '../components/index.js';
-import { timeAgo } from '../utils/index.js';
+import { escapeHtml, timeAgo } from '../utils/index.js';
 
 /**
  * Home View Module.
@@ -142,17 +142,17 @@ export const HomeView = {
       return;
     }
 
-    container.innerHTML = events.map(e => `
-      <tr class="timeline-row event-${e.type}">
+	    container.innerHTML = events.map(e => `
+	      <tr class="timeline-row event-${e.type}">
         <td>
           <div class="event-user-cell">
             <div class="event-icon-circle">
               <i data-lucide="${e.icon || 'star'}"></i>
             </div>
-            <div class="event-content">
-              <div class="event-message">
-                <span class="event-name">${e.name || 'User'}</span> ${e.text}
-              </div>
+	            <div class="event-content">
+	              <div class="event-message">
+	                <span class="event-name">${escapeHtml(e.name || 'User')}</span> ${e.text}
+	              </div>
               <div class="event-date">${timeAgo(e.date)}</div>
             </div>
           </div>
@@ -182,13 +182,13 @@ export const HomeView = {
     if (!container) return;
     if (!results.length) {
       container.innerHTML = '<div class="search-result-item">No movies found</div>';
-    } else {
-      container.innerHTML = results.map(movie => `
-        <div class="search-result-item" onclick="window.proposeMovie(${JSON.stringify(movie).replace(/"/g, '&quot;')})">
-          <img class="result-poster" src="${movie.poster_path ? 'https://image.tmdb.org/t/p/w92' + movie.poster_path : fallbackImage}">
-          <div class="result-info">
-            <div class="result-title">${movie.title}</div>
-            <div class="result-meta">
+	    } else {
+	      container.innerHTML = results.map(movie => `
+	        <div class="search-result-item" onclick="window.proposeMovie(${escapeHtml(JSON.stringify(movie))})">
+	          <img class="result-poster" src="${movie.poster_path ? 'https://image.tmdb.org/t/p/w92' + movie.poster_path : fallbackImage}">
+	          <div class="result-info">
+	            <div class="result-title">${escapeHtml(movie.title)}</div>
+	            <div class="result-meta">
               <span>${movie.release_date ? movie.release_date.split('-')[0] : 'N/A'}</span>
               <span style="color: rgba(255,255,255,0.2);">•</span>
               <div class="rating-badge" style="margin:0; padding:0; background:transparent; border:none; font-size: 0.75rem;">
@@ -196,10 +196,10 @@ export const HomeView = {
                 <span style="color:#fbbf24;">${formatScore(movie.vote_average)}</span>
               </div>
             </div>
-            <div style="font-size: 0.7rem; color: var(--text-secondary); opacity: 0.7;">${movie.director}</div>
-          </div>
-        </div>
-      `).join('');
+	            <div style="font-size: 0.7rem; color: var(--text-secondary); opacity: 0.7;">${escapeHtml(movie.director || 'Unknown')}</div>
+	          </div>
+	        </div>
+	      `).join('');
     }
     container.classList.add('active');
   }

@@ -1,5 +1,5 @@
 import { supabase } from './src/config/supabase.js';
-import { normalize, formatScore, timeAgo, showNotification, getUserDisplayName } from './src/utils/index.js';
+import { normalize, formatScore, timeAgo, showNotification, getUserDisplayName, escapeHtml } from './src/utils/index.js';
 import { FALLBACK_IMAGE, TBD_POSTER } from './src/config/constants.js';
 import { 
   createMovieCardHTML, 
@@ -291,9 +291,6 @@ async function checkUser(session) {
     userAttendance = new Set();
   }
   updateAuthUI();
-  if (isAdmin) {
-    window.cleanupInactiveMovies(true);
-  }
 
   // Handle Deep-Linking for sessions
   const urlParams = new URLSearchParams(window.location.search);
@@ -526,6 +523,7 @@ function renderCemetery(droppedMovies) {
 function updateAuthUI() {
   if (user) {
     const name = getUserDisplayName(userProfile, user);
+    const safeName = escapeHtml(name);
     const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
     const myScore = userProfile?.score || 0;
     
@@ -545,12 +543,12 @@ function updateAuthUI() {
             <i data-lucide="calendar" style="width:12px; height:12px; margin-right:4px;"></i>
             Sessions
           </div>
-          <div class="user-profile-info" onclick="window.navigateTo('profile')">
-            <img src="${avatar}" class="user-avatar" />
-            <div style="display:flex; flex-direction:column; line-height: 1.2;">
-              <span style="font-weight:700;">${name}</span>
-              <span style="font-size: 0.7rem; color:var(--success); font-weight:800;">ADMINISTRATOR</span>
-            </div>
+	          <div class="user-profile-info" onclick="window.navigateTo('profile')">
+	            <img src="${avatar}" class="user-avatar" />
+	            <div style="display:flex; flex-direction:column; line-height: 1.2;">
+	              <span style="font-weight:700;">${safeName}</span>
+	              <span style="font-size: 0.7rem; color:var(--success); font-weight:800;">ADMINISTRATOR</span>
+	            </div>
           </div>
         </div>
       `;
@@ -580,13 +578,13 @@ function updateAuthUI() {
           <i data-lucide="award" style="width:14px; height:14px; margin-right:4px;"></i>
           <span class="header-label">${myScore}</span>
         </div>
-        <div class="user-profile-info" onclick="window.navigateTo('profile')">
-          <img src="${avatar}" class="user-avatar" />
-          <div class="user-name-wrapper hide-mobile" style="display:flex; flex-direction:column; line-height: 1.2;">
-            <span style="font-weight:700;">${name}</span>
-            ${userProfile?.rank ? `<span style="font-size: 0.7rem; color:var(--warning); font-weight:800;">#${userProfile.rank}</span>` : ""}
-          </div>
-        </div>
+	        <div class="user-profile-info" onclick="window.navigateTo('profile')">
+	          <img src="${avatar}" class="user-avatar" />
+	          <div class="user-name-wrapper hide-mobile" style="display:flex; flex-direction:column; line-height: 1.2;">
+	            <span style="font-weight:700;">${safeName}</span>
+	            ${userProfile?.rank ? `<span style="font-size: 0.7rem; color:var(--warning); font-weight:800;">#${userProfile.rank}</span>` : ""}
+	          </div>
+	        </div>
       </div>
     `;
 
@@ -595,10 +593,10 @@ function updateAuthUI() {
       searchInput.disabled = isLimitReached;
       searchInput.style.opacity = isLimitReached ? '0.5' : '1';
       searchInput.style.cursor = isLimitReached ? 'not-allowed' : 'text';
-      searchInput.placeholder = proposalsLeft > 0 
-        ? `Search for movies to propose...`
-        : "Max proposals reached (3/3)";
-    }
+	      searchInput.placeholder = proposalsLeft > 0 
+	        ? `Search for movies to propose...`
+	        : `Max proposals reached (${MAX_PROPOSALS}/${MAX_PROPOSALS})`;
+	    }
 
     const proposalsLabel = document.getElementById('proposalsCountLabel');
     if (proposalsLabel) {
@@ -1037,11 +1035,11 @@ window.toggleCheckinDropdown = (userId) => {
     if (sessions.length === 0) {
       dropdown.innerHTML = '<div style="padding:0.5rem; font-size:0.7rem; color:var(--text-secondary);">No sessions available. Mark a movie as "Seen" first.</div>';
     } else {
-      dropdown.innerHTML = sessions.map(m => `
-        <button class="checkin-option" onclick="window.markAttendance('${userId}', '${m.id}')">
-          <i data-lucide="play"></i> ${m.title}
-        </button>
-      `).join('');
+	      dropdown.innerHTML = sessions.map(m => `
+	        <button class="checkin-option" onclick="window.markAttendance('${userId}', '${m.id}')">
+	          <i data-lucide="play"></i> ${escapeHtml(m.title)}
+	        </button>
+	      `).join('');
     }
     
     dropdown.classList.add('active');
@@ -2071,12 +2069,12 @@ window.showCreateSessionModal = () => {
   document.getElementById('sessionDescription').value = "";
 
   // Fill movie select with proposed movies
-  sessionMovieSelect.innerHTML = `
-    <option value="">-- To Be Decided --</option>
-    ${proposedMovies.map(m => `
-      <option value="${m.id}">${m.title}</option>
-    `).join('')}
-  `;
+	  sessionMovieSelect.innerHTML = `
+	    <option value="">-- To Be Decided --</option>
+	    ${proposedMovies.map(m => `
+	      <option value="${m.id}">${escapeHtml(m.title)}</option>
+	    `).join('')}
+	  `;
 };
 
 window.closeCreateSessionModal = () => {
@@ -2119,8 +2117,8 @@ window.handleCreateSession = async () => {
 async function updateAdminSessions() {
   if (!isAdmin || !adminSessionsList) return;
 
-  adminSessionsList.innerHTML = sessions.map(session => {
-    const title = session.movie_id ? session.movies?.title : 'TBD';
+	  adminSessionsList.innerHTML = sessions.map(session => {
+	    const title = escapeHtml(session.movie_id ? session.movies?.title : 'TBD');
     
     return `
       <div class="admin-session-item">
@@ -2172,18 +2170,18 @@ window.manageAttendance = async (sessionId) => {
   
   const attendedSet = new Set(attendance?.map(a => a.user_id) || []);
 
-  const html = `
-    <div style="padding: 2rem;">
-      <h3>Attendance: ${session.movies?.title}</h3>
-      <p style="margin-bottom: 2rem;">Confirm who actually attended the session.</p>
+	  const html = `
+	    <div style="padding: 2rem;">
+	      <h3>Attendance: ${escapeHtml(session.movies?.title || 'Film To Be Decided')}</h3>
+	      <p style="margin-bottom: 2rem;">Confirm who actually attended the session.</p>
       
       <div style="display:grid; gap:1rem;">
-        ${signups?.length ? signups.map(s => `
-          <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:1rem; border-radius:1rem;">
-            <span>${s.profiles.full_name}</span>
-            <button class="btn-signup-hero ${attendedSet.has(s.user_id) ? 'success' : 'secondary'}" 
-                    style="padding:0.5rem 1rem; font-size:0.8rem;"
-                    onclick="window.toggleAttendance('${sessionId}', '${s.user_id}', this)">
+	        ${signups?.length ? signups.map(s => `
+	          <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:1rem; border-radius:1rem;">
+	            <span>${escapeHtml(getUserDisplayName(s.profiles))}</span>
+	            <button class="btn-signup-hero ${attendedSet.has(s.user_id) ? 'success' : 'secondary'}" 
+	                    style="padding:0.5rem 1rem; font-size:0.8rem;"
+	                    onclick="window.toggleAttendance('${sessionId}', '${s.user_id}', this)">
               ${attendedSet.has(s.user_id) ? 'Confirmed' : 'Confirm Attendance'}
             </button>
           </div>
@@ -2224,15 +2222,15 @@ window.showEditSessionModal = (sessionId) => {
   createSessionModal.classList.remove('page-hidden');
   
   // Fill movie select
-  sessionMovieSelect.innerHTML = `
-    <option value="">-- To Be Decided --</option>
-    ${proposedMovies.map(m => `
-      <option value="${m.id}" ${m.id === session.movie_id ? 'selected' : ''}>${m.title}</option>
-    `).join('')}
-    ${session.movie_id && !proposedMovies.some(m => m.id === session.movie_id) ? `
-      <option value="${session.movie_id}" selected>${session.movies?.title}</option>
-    ` : ''}
-  `;
+	  sessionMovieSelect.innerHTML = `
+	    <option value="">-- To Be Decided --</option>
+	    ${proposedMovies.map(m => `
+	      <option value="${m.id}" ${m.id === session.movie_id ? 'selected' : ''}>${escapeHtml(m.title)}</option>
+	    `).join('')}
+	    ${session.movie_id && !proposedMovies.some(m => m.id === session.movie_id) ? `
+	      <option value="${session.movie_id}" selected>${escapeHtml(session.movies?.title || 'Film To Be Decided')}</option>
+	    ` : ''}
+	  `;
 
   // Pre-fill date (convert ISO to datetime-local format)
   const date = new Date(session.session_date);

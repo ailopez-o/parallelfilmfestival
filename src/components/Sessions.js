@@ -1,5 +1,5 @@
 import { FALLBACK_IMAGE, TBD_POSTER } from '../config/constants.js';
-import { getUserDisplayName } from '../utils/index.js';
+import { escapeHtml, getUserDisplayName, sanitizeUrl } from '../utils/index.js';
 
 /**
  * Renders a stack of user avatars for session signups.
@@ -12,7 +12,7 @@ export function renderAvatarStack(signups = [], limit = 3) {
   if (!signups || signups.length === 0) return '';
   const displayed = signups.slice(0, limit);
   const moreCount = signups.length - limit;
-  const allNames = signups.map(s => getUserDisplayName(s.profiles)).join('\n');
+  const allNames = escapeHtml(signups.map(s => getUserDisplayName(s.profiles)).join('\n'));
 
   return `
     <div class="avatar-stack" data-tooltip="Interested:\n${allNames}">
@@ -34,13 +34,15 @@ export function renderAvatarStack(signups = [], limit = 3) {
  */
 export function createSessionCardHTML(session, options = {}) {
   const { user = null } = options;
-  const poster = session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER;
-  const title = session.movie_id ? session.movies?.title : 'Film To Be Decided';
+  const poster = sanitizeUrl(session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER, TBD_POSTER);
+  const title = escapeHtml(session.movie_id ? session.movies?.title : 'Film To Be Decided');
   const isSignedUp = user && session.session_signups?.some(s => s.user_id === user.id);
   
   const displayKey = session.keyword && session.keyword.trim() !== "" ? session.keyword : 'TBD';
+  const safeDescription = escapeHtml(session.description || 'Join us for this special screening!');
+  const safeKeyword = escapeHtml(displayKey);
   const keywordDisplay = isSignedUp 
-    ? `<div class="session-keyword-unlocked"><i data-lucide="key"></i> Code: <strong>${displayKey}</strong></div>`
+    ? `<div class="session-keyword-unlocked"><i data-lucide="key"></i> Code: <strong>${safeKeyword}</strong></div>`
     : `<div class="session-keyword-locked"><i data-lucide="lock"></i> Register to see keyword</div>`;
 
   return `
@@ -57,7 +59,7 @@ export function createSessionCardHTML(session, options = {}) {
         </div>
         <div class="session-card-title">${title}</div>
         <p style="color:var(--text-secondary); font-size: 0.85rem; line-height: 1.4; margin-top: 0.5rem; margin-bottom: 1rem;">
-          ${session.description || 'Join us for this special screening!'}
+          ${safeDescription}
         </p>
         ${keywordDisplay}
       </div>
@@ -74,13 +76,15 @@ export function createSessionCardHTML(session, options = {}) {
  */
 export function createSessionHeroHTML(session, options = {}) {
   const { user = null } = options;
-  const poster = session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER;
-  const title = session.movie_id ? session.movies?.title : 'Film To Be Decided';
+  const poster = sanitizeUrl(session.movie_id ? (session.movies?.poster_url || FALLBACK_IMAGE) : TBD_POSTER, TBD_POSTER);
+  const title = escapeHtml(session.movie_id ? session.movies?.title : 'Film To Be Decided');
   const isSignedUp = user && session.session_signups?.some(s => s.user_id === user.id);
   
   const displayKey = session.keyword && session.keyword.trim() !== "" ? session.keyword : 'TBD';
+  const safeDescription = escapeHtml(session.description || 'No description available.');
+  const safeKeyword = escapeHtml(displayKey);
   const keywordDisplay = isSignedUp 
-    ? `<div class="hero-keyword-unlocked"><i data-lucide="key"></i> Secret Code: <strong>${displayKey}</strong></div>`
+    ? `<div class="hero-keyword-unlocked"><i data-lucide="key"></i> Secret Code: <strong>${safeKeyword}</strong></div>`
     : `<div class="hero-keyword-locked"><i data-lucide="lock"></i> Register to unlock secret code</div>`;
 
   return `
@@ -95,7 +99,7 @@ export function createSessionHeroHTML(session, options = {}) {
         <span><i data-lucide="calendar"></i> ${new Date(session.session_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}</span>
         <span><i data-lucide="clock"></i> ${new Date(session.session_date).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</span>
       </div>
-      <p style="color:var(--text-secondary); margin-bottom: 1.5rem;">${session.description || 'No description available.'}</p>
+	      <p style="color:var(--text-secondary); margin-bottom: 1.5rem;">${safeDescription}</p>
       
       ${keywordDisplay}
 

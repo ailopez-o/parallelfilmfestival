@@ -1,3 +1,5 @@
+import { escapeHtml } from '../utils/index.js';
+
 /**
  * Generates HTML for an achievement card.
  * 
@@ -46,10 +48,10 @@ export function createTimelineItemHTML(event, timeAgoFn) {
           <div class="event-icon-circle">
             <i data-lucide="${event.icon || 'star'}"></i>
           </div>
-          <div class="event-content">
-            <div class="event-message">
-              <span class="event-name">${event.name || 'User'}</span> ${event.text}
-            </div>
+	          <div class="event-content">
+	            <div class="event-message">
+	              <span class="event-name">${escapeHtml(event.name || 'User')}</span> ${event.text}
+	            </div>
             <div class="event-date">${timeAgoFn(event.date)}</div>
           </div>
         </div>
@@ -57,4 +59,3 @@ export function createTimelineItemHTML(event, timeAgoFn) {
     </tr>
   `;
 }
-

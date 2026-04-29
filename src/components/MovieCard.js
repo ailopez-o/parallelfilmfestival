@@ -1,6 +1,6 @@
 import { FALLBACK_IMAGE } from '../config/constants.js';
 import { formatScore } from '../utils/formatters.js';
-import { getUserDisplayName } from '../utils/index.js';
+import { escapeHtml, getUserDisplayName, sanitizeUrl } from '../utils/index.js';
 
 /**
  * Generates the HTML for a movie card.
@@ -26,34 +26,42 @@ export function createMovieCardHTML(movie, options = {}) {
   
   const hasVoted = userVotes.has(movie.id);
   const genres = (movie.genres || []).slice(0, 3);
-  const posterUrl = movie.poster_url || (movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : FALLBACK_IMAGE);
+  const posterUrl = sanitizeUrl(
+    movie.poster_url || (movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : FALLBACK_IMAGE),
+    FALLBACK_IMAGE
+  );
   const releaseYear = movie.release_year || (movie.release_date ? movie.release_date.split('-')[0] : 'N/A');
+  const safeTitle = escapeHtml(movie.title || 'Untitled');
+  const safeDirector = escapeHtml(movie.director || 'Unknown');
+  const safeSynopsis = escapeHtml(movie.synopsis || 'No synopsis available.');
+  const safeUserComment = escapeHtml(movie.user_comment || '');
   
   // Watch providers
   const providers = movie.watch_providers?.flatrate || [];
-  const providersLink = movie.watch_providers?.link || '#';
+  const providersLink = sanitizeUrl(movie.watch_providers?.link, '#');
+  const trailerUrl = sanitizeUrl(movie.trailer_url, '#');
 
   const cardClass = context === 'history' ? 'movie-card seen horizontal' : 
                    context === 'showcase' ? 'movie-card top-highlight-card' : 
                    context === 'cemetery' ? 'movie-card dropped' : 'movie-card';
 
   return `
-    <div class="${cardClass}" data-id="${movie.id || ''}">
+	    <div class="${cardClass}" data-id="${movie.id || ''}">
       ${context === 'showcase' ? `
         <div class="top-badge">
           <i data-lucide="award"></i> #${options.rank} MOST WANTED
         </div>
       ` : ''}
-      <div class="poster-wrapper">
-        <img src="${posterUrl}" alt="${movie.title}" loading="lazy" onerror="this.onerror=null; this.src='${FALLBACK_IMAGE}'">
+	      <div class="poster-wrapper">
+	        <img src="${posterUrl}" alt="${safeTitle}" loading="lazy" onerror="this.onerror=null; this.src='${FALLBACK_IMAGE}'">
         
         <!-- Explore Context Overlay (Now inside poster) -->
-        ${context === 'explore' ? `
-          <div class="propose-overlay">
-            <button class="btn-propose" onclick="window.proposeMovie(${JSON.stringify(movie).replace(/"/g, '&quot;')}, this)">
-              <i data-lucide="plus"></i> Propose Movie
-            </button>
-          </div>
+	        ${context === 'explore' ? `
+	          <div class="propose-overlay">
+	            <button class="btn-propose" onclick="window.proposeMovie(${escapeHtml(JSON.stringify(movie))}, this)">
+	              <i data-lucide="plus"></i> Propose Movie
+	            </button>
+	          </div>
         ` : ''}
       </div>
 
@@ -76,41 +84,41 @@ export function createMovieCardHTML(movie, options = {}) {
 
       <div class="movie-info">
         ${context === 'history' ? '' : `
-          <div class="header-main">
-            <div class="title-row">
-              <div class="movie-title">${movie.title}</div>
-              <div class="rating-badge">
+	          <div class="header-main">
+	            <div class="title-row">
+	              <div class="movie-title">${safeTitle}</div>
+	              <div class="rating-badge">
                 <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
                 <span class="rating-value">${formatScore(movie.vote_average)}</span>
               </div>
             </div>
-            <div class="movie-meta">
-              <span>${releaseYear} • ${movie.director || 'Unknown'}</span>
-              ${movie.trailer_url ? `
-                <a href="${movie.trailer_url}" target="_blank" class="trailer-link-btn" title="Watch Trailer">
-                  <i data-lucide="play-circle"></i> Trailer
-                </a>
-              ` : ''}
+	            <div class="movie-meta">
+	              <span>${releaseYear} • ${safeDirector}</span>
+	              ${movie.trailer_url ? `
+	                <a href="${trailerUrl}" target="_blank" rel="noopener noreferrer" class="trailer-link-btn" title="Watch Trailer">
+	                  <i data-lucide="play-circle"></i> Trailer
+	                </a>
+	              ` : ''}
             </div>
           </div>
 
-          <div class="genre-tags">
-            ${genres.map(g => `<span class="genre-tag">${g}</span>`).join('')}
-          </div>
+	          <div class="genre-tags">
+	            ${genres.map(g => `<span class="genre-tag">${escapeHtml(g)}</span>`).join('')}
+	          </div>
 
-          <div class="synopsis">${movie.synopsis || 'No synopsis available.'}</div>
-        `}
+	          <div class="synopsis">${safeSynopsis}</div>
+	        `}
 
         <!-- Watch Providers -->
         ${providers.length > 0 ? `
           <div class="watch-providers ${context === 'history' || context === 'activity' ? 'mini' : ''}">
             <span class="provider-label">Available on:</span>
             <div class="provider-list">
-              ${providers.slice(0, 4).map(p => `
-                <a href="${providersLink}" target="_blank" class="provider-icon ${context === 'history' || context === 'activity' ? 'small' : ''}" title="${p.provider_name}">
-                  <img src="https://image.tmdb.org/t/p/original${p.logo_path}" alt="${p.provider_name}">
-                </a>
-              `).join('')}
+	              ${providers.slice(0, 4).map(p => `
+	                <a href="${providersLink}" target="_blank" rel="noopener noreferrer" class="provider-icon ${context === 'history' || context === 'activity' ? 'small' : ''}" title="${escapeHtml(p.provider_name)}">
+	                  <img src="${sanitizeUrl(`https://image.tmdb.org/t/p/original${p.logo_path}`, FALLBACK_IMAGE)}" alt="${escapeHtml(p.provider_name)}">
+	                </a>
+	              `).join('')}
             </div>
           </div>
         ` : ''}
@@ -136,22 +144,22 @@ export function createMovieCardHTML(movie, options = {}) {
 
         ${context === 'history' ? `
           <div class="history-full-layout">
-            <div class="history-header-compact">
-              <div class="title-row">
-                <div class="movie-title">${movie.title}</div>
-                <div class="rating-badge">
+	            <div class="history-header-compact">
+	              <div class="title-row">
+	                <div class="movie-title">${safeTitle}</div>
+	                <div class="rating-badge">
                   <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
                   <span class="rating-value">${formatScore(movie.vote_average)}</span>
                 </div>
               </div>
-              <div class="movie-meta">
-                <span>${releaseYear} • ${movie.director || 'Unknown'}</span>
-                ${movie.trailer_url ? `<a href="${movie.trailer_url}" target="_blank" class="trailer-link-btn mini"><i data-lucide="play-circle"></i></a>` : ''}
-              </div>
-            </div>
+	              <div class="movie-meta">
+	                <span>${releaseYear} • ${safeDirector}</span>
+	                ${movie.trailer_url ? `<a href="${trailerUrl}" target="_blank" rel="noopener noreferrer" class="trailer-link-btn mini"><i data-lucide="play-circle"></i></a>` : ''}
+	              </div>
+	            </div>
 
-            <div class="history-content-row">
-              <div class="history-synopsis-compact">${movie.synopsis || 'No synopsis available.'}</div>
+	            <div class="history-content-row">
+	              <div class="history-synopsis-compact">${safeSynopsis}</div>
               
               <div class="history-metadata-right">
                 <div class="avg-pill large"><i data-lucide="star"></i> ${movie.average_community_rating ? movie.average_community_rating.toFixed(1) : '0.0'}</div>
@@ -187,9 +195,9 @@ export function createMovieCardHTML(movie, options = {}) {
                         `).join('')}
                       </div>
                     </div>
-                    <div class="comment-row-compact">
-                      <textarea id="comment-input-${movie.id}" class="review-comment-textarea compact" placeholder="How was the film?">${movie.user_comment || ''}</textarea>
-                      <button class="save-review-btn mini" onclick="window.rateMovie('${movie.id}', document.getElementById('rating-val-${movie.id}')?.textContent || ${movie.user_rating || 0})">
+	                    <div class="comment-row-compact">
+	                      <textarea id="comment-input-${movie.id}" class="review-comment-textarea compact" placeholder="How was the film?">${safeUserComment}</textarea>
+	                      <button class="save-review-btn mini" onclick="window.rateMovie('${movie.id}', document.getElementById('rating-val-${movie.id}')?.textContent || ${movie.user_rating || 0})">
                         <i data-lucide="send"></i>
                       </button>
                       <span id="rating-val-${movie.id}" style="display:none;">${movie.user_rating || 0}</span>
@@ -199,22 +207,22 @@ export function createMovieCardHTML(movie, options = {}) {
               ` : ''}
 
               <div class="google-reviews-horizontal">
-                ${movie.reviews?.length ? movie.reviews.map(rev => {
-                  const name = getUserDisplayName(rev.profiles);
-                  const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&size=32`;
-                  return `
-                    <div class="review-line">
-                      <img src="${avatar}" class="rev-avatar-mini" />
-                      <div class="rev-main">
-                        <div class="rev-top">
-                          <span class="rev-name">${name}</span>
-                          <div class="rev-stars-bar">
-                            ${Array.from({length: 10}).map((_, i) => `<div class="star-dot ${rev.rating > i ? 'active' : ''}"></div>`).join('')}
-                          </div>
-                        </div>
-                        ${rev.comment ? `<p class="rev-text-compact">${rev.comment}</p>` : ''}
-                      </div>
-                    </div>
+	                ${movie.reviews?.length ? movie.reviews.map(rev => {
+	                  const name = getUserDisplayName(rev.profiles);
+	                  const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&size=32`;
+	                  return `
+	                    <div class="review-line">
+	                      <img src="${avatar}" class="rev-avatar-mini" />
+	                      <div class="rev-main">
+	                        <div class="rev-top">
+	                          <span class="rev-name">${escapeHtml(name)}</span>
+	                          <div class="rev-stars-bar">
+	                            ${Array.from({length: 10}).map((_, i) => `<div class="star-dot ${rev.rating > i ? 'active' : ''}"></div>`).join('')}
+	                          </div>
+	                        </div>
+	                        ${rev.comment ? `<p class="rev-text-compact">${escapeHtml(rev.comment)}</p>` : ''}
+	                      </div>
+	                    </div>
                   `;
                 }).join('') : '<div class="empty-reviews-compact">No reviews yet.</div>'}
               </div>

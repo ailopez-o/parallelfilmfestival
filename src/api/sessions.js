@@ -43,6 +43,11 @@ export const SessionService = {
       supabase.from('session_attendance').select('*, profiles(full_name, email, id)').eq('session_id', sessionId)
     ]);
 
+    const errors = [comments.error, photos.error, signups.error, attendance.error].filter(Boolean);
+    if (errors.length > 0) {
+      throw new Error(errors.map(error => error.message || 'Unknown session details error').join(' | '));
+    }
+
     return {
       comments: comments.data || [],
       photos: photos.data || [],
@@ -55,11 +60,13 @@ export const SessionService = {
    * Toggles session signup for a user.
    */
   async toggleSignup(sessionId, userId) {
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from('session_signups')
       .select('*')
       .match({ session_id: sessionId, user_id: userId })
-      .single();
+      .maybeSingle();
+
+    if (existingError) throw existingError;
 
     if (existing) {
       const { error } = await supabase.from('session_signups').delete().match({ session_id: sessionId, user_id: userId });
@@ -100,11 +107,13 @@ export const SessionService = {
    * Toggles session attendance for a user (Admin only).
    */
   async toggleAttendance(sessionId, userId) {
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from('session_attendance')
       .select('*')
       .match({ session_id: sessionId, user_id: userId })
-      .single();
+      .maybeSingle();
+
+    if (existingError) throw existingError;
 
     if (existing) {
       const { error } = await supabase.from('session_attendance').delete().match({ session_id: sessionId, user_id: userId });

@@ -2,7 +2,7 @@ import { supabase } from './config/supabase.js';
 import { SessionService } from './api/sessions.js';
 import { SessionsView } from './views/SessionsView.js';
 import { AuthService } from './api/auth.js';
-import { showNotification, getUserDisplayName } from './utils/index.js';
+import { showNotification, getUserDisplayName, escapeHtml } from './utils/index.js';
 
 // Global state for the standalone page
 const state = {
@@ -111,6 +111,7 @@ function updateAuthUI() {
 
   if (state.user) {
     const name = getUserDisplayName(state.userProfile, state.user);
+    const safeName = escapeHtml(name);
     const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
     
     userHeader.innerHTML = `
@@ -119,13 +120,13 @@ function updateAuthUI() {
           <i data-lucide="calendar" style="width:14px; height:14px; margin-right:4px;"></i>
           <span class="header-label">Sessions</span>
         </div>
-        <div class="user-profile-info" onclick="window.location.href='/?view=profile'">
-          <img src="${avatar}" class="user-avatar" />
-          <div class="user-name-wrapper hide-mobile" style="display:flex; flex-direction:column; line-height: 1.2;">
-            <span style="font-weight:700;">${name}</span>
-            <span style="font-size: 0.7rem; color:var(--text-secondary);">${state.isAdmin ? 'ADMIN' : 'USER'}</span>
-          </div>
-        </div>
+	        <div class="user-profile-info" onclick="window.location.href='/?view=profile'">
+	          <img src="${avatar}" class="user-avatar" />
+	          <div class="user-name-wrapper hide-mobile" style="display:flex; flex-direction:column; line-height: 1.2;">
+	            <span style="font-weight:700;">${safeName}</span>
+	            <span style="font-size: 0.7rem; color:var(--text-secondary);">${state.isAdmin ? 'ADMIN' : 'USER'}</span>
+	          </div>
+	        </div>
       </div>
     `;
   } else {

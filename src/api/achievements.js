@@ -16,26 +16,30 @@ export const AchievementService = {
     try {
       const [ratingsRes, tableRes, visionaryRes] = await Promise.all([
         supabase.from('user_ratings').select('*', { count: 'exact', head: true }).eq('user_id', userId),
-        supabase.from('session_attendance').select('sessions(movie_id)').eq('user_id', userId),
+        supabase.from('session_attendance').select('session_id').eq('user_id', userId),
         supabase.from('movies').select('*', { count: 'exact', head: true }).eq('proposed_by', userId).eq('is_seen', true)
       ]);
 
       const ratingsCount = ratingsRes.count || 0;
       
       // session_attendance is the source of truth
-      const attendedMovieIds = new Set(
-        (tableRes.data || []).map(a => a.sessions?.movie_id).filter(id => id)
+      const attendedSessionIds = new Set(
+        (tableRes.data || []).map(a => a.session_id).filter(Boolean)
       );
       
-      const attendanceCount = attendedMovieIds.size;
+      const attendanceCount = attendedSessionIds.size;
       const seenCount = visionaryRes.count || 0;
 
-      // 4. Attendance Streak Logic: Find the longest sequence of attended sessions
+      // Attendance streaks must follow the chronological order of actual sessions.
       let maxStreak = 0;
       let currentStreak = 0;
       if (allSessions.length > 0) {
-        allSessions.forEach(s => {
-          if (attendedMovieIds.has(s.id)) {
+        const sortedSessions = [...allSessions]
+          .filter(session => session?.id && session?.session_date)
+          .sort((a, b) => new Date(a.session_date) - new Date(b.session_date));
+
+        sortedSessions.forEach(s => {
+          if (attendedSessionIds.has(s.id)) {
             currentStreak++;
             if (currentStreak > maxStreak) maxStreak = currentStreak;
           } else {
@@ -80,12 +84,25 @@ export const AchievementService = {
    * Calculates global achievement statistics for the community.
    */
   async calculateGlobalStats(allMovies = []) {
-    const stats = { miembro: 0, feroz: 0, oro: 0, trend: 0, streak: 0, debut: 0, regular: 0, legend: 0, visionary: 0, oracle: 0 };
+    const stats = {
+      miembro: 0,
+      visionary: 0,
+      oracle: 0,
+      debut: 0,
+      regular: 0,
+      legend: 0,
+      first_critic: 0,
+      feroz: 0,
+      oro: 0,
+      streak3: 0,
+      streak5: 0
+    };
     try {
-      const [profilesRes, ratingsRes, attendanceRes] = await Promise.all([
+      const [profilesRes, ratingsRes, attendanceRes, sessionsRes] = await Promise.all([
         supabase.from('profiles').select('id'),
         supabase.from('user_ratings').select('user_id'),
-        supabase.from('session_attendance').select('user_id, sessions(movie_id)')
+        supabase.from('session_attendance').select('user_id, session_id'),
+        supabase.from('sessions').select('id, session_date').order('session_date', { ascending: true })
       ]);
 
       stats.miembro = profilesRes.data?.length || 0;
@@ -93,23 +110,39 @@ export const AchievementService = {
       const ratingsMap = {};
       ratingsRes.data?.forEach(r => { ratingsMap[r.user_id] = (ratingsMap[r.user_id] || 0) + 1; });
       Object.values(ratingsMap).forEach(count => {
+        if (count >= 1) stats.first_critic++;
         if (count >= 5) stats.feroz++;
         if (count >= 10) stats.oro++;
       });
 
-      const top3Movies = [...proposedMovies].sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0)).slice(0, 3);
-      stats.trend = new Set(top3Movies.map(m => m.proposed_by)).size;
-
       const attMap = {};
       attendanceRes.data?.forEach(a => { 
         if (!attMap[a.user_id]) attMap[a.user_id] = new Set();
-        if (a.sessions?.movie_id) attMap[a.user_id].add(a.sessions.movie_id);
+        if (a.session_id) attMap[a.user_id].add(a.session_id);
       });
-      Object.values(attMap).forEach(movieSet => {
-        const count = movieSet.size;
+      Object.values(attMap).forEach(sessionSet => {
+        const count = sessionSet.size;
         if (count >= 1) stats.debut++;
         if (count >= 3) stats.regular++;
         if (count >= 5) stats.legend++;
+      });
+
+      const orderedSessions = sessionsRes.data || [];
+      Object.values(attMap).forEach(sessionSet => {
+        let currentStreak = 0;
+        let maxStreak = 0;
+
+        orderedSessions.forEach(session => {
+          if (sessionSet.has(session.id)) {
+            currentStreak++;
+            if (currentStreak > maxStreak) maxStreak = currentStreak;
+          } else {
+            currentStreak = 0;
+          }
+        });
+
+        if (maxStreak >= 3) stats.streak3++;
+        if (maxStreak >= 5) stats.streak5++;
       });
 
       // Visionary / Oracle stats
@@ -218,9 +251,9 @@ export const AchievementService = {
 
       // 4. Streak Milestones
       const userAttMap = {};
-      (allAttendance.data || []).filter(a => a.action_type === 'attendance').forEach(log => {
-        if (!userAttMap[log.user_id]) userAttMap[log.user_id] = new Set();
-        userAttMap[log.user_id].add(log.movie_id);
+      (allAttendanceTable.data || []).forEach(entry => {
+        if (!userAttMap[entry.user_id]) userAttMap[entry.user_id] = new Set();
+        if (entry.session_id) userAttMap[entry.user_id].add(entry.session_id);
       });
 
       profiles.data?.forEach(u => {

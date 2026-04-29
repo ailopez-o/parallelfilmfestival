@@ -2,7 +2,7 @@
  * Displays a toast notification to the user.
  * 
  * @param {string} message - The message to display.
- * @param {'success'|'warning'|'error'} type - The type of notification.
+ * @param {'success'|'warning'|'error'|'info'} type - The type of notification.
  */
 export function showNotification(message, type = 'success') {
   let container = document.querySelector('.toast-container');
@@ -14,18 +14,19 @@ export function showNotification(message, type = 'success') {
 
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
-  
+
   const icons = {
     success: 'check-circle',
     warning: 'alert-triangle',
-    error: 'alert-circle'
+    error: 'alert-circle',
+    info: 'info'
   };
 
   toast.innerHTML = `
     <div class="toast-icon">
       <i data-lucide="${icons[type]}"></i>
     </div>
-    <span>${message}</span>
+    <span>${escapeHtml(message)}</span>
   `;
 
   container.appendChild(toast);
@@ -40,4 +41,47 @@ export function showNotification(message, type = 'success') {
     toast.classList.add('removing');
     setTimeout(() => toast.remove(), 400);
   }, 3000);
+}
+
+/**
+ * Escapes a value for safe HTML rendering.
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Restricts URLs to safe browser protocols for href/src usage.
+ *
+ * @param {string} url
+ * @param {string} fallback
+ * @returns {string}
+ */
+export function sanitizeUrl(url, fallback = '') {
+  if (typeof url !== 'string' || url.trim() === '') return fallback;
+
+  try {
+    const base = globalThis.location?.origin || 'https://example.invalid';
+    const parsed = new URL(url, base);
+
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return fallback;
+    }
+
+    if (url.startsWith('/')) {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+
+    return parsed.toString();
+  } catch {
+    return fallback;
+  }
 }
