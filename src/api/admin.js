@@ -5,6 +5,14 @@ import { supabase } from '../config/supabase.js';
  * Handles user management, logs, and application settings.
  */
 export const AdminService = {
+  getPublicSocialAssetUrl(path) {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    if (!supabaseUrl) {
+      throw new Error('Missing VITE_SUPABASE_URL for social metadata URL generation');
+    }
+    const normalizedBase = supabaseUrl.replace(/\/$/, '');
+    return `${normalizedBase}/storage/v1/object/public/social/${path}`;
+  },
   /**
    * Fetches all registered profiles.
    */
@@ -72,6 +80,10 @@ export const AdminService = {
       if (setting.key === 'max_proposals') settings.maxProposals = parseInt(setting.value);
       if (setting.key === 'max_votes') settings.maxVotes = parseInt(setting.value);
     });
+    if (!Number.isInteger(settings.maxProposals) || !Number.isInteger(settings.maxVotes)) {
+      throw new Error('Missing required app settings in DB: max_proposals and/or max_votes');
+    }
+
     return settings;
   },
   
@@ -79,10 +91,16 @@ export const AdminService = {
    * Updates multiple application settings.
    */
   async updateAppSettings(newMaxProposals, newMaxVotes) {
-    await Promise.all([
+    const [maxProposalsResult, maxVotesResult] = await Promise.all([
       supabase.from('app_settings').update({ value: newMaxProposals.toString() }).eq('key', 'max_proposals'),
       supabase.from('app_settings').update({ value: newMaxVotes.toString() }).eq('key', 'max_votes')
     ]);
+
+    const errors = [maxProposalsResult.error, maxVotesResult.error].filter(Boolean);
+    if (errors.length > 0) {
+      const joinedMessage = errors.map(e => e.message || 'Unknown settings update error').join(' | ');
+      throw new Error(`Failed to update app settings: ${joinedMessage}`);
+    }
   },
   
   /**
@@ -91,6 +109,7 @@ export const AdminService = {
   async cleanupInactiveMovies() {
     const fifteenDaysAgo = new Date();
     fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
+    const thresholdIso = fifteenDaysAgo.toISOString();
     
     const { data: moviesToClean, error: fetchErr } = await supabase
       .from('movies')
@@ -100,21 +119,23 @@ export const AdminService = {
       
     if (fetchErr || !moviesToClean) throw fetchErr || new Error('No movies found');
 
-    const { data: allVotes, error: votesErr } = await supabase
+    if (moviesToClean.length === 0) {
+      return { cleanedCount: 0 };
+    }
+
+    const candidateIds = moviesToClean.map(m => m.id);
+    const { data: recentVotes, error: votesErr } = await supabase
       .from('votes')
-      .select('movie_id, created_at');
+      .select('movie_id')
+      .in('movie_id', candidateIds)
+      .gte('created_at', thresholdIso);
       
     if (votesErr) throw votesErr;
 
+    const activeMovieIds = new Set((recentVotes || []).map(v => v.movie_id));
     const toDrop = moviesToClean.filter(m => {
       const proposalDate = new Date(m.created_at);
-      const movieVotes = (allVotes || []).filter(v => v.movie_id === m.id);
-      if (movieVotes.length === 0) {
-        return proposalDate < fifteenDaysAgo;
-      } else {
-        const lastVoteDate = new Date(Math.max(...movieVotes.map(v => new Date(v.created_at))));
-        return lastVoteDate < fifteenDaysAgo;
-      }
+      return proposalDate < fifteenDaysAgo && !activeMovieIds.has(m.id);
     });
 
     if (toDrop.length === 0) {
@@ -215,7 +236,7 @@ export const AdminService = {
     
     const title = `${movie.title} | Paral·lel Film Festival`;
     const description = `📅 ${dateStr} a las ${timeStr}. 📍 ${session.location || 'Paral·lel Cinema'}. ¡Únete a nosotros!`;
-    const imageUrl = `https://ljbvamhqpeozkdbgwyzt.supabase.co/storage/v1/object/public/social/current-poster.jpg?v=${Date.now()}`;
+    const imageUrl = `${this.getPublicSocialAssetUrl('current-poster.jpg')}?v=${Date.now()}`;
 
     // Precise surgical replacement of OG tags only
     const replacements = [
