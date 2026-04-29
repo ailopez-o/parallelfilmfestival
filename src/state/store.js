@@ -1,5 +1,3 @@
-import { DEFAULT_MAX_PROPOSALS, DEFAULT_MAX_VOTES } from '../config/constants.js';
-
 /**
  * Centralized State Management Store.
  * Holds the single source of truth for the application.
@@ -27,8 +25,8 @@ class Store {
       currentSession: null,
       
       // Configuration state (Dynamic from DB)
-      maxProposals: DEFAULT_MAX_PROPOSALS,
-      maxVotes: DEFAULT_MAX_VOTES,
+      maxProposals: null,
+      maxVotes: null,
       
       // Lookups
       genreMap: {},
