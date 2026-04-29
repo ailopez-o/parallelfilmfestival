@@ -5,6 +5,14 @@ import { supabase } from '../config/supabase.js';
  * Handles user management, logs, and application settings.
  */
 export const AdminService = {
+  getPublicSocialAssetUrl(path) {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    if (!supabaseUrl) {
+      throw new Error('Missing VITE_SUPABASE_URL for social metadata URL generation');
+    }
+    const normalizedBase = supabaseUrl.replace(/\/$/, '');
+    return `${normalizedBase}/storage/v1/object/public/social/${path}`;
+  },
   /**
    * Fetches all registered profiles.
    */
@@ -225,7 +233,7 @@ export const AdminService = {
     
     const title = `${movie.title} | Paral·lel Film Festival`;
     const description = `📅 ${dateStr} a las ${timeStr}. 📍 ${session.location || 'Paral·lel Cinema'}. ¡Únete a nosotros!`;
-    const imageUrl = `https://ljbvamhqpeozkdbgwyzt.supabase.co/storage/v1/object/public/social/current-poster.jpg?v=${Date.now()}`;
+    const imageUrl = `${this.getPublicSocialAssetUrl('current-poster.jpg')}?v=${Date.now()}`;
 
     // Precise surgical replacement of OG tags only
     const replacements = [
