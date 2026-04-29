@@ -32,7 +32,8 @@ The `main.js` file acts as the primary controller and entry point of the applica
 - **Routing:** It manages the `window.navigateTo` logic to show/hide different views.
 - **Event Listeners:** Binds global DOM events (clicks, inputs, auth changes).
 - **Orchestration:** Fetches data from the API services, updates the centralized store, and commands the View layer to render the UI.
-- *Note:* It maintains **zero mutable global state** and performs **zero direct API calls**.
+- *Note:* It keeps business data/state centralized in `store.js` and primarily uses the Service layer for external I/O.
+- *Current reality:* `main.js` is still a transitional orchestrator and may contain a few direct Supabase interactions in legacy paths; these should be progressively migrated into `src/api/*` services.
 
 ### 2. State Management (`src/state/store.js`)
 Since this is a vanilla JS application, state is centralized in a custom reactive store.
@@ -61,7 +62,7 @@ Pure functions that return HTML template literals for reusable UI elements.
 - They are stateless, taking in primitive data or objects and returning a formatted HTML string to be injected by the View layer.
 
 ### 6. Configuration & Utilities (`src/config/` & `src/utils/`)
-- **`constants.js`**: Stores system-wide configuration variables, fallbacks, and limits.
+- **`constants.js`**: Stores system-wide static constants and defaults that are not sourced dynamically from the database.
 - **`supabase.js`**: Initializes and exports the Supabase client singleton.
 - **`index.js`**: Contains pure utility functions for string normalization, date formatting, and UI notifications.
 
