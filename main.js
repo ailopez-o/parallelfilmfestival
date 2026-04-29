@@ -23,10 +23,21 @@ import { ACHIEVEMENT_LIST } from './src/config/constants.js';
 
 import { store } from './src/state/store.js';
 // This routes all variable reads/writes transparently into the centralized store.
-['allMovies', 'proposedMovies', 'seenMovies', 'rankedUsers', 'sessions', 'currentSession', 'currentView', 'genreMap', 'providerMap', 'user', 'userProfile', 'isAdmin', 'userAttendance'].forEach(key => {
+['allMovies', 'proposedMovies', 'seenMovies', 'rankedUsers', 'sessions', 'currentSession', 'currentView', 'genreMap', 'providerMap', 'userAttendance'].forEach(key => {
   Object.defineProperty(window, key, {
     get: () => store.getState()[key],
     set: (v) => store.setState({ [key]: v })
+  });
+});
+
+['user', 'userProfile', 'isAdmin', 'MAX_PROPOSALS', 'MAX_VOTES'].forEach((key) => {
+  Object.defineProperty(window, key, {
+    get: () => {
+      const state = store.getState();
+      if (key === 'MAX_PROPOSALS') return state.maxProposals;
+      if (key === 'MAX_VOTES') return state.maxVotes;
+      return state[key];
+    }
   });
 });
 
@@ -35,21 +46,25 @@ Object.defineProperty(window, 'userVotes', {
   set: (v) => store.setUserVotes(v)
 });
 
-Object.defineProperty(window, 'MAX_PROPOSALS', {
-  get: () => store.getState().maxProposals,
-  set: (v) => store.setState({ maxProposals: v })
-});
+function setAppLimits(maxProposals, maxVotes) {
+  store.setState({ maxProposals, maxVotes });
+}
 
-Object.defineProperty(window, 'MAX_VOTES', {
-  get: () => store.getState().maxVotes,
-  set: (v) => store.setState({ maxVotes: v })
-});
+function setAuthContext(nextUser, nextUserProfile, nextIsAdmin) {
+  store.setState({
+    user: nextUser,
+    userProfile: nextUserProfile,
+    isAdmin: nextIsAdmin
+  });
+}
 
 async function fetchAppSettings() {
   try {
     const settings = await AdminService.fetchAppSettings();
-    if (settings.maxProposals) MAX_PROPOSALS = settings.maxProposals;
-    if (settings.maxVotes) MAX_VOTES = settings.maxVotes;
+    setAppLimits(
+      settings.maxProposals || store.getState().maxProposals,
+      settings.maxVotes || store.getState().maxVotes
+    );
   } catch (err) {
     console.error('Error fetching settings:', err);
   }
@@ -76,8 +91,7 @@ window.saveAppSettings = async () => {
     await AdminService.updateAppSettings(newValProp, newValVote);
 
     // Update local config
-    MAX_PROPOSALS = parseInt(newValProp);
-    MAX_VOTES = parseInt(newValVote);
+    setAppLimits(parseInt(newValProp), parseInt(newValVote));
 
     showNotification('System settings updated successfully!', 'success');
     
@@ -165,8 +179,7 @@ const editAvatar = document.getElementById('editAvatar');
 
 // Fallback images (imported from constants)
 // Limits configuration
-let MAX_PROPOSALS = DEFAULT_MAX_PROPOSALS;
-let MAX_VOTES = DEFAULT_MAX_VOTES;
+setAppLimits(DEFAULT_MAX_PROPOSALS, DEFAULT_MAX_VOTES);
 
 // Initialization
 async function init() {
@@ -252,27 +265,27 @@ async function checkUser(session) {
     session = data.session;
   }
   
-  user = session?.user || null;
+  const currentUser = session?.user || null;
   
-  if (user) {
+  if (currentUser) {
     // 🛡️ Dynamic RBAC: Fetch role from profiles table
     let { data: profile } = await supabase
       .from('profiles')
       .select('*')
-      .eq('id', user.id)
+      .eq('id', currentUser.id)
       .single();
 
     // If no profile exists (e.g., new Google login), create one automatically
     if (!profile) {
       console.log('[Auth] Profile missing, creating default profile...');
-      const displayName = getUserDisplayName(null, user);
+      const displayName = getUserDisplayName(null, currentUser);
       
       const { data: newProfile, error: insertError } = await supabase
         .from('profiles')
         .insert([{
-          id: user.id,
+          id: currentUser.id,
           full_name: displayName,
-          email: user.email,
+          email: currentUser.email,
           role: 'user'
         }])
         .select()
@@ -281,30 +294,29 @@ async function checkUser(session) {
       if (!insertError) profile = newProfile;
     } else if (profile.full_name === null) {
       // Self-healing: if profile exists but has no name, update it
-      const displayName = getUserDisplayName(null, user);
+      const displayName = getUserDisplayName(null, currentUser);
       console.log(`[Auth] Profile exists but full_name is null. Healing to: ${displayName}`);
       const { data: updatedProfile, error: updateError } = await supabase
         .from('profiles')
-        .update({ full_name: displayName, email: user.email })
-        .eq('id', user.id)
+        .update({ full_name: displayName, email: currentUser.email })
+        .eq('id', currentUser.id)
         .select()
         .single();
       
       if (!updateError) profile = updatedProfile;
     }
 
-    userProfile = profile;
-    isAdmin = userProfile?.role === 'admin';
-    console.log(`[ACL] User: ${user.email} | Role: ${userProfile?.role || 'user'} | Admin: ${isAdmin}`);
+    const currentIsAdmin = profile?.role === 'admin';
+    setAuthContext(currentUser, profile, currentIsAdmin);
+    console.log(`[ACL] User: ${currentUser.email} | Role: ${profile?.role || 'user'} | Admin: ${currentIsAdmin}`);
 
-    const votes = await MovieService.fetchVotesForUser(user.id);
+    const votes = await MovieService.fetchVotesForUser(currentUser.id);
     userVotes = new Set(votes?.map(v => v.movie_id) || []);
 
-    const attendance = await SessionService.fetchUserAttendance(user.id);
+    const attendance = await SessionService.fetchUserAttendance(currentUser.id);
     userAttendance = new Set(attendance || []);
   } else {
-    userProfile = null;
-    isAdmin = false;
+    setAuthContext(null, null, false);
     userVotes = new Set();
     userAttendance = new Set();
   }
