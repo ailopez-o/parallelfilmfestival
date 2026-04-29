@@ -258,50 +258,14 @@ async function fetchProvidersMap() {
 
 async function checkUser(session) {
   if (session === undefined) {
-    const { data } = await supabase.auth.getSession();
-    session = data.session;
+    session = await AuthService.getCurrentSession();
   }
   
   const currentUser = session?.user || null;
   
   if (currentUser) {
-    // 🛡️ Dynamic RBAC: Fetch role from profiles table
-    let { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', currentUser.id)
-      .single();
-
-    // If no profile exists (e.g., new Google login), create one automatically
-    if (!profile) {
-      console.log('[Auth] Profile missing, creating default profile...');
-      const displayName = getUserDisplayName(null, currentUser);
-      
-      const { data: newProfile, error: insertError } = await supabase
-        .from('profiles')
-        .insert([{
-          id: currentUser.id,
-          full_name: displayName,
-          email: currentUser.email,
-          role: 'user'
-        }])
-        .select()
-        .single();
-      
-      if (!insertError) profile = newProfile;
-    } else if (profile.full_name === null) {
-      // Self-healing: if profile exists but has no name, update it
-      const displayName = getUserDisplayName(null, currentUser);
-      console.log(`[Auth] Profile exists but full_name is null. Healing to: ${displayName}`);
-      const { data: updatedProfile, error: updateError } = await supabase
-        .from('profiles')
-        .update({ full_name: displayName, email: currentUser.email })
-        .eq('id', currentUser.id)
-        .select()
-        .single();
-      
-      if (!updateError) profile = updatedProfile;
-    }
+    const displayName = getUserDisplayName(null, currentUser);
+    const profile = await AuthService.getOrCreateUserProfile(currentUser, displayName);
 
     const currentIsAdmin = profile?.role === 'admin';
     setAuthContext(currentUser, profile, currentIsAdmin);
