@@ -116,25 +116,13 @@ export const MovieService = {
   },
 
   async upsertRating(userId, movieId, rating, comment = null) {
-    // First check if a rating already exists
-    const { data: existing } = await supabase
+    const { error } = await supabase
       .from('user_ratings')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('movie_id', movieId)
-      .single();
+      .upsert(
+        [{ user_id: userId, movie_id: movieId, rating, comment }],
+        { onConflict: 'user_id,movie_id' }
+      );
 
-    if (existing) {
-      const { error } = await supabase
-        .from('user_ratings')
-        .update({ rating, comment })
-        .eq('id', existing.id);
-      if (error) throw error;
-    } else {
-      const { error } = await supabase
-        .from('user_ratings')
-        .insert([{ user_id: userId, movie_id: movieId, rating, comment }]);
-      if (error) throw error;
-    }
+    if (error) throw error;
   }
 };
