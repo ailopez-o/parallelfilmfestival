@@ -1,5 +1,3 @@
-import { DEFAULT_MAX_PROPOSALS, DEFAULT_MAX_VOTES } from '../config/constants.js';
-
 /**
  * Centralized State Management Store.
  * Holds the single source of truth for the application.
@@ -27,8 +25,8 @@ class Store {
       currentSession: null,
       
       // Configuration state (Dynamic from DB)
-      maxProposals: DEFAULT_MAX_PROPOSALS,
-      maxVotes: DEFAULT_MAX_VOTES,
+      maxProposals: null,
+      maxVotes: null,
       
       // Lookups
       genreMap: {},
@@ -43,7 +41,7 @@ class Store {
    * Returns the current state.
    */
   getState() {
-    return this.state;
+    return this.createReadonlySnapshot(this.state);
   }
 
   /**
@@ -64,6 +62,40 @@ class Store {
     this.notify();
   }
 
+  createReadonlySnapshot(value) {
+    if (typeof structuredClone === 'function') {
+      return this.deepFreeze(structuredClone(value));
+    }
+    return this.deepFreeze(this.cloneFallback(value));
+  }
+
+  cloneFallback(value) {
+    if (value instanceof Set) return new Set([...value]);
+    if (Array.isArray(value)) return value.map(item => this.cloneFallback(item));
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value).map(([k, v]) => [k, this.cloneFallback(v)])
+      );
+    }
+    return value;
+  }
+
+  deepFreeze(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    Object.freeze(obj);
+    Object.getOwnPropertyNames(obj).forEach(prop => {
+      if (
+        Object.prototype.hasOwnProperty.call(obj, prop) &&
+        obj[prop] !== null &&
+        (typeof obj[prop] === 'object' || typeof obj[prop] === 'function') &&
+        !Object.isFrozen(obj[prop])
+      ) {
+        this.deepFreeze(obj[prop]);
+      }
+    });
+    return obj;
+  }
+
   /**
    * Adds a listener for state changes.
    * @param {Function} listener 
@@ -79,7 +111,8 @@ class Store {
    * Notifies all listeners of a state change.
    */
   notify() {
-    this.listeners.forEach(listener => listener(this.state));
+    const snapshot = this.createReadonlySnapshot(this.state);
+    this.listeners.forEach(listener => listener(snapshot));
   }
 }
 
