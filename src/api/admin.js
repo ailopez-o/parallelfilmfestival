@@ -1,4 +1,117 @@
 import { supabase } from '../config/supabase.js';
+import nextSessionTemplate from '../../next-session.html?raw';
+
+function escapeHtmlAttribute(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function normalizeOrigin(url) {
+  return url.replace(/\/$/, '');
+}
+
+function extractOriginFromCanonicalUrl(html) {
+  const ogUrlMatch = html.match(/<meta\s+property="og:url"\s+content="([^"]+)"/i);
+  if (!ogUrlMatch?.[1]) {
+    return normalizeOrigin(window.location.origin);
+  }
+
+  try {
+    return normalizeOrigin(new URL(ogUrlMatch[1]).origin);
+  } catch {
+    return normalizeOrigin(window.location.origin);
+  }
+}
+
+function absolutizeAssetUrl(path, origin) {
+  const normalizedOrigin = normalizeOrigin(origin);
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${normalizedOrigin}${normalizedPath}`;
+}
+
+function collectManifestAssets(manifest, entryKey) {
+  const entry = manifest?.[entryKey];
+  if (!entry?.file) return null;
+
+  const importedJs = [];
+  const cssFiles = [];
+  const visited = new Set();
+
+  const visit = (key) => {
+    if (!key || visited.has(key)) return;
+    visited.add(key);
+
+    const chunk = manifest[key];
+    if (!chunk) return;
+
+    if (chunk.file && !chunk.isEntry && !importedJs.includes(chunk.file)) {
+      importedJs.push(chunk.file);
+    }
+
+    chunk.css?.forEach((cssFile) => {
+      if (!cssFiles.includes(cssFile)) {
+        cssFiles.push(cssFile);
+      }
+    });
+
+    chunk.imports?.forEach(visit);
+  };
+
+  entry.imports?.forEach(visit);
+
+  return {
+    entryFile: entry.file,
+    importedJs,
+    cssFiles
+  };
+}
+
+function buildNextSessionAssetMarkup({ entryFile, importedJs, cssFiles }, publicOrigin) {
+  const lines = [
+    `    <script type="module" crossorigin src="${absolutizeAssetUrl(entryFile, publicOrigin)}"></script>`
+  ];
+
+  importedJs.forEach((file) => {
+    lines.push(`    <link rel="modulepreload" crossorigin href="${absolutizeAssetUrl(file, publicOrigin)}">`);
+  });
+
+  cssFiles.forEach((file) => {
+    lines.push(`    <link rel="stylesheet" crossorigin href="${absolutizeAssetUrl(file, publicOrigin)}">`);
+  });
+
+  return lines.join('\n');
+}
+
+function replaceNextSessionAssetBlock(html, assetMarkup) {
+  let updatedHtml = html
+    .replace(/\s*<link[^>]*id="theme-link"[^>]*>\s*/i, '\n')
+    .replace(/\s*<script[^>]*type="module"[^>]*src="[^"]*\/src\/next_session\.js"[^>]*><\/script>\s*/i, '\n')
+    .replace(/\s*<script[^>]*type="module"[^>]*src="[^"]*\/assets\/[^"]+"[^>]*><\/script>\s*/gi, '\n')
+    .replace(/\s*<link[^>]*rel="modulepreload"[^>]*href="[^"]*\/assets\/[^"]+"[^>]*>\s*/gi, '\n')
+    .replace(/\s*<link[^>]*rel="stylesheet"[^>]*href="[^"]*\/assets\/[^"]+"[^>]*>\s*/gi, '\n');
+
+  updatedHtml = updatedHtml.replace('</head>', `${assetMarkup}\n  </head>`);
+  return updatedHtml;
+}
+
+function extractBuiltAssetMarkup(html) {
+  const matches = html.match(
+    /<script[^>]*type="module"[^>]*src="[^"]*(?:\/assets\/|assets\/)[^"]+"[^>]*><\/script>|<link[^>]*rel="modulepreload"[^>]*href="[^"]*(?:\/assets\/|assets\/)[^"]+"[^>]*>|<link[^>]*rel="stylesheet"[^>]*href="[^"]*(?:\/assets\/|assets\/)[^"]+"[^>]*>/gi
+  );
+
+  if (!matches?.length) return null;
+  return matches.map((tag) => `    ${tag.trim()}`).join('\n');
+}
+
+function normalizeTemplateAssetUrls(html, publicOrigin) {
+  return html
+    .replace(/(src|href)="https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/(assets\/[^"]+)"/gi, (_, attr, path) => `${attr}="${absolutizeAssetUrl(path, publicOrigin)}"`)
+    .replace(/(src|href)="\/(assets\/[^"]+)"/gi, (_, attr, path) => `${attr}="${absolutizeAssetUrl(path, publicOrigin)}"`)
+    .replace(/(src|href)="\/(style\.css|src\/[^"]+)"/gi, (_, attr, path) => `${attr}="${absolutizeAssetUrl(path, publicOrigin)}"`);
+}
 
 /**
  * Admin API service.
@@ -224,14 +337,41 @@ export const AdminService = {
     if (storageError) throw new Error(`Storage error (image): ${storageError.message}`);
 
     // --- Part 2: Update HTML Metadata ---
-    // Fetch the current HTML to use as a template (fresh from the server)
-    const htmlResponse = await fetch(`/next-session.html?v=${Date.now()}`);
-    if (!htmlResponse.ok) throw new Error('Failed to fetch next-session.html template');
-    let html = await htmlResponse.text();
+    let html = nextSessionTemplate;
+    const publicOrigin = extractOriginFromCanonicalUrl(html);
+    let assetMarkup = null;
 
-    // IMPORTANT: Convert relative assets to absolute URLs so they work when hosted on Supabase Storage
-    const domain = window.location.origin;
-    html = html.replace(/(src|href)="\/(assets\/|style\.css|src\/)/gi, `$1="${domain}/$2`);
+    try {
+      const manifestResponse = await fetch(`/manifest.json?v=${Date.now()}`, { cache: 'no-store' });
+      if (manifestResponse.ok) {
+        const manifest = await manifestResponse.json();
+        const nextSessionAssets = collectManifestAssets(manifest, 'next-session.html');
+
+        if (nextSessionAssets) {
+          assetMarkup = buildNextSessionAssetMarkup(nextSessionAssets, publicOrigin);
+        }
+      }
+    } catch (manifestError) {
+      console.warn('Unable to load Vite manifest for social metadata:', manifestError);
+    }
+
+    if (!assetMarkup) {
+      try {
+        const currentHtmlResponse = await fetch(`/next-session.html?v=${Date.now()}`, { cache: 'no-store' });
+        if (currentHtmlResponse.ok) {
+          const currentHtml = await currentHtmlResponse.text();
+          assetMarkup = extractBuiltAssetMarkup(currentHtml);
+        }
+      } catch (templateError) {
+        console.warn('Unable to load served next-session template for social metadata:', templateError);
+      }
+    }
+
+    if (assetMarkup) {
+      html = replaceNextSessionAssetBlock(html, assetMarkup);
+    }
+
+    html = normalizeTemplateAssetUrls(html, publicOrigin);
 
     const dateObj = new Date(session.session_date);
     const dateStr = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
@@ -243,12 +383,12 @@ export const AdminService = {
 
     // Precise surgical replacement of OG tags only
     const replacements = [
-      { regex: /<meta property="og:title" content="[^"]*">/i, replacement: `<meta property="og:title" content="${title}">` },
-      { regex: /<meta property="og:description" content="[^"]*">/i, replacement: `<meta property="og:description" content="${description}">` },
-      { regex: /<meta property="og:image" content="[^"]*">/i, replacement: `<meta property="og:image" content="${imageUrl}">` },
-      { regex: /<meta name="twitter:title" content="[^"]*">/i, replacement: `<meta name="twitter:title" content="${title}">` },
-      { regex: /<meta name="twitter:description" content="[^"]*">/i, replacement: `<meta name="twitter:description" content="${description}">` },
-      { regex: /<meta name="twitter:image" content="[^"]*">/i, replacement: `<meta name="twitter:image" content="${imageUrl}">` }
+      { regex: /<meta property="og:title" content="[^"]*">/i, replacement: `<meta property="og:title" content="${escapeHtmlAttribute(title)}">` },
+      { regex: /<meta property="og:description" content="[^"]*">/i, replacement: `<meta property="og:description" content="${escapeHtmlAttribute(description)}">` },
+      { regex: /<meta property="og:image" content="[^"]*">/i, replacement: `<meta property="og:image" content="${escapeHtmlAttribute(imageUrl)}">` },
+      { regex: /<meta name="twitter:title" content="[^"]*">/i, replacement: `<meta name="twitter:title" content="${escapeHtmlAttribute(title)}">` },
+      { regex: /<meta name="twitter:description" content="[^"]*">/i, replacement: `<meta name="twitter:description" content="${escapeHtmlAttribute(description)}">` },
+      { regex: /<meta name="twitter:image" content="[^"]*">/i, replacement: `<meta name="twitter:image" content="${escapeHtmlAttribute(imageUrl)}">` }
     ];
 
     replacements.forEach(r => {

@@ -3,6 +3,7 @@ import { resolve } from 'path';
 
 export default defineConfig({
   build: {
+    manifest: 'manifest.json',
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
