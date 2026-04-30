@@ -90,11 +90,11 @@ export const MovieService = {
   async fetchVotesForUser(userId) {
     const { data, error } = await supabase
       .from('votes')
-      .select('movie_id')
+      .select('movie_id, movies(is_dropped, is_seen)')
       .eq('user_id', userId);
     
     if (error) throw error;
-    return data || [];
+    return (data || []).filter(vote => !vote.movies?.is_dropped && !vote.movies?.is_seen);
   },
 
   async addVote(userId, movieId) {
