@@ -38,10 +38,11 @@ class Store {
   }
 
   /**
-   * Returns the current state.
+   * Returns the live internal state for controller-level orchestration.
+   * Subscribers still receive readonly snapshots via notify().
    */
   getState() {
-    return this.createReadonlySnapshot(this.state);
+    return this.state;
   }
 
   /**
