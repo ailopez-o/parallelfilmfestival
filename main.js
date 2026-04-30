@@ -2146,13 +2146,28 @@ window.deleteSessionPhoto = async (photoId, photoUrl) => {
 
 /* --- Admin Session Logic --- */
 
+function resetSessionModalToCreateMode() {
+  const modalTitle = createSessionModal?.querySelector('h2');
+  const submitBtn = createSessionModal?.querySelector('.submit-btn');
+  const dateInput = document.getElementById('sessionDate');
+  const descriptionInput = document.getElementById('sessionDescription');
+  const keywordInput = document.getElementById('sessionKeyword');
+
+  if (modalTitle) modalTitle.textContent = 'Create Session';
+  if (submitBtn) {
+    submitBtn.textContent = 'Create Session';
+    submitBtn.onclick = () => window.handleCreateSession();
+  }
+
+  if (sessionMovieSelect) sessionMovieSelect.value = '';
+  if (dateInput) dateInput.value = '';
+  if (descriptionInput) descriptionInput.value = '';
+  if (keywordInput) keywordInput.value = '';
+}
+
 window.showCreateSessionModal = () => {
+  resetSessionModalToCreateMode();
   createSessionModal.classList.remove('page-hidden');
-  
-  // Reset form
-  document.getElementById('sessionMovieSelect').value = "";
-  document.getElementById('sessionDate').value = "";
-  document.getElementById('sessionDescription').value = "";
 
   // Fill movie select with proposed movies
 	  sessionMovieSelect.innerHTML = `
@@ -2164,6 +2179,8 @@ window.showCreateSessionModal = () => {
 };
 
 window.closeCreateSessionModal = () => {
+  resetSessionModalToCreateMode();
+  currentSession = null;
   createSessionModal.classList.add('page-hidden');
 };
 
@@ -2192,6 +2209,8 @@ window.handleCreateSession = async () => {
     showNotification('Session created successfully!');
     await fetchSessions();
     renderSessions();
+    renderNextSessionHero();
+    updateAdminSessions();
     
     window.closeCreateSessionModal();
   } catch (err) {
@@ -2340,23 +2359,38 @@ window.handleUpdateSession = async (sessionId) => {
   const dateStr = document.getElementById('sessionDate').value;
   const desc = document.getElementById('sessionDescription').value;
   const keyword = document.getElementById('sessionKeyword')?.value || null;
-  const isUpcoming = new Date(dateStr) > new Date();
+  const isUpcoming = dateStr ? new Date(dateStr) > new Date() : false;
+
+  if (!dateStr) {
+    showNotification('Date is required', 'error');
+    return;
+  }
 
   try {
-    await SessionService.updateSession(currentSession.id, {
+    const shouldRefreshDetailModal = sessionModal && !sessionModal.classList.contains('page-hidden');
+    const updatedSession = await SessionService.updateSession(sessionId, {
       movie_id: movieId,
       session_date: dateStr,
       description: desc,
       keyword: keyword,
+      location: currentSession?.location || 'Paral·lel Cinema',
       is_upcoming: isUpcoming
     });
     
     showNotification('Session updated!');
     await fetchSessions();
-    window.viewSessionDetails(currentSession.id);
+    renderSessions();
+    renderNextSessionHero();
+    updateAdminSessions();
+    currentSession = updatedSession;
+    window.closeCreateSessionModal();
+
+    if (shouldRefreshDetailModal) {
+      await window.viewSessionDetails(sessionId);
+    }
   } catch (err) {
     console.error('Error updating session:', err);
-    showNotification('Failed to update session', 'error');
+    showNotification(err.message || 'Failed to update session', 'error');
   }
 };
 

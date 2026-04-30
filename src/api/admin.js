@@ -203,18 +203,21 @@ export const AdminService = {
     
     const movie = session.movies;
     const posterUrl = movie?.poster_url;
-    if (!posterUrl) throw new Error('Session has no movie poster');
 
     // --- Part 1: Update Image ---
-    const proxyUrl = `https://images.weserv.nl/?url=${encodeURIComponent(posterUrl)}`;
-    const response = await fetch(proxyUrl);
-    if (!response.ok) throw new Error(`Failed to download image (Proxy Error: ${response.status})`);
+    const imageSource = posterUrl
+      ? `https://images.weserv.nl/?url=${encodeURIComponent(posterUrl)}`
+      : '/coming-soon.png';
+
+    const response = await fetch(imageSource);
+    if (!response.ok) throw new Error(`Failed to download image (Source Error: ${response.status})`);
     
     const imageBlob = await response.blob();
+    const imageContentType = response.headers.get('content-type') || imageBlob.type || 'image/jpeg';
     const { error: storageError } = await supabase.storage
       .from('social')
       .upload('current-poster.jpg', imageBlob, {
-        contentType: 'image/jpeg',
+        contentType: imageContentType,
         upsert: true
       });
     
@@ -234,7 +237,7 @@ export const AdminService = {
     const dateStr = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
     const timeStr = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
     
-    const title = `${movie.title} | Paral·lel Film Festival`;
+    const title = `${movie?.title || 'Film To Be Decided'} | Paral·lel Film Festival`;
     const description = `📅 ${dateStr} a las ${timeStr}. 📍 ${session.location || 'Paral·lel Cinema'}. ¡Únete a nosotros!`;
     const imageUrl = `${this.getPublicSocialAssetUrl('current-poster.jpg')}?v=${Date.now()}`;
 
@@ -265,7 +268,7 @@ export const AdminService = {
 
     return { 
       success: true, 
-      movieTitle: movie.title 
+      movieTitle: movie?.title || 'Film To Be Decided'
     };
   }
 };

@@ -147,8 +147,24 @@ export const SessionService = {
    * Updates an existing session (Admin only).
    */
   async updateSession(sessionId, updates) {
-    const { error } = await supabase.from('sessions').update(updates).eq('id', sessionId);
+    const payload = {
+      ...updates,
+      session_date: updates.session_date ? new Date(updates.session_date).toISOString() : updates.session_date
+    };
+
+    const { data, error } = await supabase
+      .from('sessions')
+      .update(payload)
+      .eq('id', sessionId)
+      .select('*, movies(*), session_signups(user_id, profiles(full_name, email))')
+      .maybeSingle();
+
     if (error) throw error;
+    if (!data) {
+      throw new Error('Session update did not persist. Check update permissions or whether the session still exists.');
+    }
+
+    return normalizeSession(data);
   },
 
   /**
