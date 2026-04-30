@@ -23,7 +23,8 @@ Deno.serve(async (req) => {
   const title = session?.movies?.title || 'Sesión | Paral·lel Film Festival'
   const description = session?.description || '¡Ven a ver esta película con nosotros!'
   const image = session?.movies?.poster_url || 'https://parallelfilmfestival.com/og-image.png'
-  const appUrl = `https://parallelfilmfestival.com/session.html?id=${sessionId}`
+  const escapedSessionId = encodeURIComponent(sessionId ?? '')
+  const appUrl = `https://parallelfilmfestival.com/?view=sessions&session=${escapedSessionId}`
 
   const html = `<!DOCTYPE html>
 <html lang="es">

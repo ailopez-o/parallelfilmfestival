@@ -1,6 +1,6 @@
 import { supabase } from './src/config/supabase.js';
 import { normalize, formatScore, timeAgo, showNotification, getUserDisplayName, escapeHtml } from './src/utils/index.js';
-import { FALLBACK_IMAGE, TBD_POSTER } from './src/config/constants.js';
+import { FALLBACK_IMAGE, TBD_POSTER, PARTICIPATION_POINTS } from './src/config/constants.js';
 import { 
   createMovieCardHTML, 
   createSessionCardHTML, 
@@ -56,6 +56,44 @@ function setAuthContext(nextUser, nextUserProfile, nextIsAdmin) {
     userProfile: nextUserProfile,
     isAdmin: nextIsAdmin
   });
+}
+
+function getMaxAttendanceStreak(attendedSessionIds, sessionsList) {
+  let maxStreak = 0;
+  let currentStreak = 0;
+
+  const sortedSessions = [...(sessionsList || [])]
+    .filter(session => session?.id && session?.session_date)
+    .sort((a, b) => new Date(a.session_date) - new Date(b.session_date));
+
+  sortedSessions.forEach(session => {
+    if (attendedSessionIds.has(session.id)) {
+      currentStreak += 1;
+      if (currentStreak > maxStreak) maxStreak = currentStreak;
+    } else {
+      currentStreak = 0;
+    }
+  });
+
+  return maxStreak;
+}
+
+function getAchievementPointsForUser(stats, sessionsList) {
+  const attendanceCount = stats.attendedSessionIds.size;
+  const ratingsCount = stats.ratedMovieIds.size;
+  const streak = getMaxAttendanceStreak(stats.attendedSessionIds, sessionsList);
+
+  return ACHIEVEMENT_LIST.reduce((sum, achievement) => {
+    let earned = false;
+
+    if (achievement.type === 'static') earned = true;
+    if (achievement.type === 'ratings') earned = ratingsCount >= achievement.target;
+    if (achievement.type === 'attendance') earned = attendanceCount >= achievement.target;
+    if (achievement.type === 'visionary') earned = stats.seenProposals >= achievement.target;
+    if (achievement.type === 'streak') earned = streak >= achievement.target;
+
+    return earned ? sum + (achievement.points || 0) : sum;
+  }, 0);
 }
 
 async function fetchAppSettings() {
@@ -887,92 +925,92 @@ async function fetchParticipationLog() {
 
 async function updateGlobalRanking() {
   try {
-    const [profilesRes, votesRes, moviesRes, ratingsRes, participationRes] = await Promise.all([
+    const [profilesRes, votesRes, moviesRes, ratingsRes, attendanceRes, sessionsRes] = await Promise.all([
       supabase.from('profiles').select('*'),
-      supabase.from('votes').select('user_id, movie_id, movies(is_seen, is_dropped)'),
-      supabase.from('movies').select('proposed_by, is_dropped, is_seen'),
-      supabase.from('user_ratings').select('user_id'),
-      supabase.from('participation_log').select('user_id, action_type')
+      supabase.from('votes').select('user_id, movie_id, movies(is_dropped)'),
+      supabase.from('movies').select('id, proposed_by, is_dropped, is_seen'),
+      supabase.from('user_ratings').select('user_id, movie_id'),
+      supabase.from('session_attendance').select('user_id, session_id'),
+      supabase.from('sessions').select('id, session_date')
     ]);
     
     if (profilesRes.error) throw profilesRes.error;
+    if (votesRes.error) throw votesRes.error;
+    if (moviesRes.error) throw moviesRes.error;
+    if (ratingsRes.error) throw ratingsRes.error;
+    if (attendanceRes.error) throw attendanceRes.error;
+    if (sessionsRes.error) throw sessionsRes.error;
+
     // Exclude admins from the competitive ranking
     const profiles = (profilesRes.data || []).filter(p => p.role !== 'admin');
     const votes = votesRes.data || [];
     const allMoviesList = moviesRes.data || [];
     const ratings = ratingsRes.data || [];
-    const attendance = (participationRes.data || []).filter(p => p.action_type === 'attendance');
+    const attendance = attendanceRes.data || [];
+    const orderedSessions = sessionsRes.data || [];
 
     // Calculate activity per user
     const userStats = {};
     profiles.forEach(p => {
       userStats[p.id] = { 
-        votesNormal: 0, 
-        votesSeen: 0, 
-        proposalsActive: 0, 
-        proposalsDropped: 0, 
+        activeVotes: 0,
+        activeProposals: 0,
+        cemeteryProposals: 0,
         seenProposals: 0,
-        ratings: 0,
-        sessionsCount: 0,
-        achievementsCount: 0,
+        ratedMovieIds: new Set(),
+        attendedSessionIds: new Set(),
         achievementPoints: 0
       };
     });
 
     votes.forEach(v => {
       if (!userStats[v.user_id]) return;
-      // If the movie is in the cemetery, the vote doesn't count for points
       if (v.movies?.is_dropped) return;
-      
-      if (v.movies?.is_seen) userStats[v.user_id].votesSeen++;
-      else userStats[v.user_id].votesNormal++;
+
+      userStats[v.user_id].activeVotes++;
     });
 
     allMoviesList.forEach(m => {
       if (!userStats[m.proposed_by]) return;
       if (m.is_dropped) {
-        userStats[m.proposed_by].proposalsDropped++;
+        userStats[m.proposed_by].cemeteryProposals++;
       } else {
-        userStats[m.proposed_by].proposalsActive++;
+        userStats[m.proposed_by].activeProposals++;
         if (m.is_seen) userStats[m.proposed_by].seenProposals++;
       }
     });
 
     ratings.forEach(r => {
-      if (userStats[r.user_id]) userStats[r.user_id].ratings++;
+      if (userStats[r.user_id] && r.movie_id) {
+        userStats[r.user_id].ratedMovieIds.add(r.movie_id);
+      }
     });
 
     attendance.forEach(a => {
-      if (userStats[a.user_id]) userStats[a.user_id].sessionsCount++;
+      if (userStats[a.user_id] && a.session_id) {
+        userStats[a.user_id].attendedSessionIds.add(a.session_id);
+      }
     });
 
-    // Calculate Achievements for each user
+    // Calculate Achievements for each user from the same business rules shown in the UI.
     (profiles || []).forEach(p => {
       const stats = userStats[p.id];
       if (!stats) return;
-
-      const earnedAchievements = ACHIEVEMENT_LIST.filter(def => {
-        if (def.type === 'static') return true;
-        if (def.type === 'ratings') return (stats.ratings || 0) >= def.target;
-        if (def.type === 'attendance') return (stats.sessionsCount || 0) >= def.target;
-        if (def.type === 'visionary') return (stats.seenProposals || 0) >= def.target;
-        if (def.type === 'streak') return (stats.sessionsCount || 0) >= 3; 
-        return false;
-      });
-      stats.achievementsCount = earnedAchievements.length;
-      stats.achievementPoints = earnedAchievements.reduce((sum, ach) => sum + (ach.points || 0), 0);
+      stats.achievementPoints = getAchievementPointsForUser(stats, orderedSessions);
     });
 
     // Final Score Calculation
     (profiles || []).forEach(p => {
       const s = userStats[p.id];
       if (!s) { p.score = 0; return; }
-      p.score = (s.proposalsActive * 5) + 
-                (s.proposalsDropped * 1) + 
-                (s.votesNormal * 1) + 
-                (s.votesSeen * 2) + 
-                (s.ratings * 5) + 
-                (s.achievementPoints);
+
+      p.score =
+        (s.activeProposals * PARTICIPATION_POINTS.proposalActive) +
+        (s.cemeteryProposals * PARTICIPATION_POINTS.proposalCemetery) +
+        (s.activeVotes * PARTICIPATION_POINTS.voteActive) +
+        (s.ratedMovieIds.size * PARTICIPATION_POINTS.review) +
+        (s.attendedSessionIds.size * PARTICIPATION_POINTS.attendance) +
+        s.achievementPoints;
     });
 
     // Sort by score descending
@@ -1009,9 +1047,17 @@ function renderRankingView() {
 async function fetchUserList() {
   try {
     const profiles = await AdminService.fetchAllProfiles();
-    // Re-calculate ranks and scores locally for display consistency
-    // (This logic could eventually move to the store/state layer)
-    AdminView.renderUserList(rankedUsers, adminUserList, adminUserCount, user);
+    const rankedById = new Map(rankedUsers.map(profile => [profile.id, profile]));
+    const profilesWithRanking = profiles.map(profile => {
+      const ranked = rankedById.get(profile.id);
+      return {
+        ...profile,
+        score: ranked?.score || 0,
+        rank: ranked?.rank || null
+      };
+    });
+
+    AdminView.renderUserList(profilesWithRanking, adminUserList, adminUserCount, user);
     if (window.lucide) window.lucide.createIcons();
   } catch (err) {
     console.error('Error fetching user list:', err);
@@ -1559,11 +1605,20 @@ window.proposeMovie = async (tmdbMovie, el) => {
     
     showNotification(`"${tmdbMovie.title}" proposed!`, 'success');
 
+    try {
+      if (data?.id) {
+        await AdminService.logParticipation(user.id, 'proposal', data.id);
+      }
+    } catch (logErr) {
+      console.error('Failed to log proposal:', logErr);
+    }
+
     // Automatically add user's vote to their own proposal
     try {
       if (data && data.id) {
         await MovieService.addVote(user.id, data.id);
         userVotes.add(data.id);
+        await AdminService.logParticipation(user.id, 'vote', data.id);
       }
     } catch (vErr) {
       console.warn('Auto-vote failed:', vErr);
@@ -1615,6 +1670,12 @@ window.toggleVote = async (movieId) => {
       movie.vote_count = (movie.vote_count || 1) - 1;
       if (btn) btn.classList.remove('active');
       if (countEl) countEl.textContent = `${movie.vote_count} votes`;
+
+      try {
+        await AdminService.logParticipation(user.id, 'vote_removed', movieId);
+      } catch (logErr) {
+        console.error('Failed to log removed vote:', logErr);
+      }
     } catch (err) {
       console.error('Failed to remove vote:', err);
       showNotification('Failed to remove vote', 'error');
@@ -1636,6 +1697,12 @@ window.toggleVote = async (movieId) => {
       movie.vote_count = (movie.vote_count || 0) + 1;
       if (btn) btn.classList.add('active');
       if (countEl) countEl.textContent = `${movie.vote_count} votes`;
+
+      try {
+        await AdminService.logParticipation(user.id, 'vote', movieId);
+      } catch (logErr) {
+        console.error('Failed to log vote:', logErr);
+      }
     } catch (err) {
       console.error('Failed to add vote:', err);
       showNotification('Failed to add vote', 'error');
@@ -1672,6 +1739,7 @@ window.rateMovie = async (movieId, rating) => {
   
   // Update state for immediate feedback
   const movie = seenMovies.find(m => m.id === movieId);
+  const isFirstReview = !movie?.user_rating;
   if (movie) movie.user_rating = rating;
 
   const commentInput = document.getElementById(`comment-input-${movieId}`);
@@ -1690,6 +1758,13 @@ window.rateMovie = async (movieId, rating) => {
     console.error('Error rating movie:', error);
     showNotification('Error saving rating', 'error');
   } else {
+    if (isFirstReview) {
+      try {
+        await AdminService.logParticipation(user.id, 'review', movieId);
+      } catch (logErr) {
+        console.error('Failed to log review:', logErr);
+      }
+    }
     showNotification('Rating saved!', 'success');
     await refreshData();
   }
@@ -2086,7 +2161,7 @@ window.handleCreateSession = async () => {
   const dateStr = document.getElementById('sessionDate').value;
   const desc = document.getElementById('sessionDescription').value;
   const keyword = document.getElementById('sessionKeyword')?.value || null;
-  const isUpcoming = true;
+  const isUpcoming = new Date(dateStr) > new Date();
 
   if (!dateStr) {
     showNotification('Date is required', 'error');
@@ -2254,7 +2329,7 @@ window.handleUpdateSession = async (sessionId) => {
   const dateStr = document.getElementById('sessionDate').value;
   const desc = document.getElementById('sessionDescription').value;
   const keyword = document.getElementById('sessionKeyword')?.value || null;
-  const isUpcoming = true;
+  const isUpcoming = new Date(dateStr) > new Date();
 
   try {
     await SessionService.updateSession(currentSession.id, {

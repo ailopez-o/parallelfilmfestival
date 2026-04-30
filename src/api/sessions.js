@@ -1,5 +1,14 @@
 import { supabase } from '../config/supabase.js';
 
+function normalizeSession(session) {
+  if (!session) return session;
+
+  return {
+    ...session,
+    is_upcoming: new Date(session.session_date) > new Date()
+  };
+}
+
 /**
  * Session Service.
  * Manages fetching and participation for cinema sessions.
@@ -15,7 +24,7 @@ export const SessionService = {
       .order('session_date', { ascending: false });
 
     if (error) throw error;
-    return data || [];
+    return (data || []).map(normalizeSession);
   },
 
   /**
@@ -29,7 +38,7 @@ export const SessionService = {
       .single();
 
     if (error) throw error;
-    return data;
+    return normalizeSession(data);
   },
 
   /**

@@ -9,6 +9,15 @@ export const TBD_POSTER = '/coming-soon.png';
 // API Timeouts
 export const TMDB_PROXY_TIMEOUT = 12000;
 
+// Core participation scoring rules
+export const PARTICIPATION_POINTS = {
+  proposalActive: 5,
+  proposalCemetery: 1,
+  voteActive: 1,
+  attendance: 10,
+  review: 5
+};
+
 // Achievement Definitions
 export const ACHIEVEMENT_LIST = [
   {

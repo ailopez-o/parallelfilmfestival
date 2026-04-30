@@ -20,7 +20,9 @@ export const AdminView = {
 	      const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&bold=true`;
 	      const date = p.created_at ? new Date(p.created_at).toLocaleDateString() : 'N/A';
 	      const roleLabel = p.role === 'admin' ? '<span style="color:var(--success); font-size: 0.7rem; font-weight:700;">ADMIN</span>' : '<span style="color:var(--text-secondary); font-size: 0.7rem;">USER</span>';
-	      const rankClass = p.rank <= 3 ? `top-${p.rank}` : '';
+	      const hasRank = Number.isInteger(p.rank) && p.rank > 0;
+	      const rankClass = hasRank && p.rank <= 3 ? `top-${p.rank}` : '';
+	      const rankLabel = hasRank ? `#${p.rank}` : '—';
 	      const profileIdArg = escapeHtml(JSON.stringify(p.id));
 	      const profileNameArg = escapeHtml(JSON.stringify(name));
 
@@ -28,7 +30,7 @@ export const AdminView = {
 	        <tr class="admin-user-row clickable" onclick="window.viewUserProfile(${profileIdArg})">
 	          <td>
 	            <div class="user-cell">
-	              <span class="user-rank ${rankClass}">#${p.rank}</span>
+	              <span class="user-rank ${rankClass}">${rankLabel}</span>
 	              <img src="${avatar}" alt="${safeName}">
 	              <div style="display:flex; flex-direction:column;">
 	                <span class="user-name">${safeName}</span>
