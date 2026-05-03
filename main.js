@@ -450,6 +450,14 @@ const editName = document.getElementById('editName');
 const editAvatar = document.getElementById('editAvatar');
 
 let profileAuditMode = 'activity';
+let authSyncSequence = 0;
+let proposalLazyRenderToken = 0;
+let proposalLazyObserver = null;
+let proposalLazyFallbackTimer = null;
+
+const INITIAL_PROPOSAL_CHUNK_SIZE = 10;
+const INITIAL_PROPOSAL_FALLBACK_MS = 2200;
+const INITIAL_PROPOSAL_ROOT_MARGIN = '900px 0px';
 
 // Fallback images (imported from constants)
 // Limits configuration
@@ -458,9 +466,11 @@ let profileAuditMode = 'activity';
 async function init() {
   const preloader = createPreloaderController();
   seedInitialLoadingState();
+  setupEventListeners();
+  handleRouting();
 
   try {
-    const startupBackgroundTasks = Promise.allSettled([
+    Promise.allSettled([
       fetchGenreMap(),
       fetchProvidersMap(),
       fetchAppSettings()
@@ -472,15 +482,10 @@ async function init() {
     await refreshData({ lazy: true });
     preloader.dismiss();
 
-    await startupBackgroundTasks;
-
   } catch (err) {
     console.error('Initialization error:', err);
     preloader.dismiss();
   }
-
-  setupEventListeners();
-  handleRouting();
 }
 
 async function fetchGenreMap() {
@@ -546,10 +551,11 @@ async function checkUser(session) {
     setAuthContext(currentUser, profile, currentIsAdmin);
     console.log(`[ACL] User: ${currentUser.email} | Role: ${profile?.role || 'user'} | Admin: ${currentIsAdmin}`);
 
-    const votes = await MovieService.fetchVotesForUser(currentUser.id);
+    const [votes, attendance] = await Promise.all([
+      MovieService.fetchVotesForUser(currentUser.id),
+      SessionService.fetchUserAttendance(currentUser.id)
+    ]);
     userVotes = new Set(votes?.map(v => v.movie_id) || []);
-
-    const attendance = await SessionService.fetchUserAttendance(currentUser.id);
     userAttendance = new Set(attendance || []);
   } else {
     setAuthContext(null, null, false);
@@ -568,6 +574,18 @@ async function checkUser(session) {
 
 async function refreshData(options = {}) {
   const { lazy = false } = options;
+  const individualRatingsPromise = user ? MovieService.getUserRatings(user.id) : Promise.resolve([]);
+  const allRatingsPromise = MovieService.getGlobalRatings();
+  const allProfilesPromise = AdminService.fetchAllProfiles();
+  const sessionsTask = fetchSessions()
+    .then(() => {
+      renderSessions();
+      renderNextSessionHero();
+      updateAdminSessions();
+    })
+    .catch((error) => {
+      console.error('Error refreshing sessions:', error);
+    });
 
   try {
     allMovies = await MovieService.fetchAllMovies();
@@ -576,47 +594,25 @@ async function refreshData(options = {}) {
     return;
   }
 
-  // Hydrate with ratings if user logged in
-  let individualRatings = [];
-  let allRatings = [];
-
-  if (user) {
-    individualRatings = await MovieService.getUserRatings(user.id);
-  }
-
-  allRatings = await MovieService.getGlobalRatings();
-  const allProfiles = await AdminService.fetchAllProfiles();
-
-  allMovies = allMovies.map((movie) => {
-    const userV = individualRatings.find(r => r.movie_id === movie.id);
-    const mRatings = allRatings.filter(r => r.movie_id === movie.id).map(r => ({
-      ...r,
-      profiles: allProfiles.find(p => p.id === r.user_id)
-    }));
-
-    const voteAverage = (movie.vote_average === undefined || movie.vote_average === null || movie.vote_average === 0)
+  allMovies = allMovies.map((movie) => ({
+    ...movie,
+    user_rating: 0,
+    user_comment: '',
+    reviews: [],
+    average_community_rating: 0,
+    vote_average:
+      (movie.vote_average === undefined || movie.vote_average === null || movie.vote_average === 0)
       && typeof movie.average_rating === 'number'
       && movie.average_rating !== 0
-      ? movie.average_rating
-      : movie.vote_average;
-
-    return {
-      ...movie,
-      user_rating: userV ? userV.rating : 0,
-      user_comment: userV ? userV.comment : '',
-      reviews: mRatings,
-      average_community_rating: mRatings.length > 0
-        ? mRatings.reduce((sum, r) => sum + r.rating, 0) / mRatings.length
-        : 0,
-      vote_average: voteAverage
-    };
-  });
+        ? movie.average_rating
+        : movie.vote_average
+  }));
 
   proposedMovies = allMovies.filter(m => !m.is_seen && !m.is_dropped);
   seenMovies = allMovies.filter(m => m.is_seen);
   const droppedMovies = allMovies.filter(m => m.is_dropped);
 
-  renderProposals();
+  renderProposals({ lazy });
   renderHistory();
   renderCemetery(droppedMovies);
   if (currentView === 'profile') loadUserActivity();
@@ -629,29 +625,62 @@ async function refreshData(options = {}) {
   if (currentView === 'profile') renderProfileAchievements();
   updateAuthUI();
 
-  const enrichmentTask = enrichMovieData(allMovies).catch((error) => {
+  const ratingsHydrationTask = Promise.all([individualRatingsPromise, allRatingsPromise, allProfilesPromise])
+    .then(([individualRatings, allRatings, allProfiles]) => {
+      const profileById = new Map((allProfiles || []).map((profile) => [profile.id, profile]));
+      const ratingsByMovieId = new Map();
+
+      (allRatings || []).forEach((rating) => {
+        const bucket = ratingsByMovieId.get(rating.movie_id) || [];
+        bucket.push({
+          ...rating,
+          profiles: profileById.get(rating.user_id)
+        });
+        ratingsByMovieId.set(rating.movie_id, bucket);
+      });
+
+      const individualRatingsByMovieId = new Map((individualRatings || []).map((rating) => [rating.movie_id, rating]));
+
+      allMovies = allMovies.map((movie) => {
+        const userRating = individualRatingsByMovieId.get(movie.id);
+        const movieRatings = ratingsByMovieId.get(movie.id) || [];
+
+        return {
+          ...movie,
+          user_rating: userRating ? userRating.rating : 0,
+          user_comment: userRating ? userRating.comment : '',
+          reviews: movieRatings,
+          average_community_rating: movieRatings.length > 0
+            ? movieRatings.reduce((sum, rating) => sum + rating.rating, 0) / movieRatings.length
+            : 0
+        };
+      });
+
+      proposedMovies = allMovies.filter(m => !m.is_seen && !m.is_dropped);
+      seenMovies = allMovies.filter(m => m.is_seen);
+      renderProposals({ lazy });
+      renderHistory();
+      if (currentView === 'profile') loadUserActivity();
+    })
+    .catch((error) => {
+      console.error('Error hydrating movie ratings:', error);
+    });
+
+  const enrichmentTask = enrichMovieData(allMovies, { lazyProposals: lazy }).catch((error) => {
     console.error('Error enriching movie data:', error);
   });
 
-  const sessionsTask = fetchSessions()
-    .then(() => {
-      renderSessions();
-      renderNextSessionHero();
-      updateAdminSessions();
-    })
-    .catch((error) => {
-      console.error('Error refreshing sessions:', error);
-    });
-
   if (!lazy) {
-    await Promise.all([enrichmentTask, sessionsTask]);
+    await Promise.all([ratingsHydrationTask, enrichmentTask, sessionsTask]);
   }
 }
 
 // Rendering Helpers
 // formatScore imported from utils
 
-async function enrichMovieData(movies) {
+async function enrichMovieData(movies, options = {}) {
+  const { lazyProposals = false } = options;
+
   // Find movies that need enrichment (missing scores, trailers, or providers)
   const moviesToEnrich = movies.filter(m => m.tmdb_id && (
     m.vote_average === undefined || m.vote_average === null || m.vote_average === 0 ||
@@ -703,7 +732,7 @@ async function enrichMovieData(movies) {
   }
 
   // Re-render
-  renderProposals();
+  renderProposals({ lazy: lazyProposals });
   renderHistory();
 }
 
@@ -788,9 +817,79 @@ function handleRouting() {
 // createMovieCardHTML imported from components
 
 // Rendering
-function renderProposals() {
-  HomeView.renderProposals(proposedMovies, movieGrid, { isAdmin, user, userVotes });
-  if (window.lucide) window.lucide.createIcons();
+function renderProposals(options = {}) {
+  const { lazy = false } = options;
+
+  if (!movieGrid) return;
+
+  if (!lazy) {
+    clearProposalLazyRenderState();
+    HomeView.renderProposals(proposedMovies, movieGrid, { isAdmin, user, userVotes });
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  if (!proposedMovies.length) {
+    clearProposalLazyRenderState();
+    HomeView.renderProposals(proposedMovies, movieGrid, { isAdmin, user, userVotes });
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  clearProposalLazyRenderState();
+  HomeView.renderMovieGridSkeletons(movieGrid, Math.min(6, proposedMovies.length));
+
+  const token = proposalLazyRenderToken;
+  let hasStarted = false;
+
+  const renderChunks = (startIndex = 0) => {
+    if (token !== proposalLazyRenderToken) return;
+
+    const chunk = proposedMovies.slice(startIndex, startIndex + INITIAL_PROPOSAL_CHUNK_SIZE);
+    if (startIndex === 0) {
+      movieGrid.innerHTML = buildProposalChunkHTML(chunk);
+    } else {
+      movieGrid.insertAdjacentHTML('beforeend', buildProposalChunkHTML(chunk));
+    }
+
+    if (window.lucide) window.lucide.createIcons();
+
+    const nextIndex = startIndex + INITIAL_PROPOSAL_CHUNK_SIZE;
+    if (nextIndex < proposedMovies.length) {
+      queueProposalChunkRender(() => renderChunks(nextIndex));
+    }
+  };
+
+  const startLazyRender = () => {
+    if (hasStarted || token !== proposalLazyRenderToken) return;
+    hasStarted = true;
+
+    if (proposalLazyObserver) {
+      proposalLazyObserver.disconnect();
+      proposalLazyObserver = null;
+    }
+
+    if (proposalLazyFallbackTimer) {
+      window.clearTimeout(proposalLazyFallbackTimer);
+      proposalLazyFallbackTimer = null;
+    }
+
+    renderChunks(0);
+  };
+
+  proposalLazyFallbackTimer = window.setTimeout(startLazyRender, INITIAL_PROPOSAL_FALLBACK_MS);
+
+  if (typeof window.IntersectionObserver === 'function') {
+    proposalLazyObserver = new window.IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        startLazyRender();
+      }
+    }, { rootMargin: INITIAL_PROPOSAL_ROOT_MARGIN });
+
+    proposalLazyObserver.observe(movieGrid);
+  } else {
+    startLazyRender();
+  }
 }
 
 async function renderTopVotedShowcase() {
@@ -2007,10 +2106,59 @@ async function updateCommunityAverage(movieId) {
   }
 }
 
+function scheduleAuthStateSync(session) {
+  const syncId = ++authSyncSequence;
+
+  window.setTimeout(async () => {
+    try {
+      await checkUser(session);
+      if (syncId !== authSyncSequence) return;
+      await refreshData({ lazy: true });
+    } catch (error) {
+      console.error('Error syncing auth state:', error);
+    }
+  }, 0);
+}
+
+function clearProposalLazyRenderState() {
+  proposalLazyRenderToken += 1;
+
+  if (proposalLazyObserver) {
+    proposalLazyObserver.disconnect();
+    proposalLazyObserver = null;
+  }
+
+  if (proposalLazyFallbackTimer) {
+    window.clearTimeout(proposalLazyFallbackTimer);
+    proposalLazyFallbackTimer = null;
+  }
+}
+
+function buildProposalChunkHTML(movies) {
+  return (movies || []).map((movie) => {
+    const isOwner = user && movie.proposed_by === user.id;
+    return createMovieCardHTML(movie, {
+      context: 'proposal',
+      showDelete: isOwner || isAdmin,
+      isAdmin,
+      user,
+      userVotes
+    });
+  }).join('');
+}
+
+function queueProposalChunkRender(renderFn) {
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(renderFn, { timeout: 120 });
+    return;
+  }
+
+  window.setTimeout(renderFn, 16);
+}
+
 function setupEventListeners() {
-  supabase.auth.onAuthStateChange(async (event, session) => {
-    await checkUser(session);
-    refreshData();
+  supabase.auth.onAuthStateChange((event, session) => {
+    scheduleAuthStateSync(session);
   });
 
   window.addEventListener('hashchange', handleRouting);
