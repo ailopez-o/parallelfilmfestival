@@ -136,6 +136,38 @@ export const SessionService = {
   },
 
   /**
+   * Records attendance for the most recent session associated with a movie.
+   */
+  async recordAttendanceByMovie(userId, movieId) {
+    const { data: session, error: sessionError } = await supabase
+      .from('sessions')
+      .select('id')
+      .eq('movie_id', movieId)
+      .order('session_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (sessionError) throw sessionError;
+    if (!session?.id) throw new Error('No session found for this movie.');
+
+    const { data: existing, error: existingError } = await supabase
+      .from('session_attendance')
+      .select('session_id')
+      .match({ session_id: session.id, user_id: userId })
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+    if (existing) return { action: 'existing', sessionId: session.id };
+
+    const { error: insertError } = await supabase
+      .from('session_attendance')
+      .insert([{ session_id: session.id, user_id: userId }]);
+
+    if (insertError) throw insertError;
+    return { action: 'added', sessionId: session.id };
+  },
+
+  /**
    * Creates a new session (Admin only).
    */
   async createSession(sessionData) {

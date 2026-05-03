@@ -716,26 +716,6 @@ window.dropMovie = async (movieId) => {
 
   try {
     await MovieService.updateMovieData(movieId, { is_dropped: true });
-    
-    // Log the points loss (-4) for the proposer
-    if (movie.proposed_by) {
-      await AdminService.logParticipation(movie.proposed_by, 'cemetery_drop', movieId);
-    }
-
-    // Log the points loss (-1) for each voter
-    try {
-      const { data: voters } = await supabase.from('votes').select('user_id').eq('movie_id', movieId);
-      if (voters && voters.length > 0) {
-        const voteLogs = voters.map(v => ({
-          user_id: v.user_id,
-          action_type: 'cemetery_vote_loss',
-          movie_id: movieId
-        }));
-        await supabase.from('participation_log').insert(voteLogs);
-      }
-    } catch (vLogErr) {
-      console.error('Error logging vote losses:', vLogErr);
-    }
 
     // Permanently delete votes for this movie to free up slots
     await supabase.from('votes').delete().eq('movie_id', movieId);
@@ -1109,25 +1089,11 @@ window.markAttendance = async (userId, movieId) => {
 
   try {
     showNotification('Recording attendance...', 'info');
-    
-    // Check if already attended
-    const { data: existing } = await supabase
-      .from('participation_log')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('movie_id', movieId)
-      .eq('action_type', 'attendance')
-      .single();
-    
-    if (existing) {
+
+    const result = await SessionService.recordAttendanceByMovie(userId, movieId);
+    if (result.action === 'existing') {
       showNotification('User already checked-in for this session.', 'warning');
       return;
-    }
-
-    try {
-      await AdminService.logParticipation(userId, 'attendance', movieId);
-    } catch (err) {
-      console.error(`[Participation] Failed to log attendance:`, err);
     }
 
     showNotification('Attendance recorded! (+10 pts)', 'success');
@@ -1562,26 +1528,11 @@ window.proposeMovie = async (tmdbMovie, el) => {
     if (existing && existing.is_dropped) {
       if (confirm(`"${tmdbMovie.title}" is currently in the Cinema Cemetery. Do you want to rescue it and bring it back to active proposals?`)) {
         await MovieService.rescueMovie(existing.id, user.id);
-        
-        // Log the correct point adjustment
-        if (existing.proposed_by === user.id) {
-          // If I rescue my own movie, I gain +4 (I already had +1 for being in cemetery)
-          await AdminService.logParticipation(user.id, 'proposal_rescue', existing.id);
-        } else {
-          // If I rescue someone else's movie, I gain +5
-          await AdminService.logParticipation(user.id, 'proposal', existing.id);
-          
-          // And the old proposer loses the +1 they were keeping for the cemetery movie
-          if (existing.proposed_by) {
-            await AdminService.logParticipation(existing.proposed_by, 'proposal_lost', existing.id);
-          }
-        }
 
         // Ensure user has a vote on the rescued movie (auto-vote)
         const hasVoted = await MovieService.fetchVotesForUser(user.id);
         if (!hasVoted.some(v => v.movie_id === existing.id)) {
           await MovieService.addVote(user.id, existing.id);
-          await AdminService.logParticipation(user.id, 'vote', existing.id);
           userVotes.add(existing.id);
         }
 
@@ -1616,20 +1567,11 @@ window.proposeMovie = async (tmdbMovie, el) => {
     
     showNotification(`"${tmdbMovie.title}" proposed!`, 'success');
 
-    try {
-      if (data?.id) {
-        await AdminService.logParticipation(user.id, 'proposal', data.id);
-      }
-    } catch (logErr) {
-      console.error('Failed to log proposal:', logErr);
-    }
-
     // Automatically add user's vote to their own proposal
     try {
       if (data && data.id) {
         await MovieService.addVote(user.id, data.id);
         userVotes.add(data.id);
-        await AdminService.logParticipation(user.id, 'vote', data.id);
       }
     } catch (vErr) {
       console.warn('Auto-vote failed:', vErr);
@@ -1681,12 +1623,6 @@ window.toggleVote = async (movieId) => {
       movie.vote_count = (movie.vote_count || 1) - 1;
       if (btn) btn.classList.remove('active');
       if (countEl) countEl.textContent = `${movie.vote_count} votes`;
-
-      try {
-        await AdminService.logParticipation(user.id, 'vote_removed', movieId);
-      } catch (logErr) {
-        console.error('Failed to log removed vote:', logErr);
-      }
     } catch (err) {
       console.error('Failed to remove vote:', err);
       showNotification('Failed to remove vote', 'error');
@@ -1708,12 +1644,6 @@ window.toggleVote = async (movieId) => {
       movie.vote_count = (movie.vote_count || 0) + 1;
       if (btn) btn.classList.add('active');
       if (countEl) countEl.textContent = `${movie.vote_count} votes`;
-
-      try {
-        await AdminService.logParticipation(user.id, 'vote', movieId);
-      } catch (logErr) {
-        console.error('Failed to log vote:', logErr);
-      }
     } catch (err) {
       console.error('Failed to add vote:', err);
       showNotification('Failed to add vote', 'error');
@@ -1769,13 +1699,6 @@ window.rateMovie = async (movieId, rating) => {
     console.error('Error rating movie:', error);
     showNotification('Error saving rating', 'error');
   } else {
-    if (isFirstReview) {
-      try {
-        await AdminService.logParticipation(user.id, 'review', movieId);
-      } catch (logErr) {
-        console.error('Failed to log review:', logErr);
-      }
-    }
     showNotification('Rating saved!', 'success');
     await refreshData();
   }

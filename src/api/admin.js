@@ -170,16 +170,6 @@ export const AdminService = {
     if (error) throw error;
     return data || [];
   },
-  
-  /**
-   * Logs a user participation event (like attendance, proposals, voting).
-   */
-  async logParticipation(userId, actionType, movieId = null) {
-    const logData = { user_id: userId, action_type: actionType };
-    if (movieId) logData.movie_id = movieId;
-    const { error } = await supabase.from('participation_log').insert([logData]);
-    if (error) throw error;
-  },
 
   /**
    * Fetches application settings (limits, etc.)
@@ -263,43 +253,9 @@ export const AdminService = {
 
     if (updateErr) throw updateErr;
 
-    // Log the points loss for each movie proposer and voter
-    try {
-      const logs = [];
-      
-      // Points loss for proposers (-4)
-      toDrop.forEach(m => {
-        logs.push({
-          user_id: m.proposed_by,
-          action_type: 'cemetery_drop',
-          movie_id: m.id
-        });
-      });
-
-      // Points loss for voters (-1)
-      const { data: voters } = await supabase
-        .from('votes')
-        .select('user_id, movie_id')
-        .in('movie_id', ids);
-
-      voters?.forEach(v => {
-        logs.push({
-          user_id: v.user_id,
-          action_type: 'cemetery_vote_loss',
-          movie_id: v.movie_id
-        });
-      });
-
-      if (logs.length > 0) {
-        await supabase.from('participation_log').insert(logs);
-      }
-
-      // NEW: Permanently delete votes for dropped movies to free up user vote slots
-      await supabase.from('votes').delete().in('movie_id', ids);
-      
-    } catch (logErr) {
-      console.error('Error logging automatic drops:', logErr);
-    }
+    // Permanently delete votes for dropped movies to free up user vote slots.
+    // Supabase DB triggers are now responsible for generating participation logs.
+    await supabase.from('votes').delete().in('movie_id', ids);
     
     return { cleanedCount: toDrop.length };
   },
