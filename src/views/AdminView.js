@@ -39,7 +39,7 @@ export const AdminView = {
 	            </div>
 	          </td>
 	          <td><span style="font-size:0.85rem; color:var(--text-secondary);">${safeEmail}</span></td>
-	          <td><span class="score-badge">${p.score || 0} pts</span></td>
+	          <td><button class="score-badge" style="cursor:pointer; border:none;" onclick="event.stopPropagation(); window.viewUserPointsAudit(${profileIdArg})">${p.score || 0} pts</button></td>
 	          <td><span style="font-size:0.8rem; color:var(--text-tertiary);">${date}</span></td>
 	          <td>
 	            <button class="delete-user-btn" onclick="event.stopPropagation(); window.confirmDeleteUser(${profileIdArg}, ${profileNameArg})" title="Delete User">

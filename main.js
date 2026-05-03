@@ -161,6 +161,174 @@ function getAchievementPointsForUser(stats, sessionsList) {
   }, 0);
 }
 
+function getAchievementBreakdownForUser(stats, sessionsList) {
+  const attendanceCount = stats.attendedSessionIds.size;
+  const ratingsCount = stats.ratedMovieIds.size;
+  const streak = getMaxAttendanceStreak(stats.attendedSessionIds, sessionsList);
+
+  return ACHIEVEMENT_LIST.filter((achievement) => {
+    if (achievement.type === 'static') return true;
+    if (achievement.type === 'ratings') return ratingsCount >= achievement.target;
+    if (achievement.type === 'attendance') return attendanceCount >= achievement.target;
+    if (achievement.type === 'visionary') return stats.seenProposals >= achievement.target;
+    if (achievement.type === 'streak') return streak >= achievement.target;
+    return false;
+  }).map((achievement) => ({
+    ...achievement,
+    reason: achievement.desc
+  }));
+}
+
+function createEmptyScoreStats() {
+  return {
+    activeVotes: 0,
+    activeProposals: 0,
+    cemeteryProposals: 0,
+    seenProposals: 0,
+    ratedMovieIds: new Set(),
+    attendedSessionIds: new Set(),
+    activeVoteMovieIds: new Set(),
+    activeProposalMovieIds: new Set(),
+    cemeteryProposalMovieIds: new Set(),
+    achievementPoints: 0,
+    achievementBreakdown: [],
+    totalScore: 0
+  };
+}
+
+function buildUserScoreStatsMap(profiles, votes, allMoviesList, ratings, attendance, orderedSessions) {
+  const userStats = {};
+
+  (profiles || []).forEach((profile) => {
+    userStats[profile.id] = createEmptyScoreStats();
+  });
+
+  (votes || []).forEach((vote) => {
+    const stats = userStats[vote.user_id];
+    if (!stats || vote.movies?.is_dropped) return;
+
+    stats.activeVotes += 1;
+    if (vote.movie_id) stats.activeVoteMovieIds.add(vote.movie_id);
+  });
+
+  (allMoviesList || []).forEach((movie) => {
+    const stats = userStats[movie.proposed_by];
+    if (!stats) return;
+
+    if (movie.is_dropped) {
+      stats.cemeteryProposals += 1;
+      stats.cemeteryProposalMovieIds.add(movie.id);
+      return;
+    }
+
+    stats.activeProposals += 1;
+    stats.activeProposalMovieIds.add(movie.id);
+    if (movie.is_seen) stats.seenProposals += 1;
+  });
+
+  (ratings || []).forEach((rating) => {
+    const stats = userStats[rating.user_id];
+    if (stats && rating.movie_id) {
+      stats.ratedMovieIds.add(rating.movie_id);
+    }
+  });
+
+  (attendance || []).forEach((entry) => {
+    const stats = userStats[entry.user_id];
+    if (stats && entry.session_id) {
+      stats.attendedSessionIds.add(entry.session_id);
+    }
+  });
+
+  (profiles || []).forEach((profile) => {
+    const stats = userStats[profile.id];
+    if (!stats) return;
+
+    stats.achievementBreakdown = getAchievementBreakdownForUser(stats, orderedSessions);
+    stats.achievementPoints = stats.achievementBreakdown.reduce((sum, achievement) => sum + (achievement.points || 0), 0);
+    stats.totalScore =
+      (stats.activeProposals * PARTICIPATION_POINTS.proposalActive) +
+      (stats.cemeteryProposals * PARTICIPATION_POINTS.proposalCemetery) +
+      (stats.activeVotes * PARTICIPATION_POINTS.voteActive) +
+      (stats.ratedMovieIds.size * PARTICIPATION_POINTS.review) +
+      (stats.attendedSessionIds.size * PARTICIPATION_POINTS.attendance) +
+      stats.achievementPoints;
+  });
+
+  return userStats;
+}
+
+function buildUserPointsAudit(profile, stats, context = {}) {
+  const moviesById = new Map((context.movies || []).map((movie) => [movie.id, movie]));
+  const voteTitleMap = new Map((context.votes || []).map((vote) => [vote.movie_id, vote.movies]));
+  const ratingTitleMap = new Map((context.ratings || []).map((rating) => [rating.movie_id, rating.movies]));
+  const sessionEntries = context.attendanceEntries || [];
+
+  const movieTitleForId = (movieId) => {
+    const movie = moviesById.get(movieId) || voteTitleMap.get(movieId) || ratingTitleMap.get(movieId);
+    return movie?.title || 'Untitled movie';
+  };
+
+  const attendanceDetails = sessionEntries
+    .map((entry) => {
+      const title = entry.sessions?.movies?.title || 'Session';
+      const date = entry.sessions?.session_date
+        ? new Date(entry.sessions.session_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
+        : null;
+      return date ? `${title} (${date})` : title;
+    })
+    .filter(Boolean);
+
+  const lines = [
+    {
+      label: 'Valid Proposals',
+      count: stats.activeProposals,
+      unitPoints: PARTICIPATION_POINTS.proposalActive,
+      totalPoints: stats.activeProposals * PARTICIPATION_POINTS.proposalActive,
+      details: Array.from(stats.activeProposalMovieIds).map(movieTitleForId)
+    },
+    {
+      label: 'Cemetery Proposals',
+      count: stats.cemeteryProposals,
+      unitPoints: PARTICIPATION_POINTS.proposalCemetery,
+      totalPoints: stats.cemeteryProposals * PARTICIPATION_POINTS.proposalCemetery,
+      details: Array.from(stats.cemeteryProposalMovieIds).map(movieTitleForId)
+    },
+    {
+      label: 'Active Votes',
+      count: stats.activeVotes,
+      unitPoints: PARTICIPATION_POINTS.voteActive,
+      totalPoints: stats.activeVotes * PARTICIPATION_POINTS.voteActive,
+      details: Array.from(stats.activeVoteMovieIds).map(movieTitleForId)
+    },
+    {
+      label: 'Reviews',
+      count: stats.ratedMovieIds.size,
+      unitPoints: PARTICIPATION_POINTS.review,
+      totalPoints: stats.ratedMovieIds.size * PARTICIPATION_POINTS.review,
+      details: Array.from(stats.ratedMovieIds).map(movieTitleForId)
+    },
+    {
+      label: 'Attendance',
+      count: stats.attendedSessionIds.size,
+      unitPoints: PARTICIPATION_POINTS.attendance,
+      totalPoints: stats.attendedSessionIds.size * PARTICIPATION_POINTS.attendance,
+      details: attendanceDetails
+    }
+  ];
+
+  const basePoints = lines.reduce((sum, line) => sum + line.totalPoints, 0);
+
+  return {
+    userId: profile.id,
+    totalScore: stats.totalScore,
+    basePoints,
+    achievementPoints: stats.achievementPoints,
+    achievements: stats.achievementBreakdown,
+    lines
+  };
+}
+
 async function fetchAppSettings() {
   try {
     const settings = await AdminService.fetchAppSettings();
@@ -258,6 +426,9 @@ const profileAvatar = document.getElementById('profileAvatar');
 const countProposals = document.getElementById('countProposals');
 const countVotes = document.getElementById('countVotes');
 const profileActivityGrid = document.getElementById('profileActivityGrid');
+const profilePointsAuditSection = document.getElementById('profilePointsAuditSection');
+const profilePointsAuditContent = document.getElementById('profilePointsAuditContent');
+const profilePointsAuditSubtitle = document.getElementById('profilePointsAuditSubtitle');
 const adminDashboard = document.getElementById('adminDashboard');
 const adminUserList = document.getElementById('adminUserList');
 const adminUserCount = document.getElementById('adminUserCount');
@@ -277,6 +448,8 @@ const profileDisplay = document.getElementById('profileDisplay');
 const profileEditForm = document.getElementById('profileEditForm');
 const editName = document.getElementById('editName');
 const editAvatar = document.getElementById('editAvatar');
+
+let profileAuditMode = 'activity';
 
 // Fallback images (imported from constants)
 // Limits configuration
@@ -536,6 +709,10 @@ async function enrichMovieData(movies) {
 
 // Routing
 window.navigateTo = (viewId, targetUserId = null) => {
+  if (viewId === 'profile' && !targetUserId) {
+    profileAuditMode = 'activity';
+  }
+
   currentView = viewId;
   
   // Hide all views
@@ -568,8 +745,21 @@ function updateActiveNavLink(viewId) {
 
 window.viewUserProfile = (userId) => {
   if (!isAdmin) return;
+  profileAuditMode = 'activity';
   console.log(`[Admin] Auditing user profile: ${userId}`);
   window.navigateTo('profile', userId);
+};
+
+window.viewUserPointsAudit = (userId) => {
+  if (!isAdmin) return;
+  profileAuditMode = 'points';
+  console.log(`[Admin] Auditing user points: ${userId}`);
+  window.navigateTo('profile', userId);
+};
+
+window.exitUserAudit = () => {
+  profileAuditMode = 'activity';
+  window.navigateTo('profile');
 };
 
 function handleRouting() {
@@ -841,6 +1031,12 @@ async function loadUserActivity(targetUserId = null) {
   ProfileView.renderSkeletonHeader({ profileName, profileEmail, profileAvatar, countProposals, countVotes });
   ProfileView.renderActivitySkeletons(profileActivityGrid);
   ProfileView.renderAchievementSkeletons(document.getElementById('profileAchievementsGrid'));
+  if (isAudit && profileAuditMode === 'points') {
+    profilePointsAuditSection?.classList.remove('page-hidden');
+    ProfileView.renderPointsAuditSkeleton(profilePointsAuditContent);
+  } else {
+    profilePointsAuditSection?.classList.add('page-hidden');
+  }
 
   // Fetch target profile data from the DB
   const { data: profile } = await supabase.from('profiles').select('*').eq('id', activeUid).single();
@@ -865,7 +1061,7 @@ async function loadUserActivity(targetUserId = null) {
   if (isAudit) {
     auditBadge.id = 'auditBadge';
     auditBadge.className = 'audit-badge';
-    auditBadge.innerHTML = `<i data-lucide="shield-check"></i> Auditing User Profile <button onclick="window.navigateTo('profile')">Exit Audit</button>`;
+    auditBadge.innerHTML = `<i data-lucide="shield-check"></i> Auditing User Profile <button onclick="window.exitUserAudit()">Exit Audit</button>`;
     profileName.parentElement.prepend(auditBadge);
     document.getElementById('editProfileBtn')?.classList.add('page-hidden');
   } else {
@@ -900,6 +1096,20 @@ async function loadUserActivity(targetUserId = null) {
   if (countVotes) countVotes.textContent = `${activeVotes.length || 0} / ${votesLimitLabel}`;
 
   renderActivityGrid(proposals || []);
+
+  if (isAudit && profileAuditMode === 'points') {
+    if (profilePointsAuditSubtitle) {
+      const displayName = getUserDisplayName(profile);
+      profilePointsAuditSubtitle.textContent = `Detailed score audit for ${displayName}.`;
+    }
+    await loadProfilePointsAudit(profile);
+    profilePointsAuditSection?.classList.remove('page-hidden');
+    window.setTimeout(() => {
+      profilePointsAuditSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  } else {
+    profilePointsAuditSection?.classList.add('page-hidden');
+  }
   
   document.querySelectorAll('.activity-tab').forEach(tab => {
     tab.onclick = () => {
@@ -976,6 +1186,52 @@ async function fetchParticipationLog() {
   }
 }
 
+async function loadProfilePointsAudit(profile) {
+  if (!profile?.id || !profilePointsAuditContent) return;
+
+  try {
+    const [votesRes, moviesRes, ratingsRes, attendanceRes, sessionsRes] = await Promise.all([
+      supabase.from('votes').select('user_id, movie_id, movies(id, title, is_dropped)').eq('user_id', profile.id),
+      supabase.from('movies').select('id, title, proposed_by, is_dropped, is_seen').eq('proposed_by', profile.id),
+      supabase.from('user_ratings').select('user_id, movie_id, movies(title)').eq('user_id', profile.id),
+      supabase.from('session_attendance').select('user_id, session_id, sessions(session_date, movie_id, movies(title))').eq('user_id', profile.id),
+      supabase.from('sessions').select('id, session_date, movie_id, movies(title)').order('session_date', { ascending: true })
+    ]);
+
+    const errors = [votesRes.error, moviesRes.error, ratingsRes.error, attendanceRes.error, sessionsRes.error].filter(Boolean);
+    if (errors.length > 0) {
+      throw new Error(errors.map(error => error.message || 'Unknown points audit error').join(' | '));
+    }
+
+    const attendance = (attendanceRes.data || []).map((entry) => ({
+      user_id: entry.user_id,
+      session_id: entry.session_id
+    }));
+
+    const statsMap = buildUserScoreStatsMap(
+      [profile],
+      votesRes.data || [],
+      moviesRes.data || [],
+      ratingsRes.data || [],
+      attendance,
+      sessionsRes.data || []
+    );
+
+    const stats = statsMap[profile.id] || createEmptyScoreStats();
+    const audit = buildUserPointsAudit(profile, stats, {
+      votes: votesRes.data || [],
+      movies: moviesRes.data || [],
+      ratings: ratingsRes.data || [],
+      attendanceEntries: attendanceRes.data || []
+    });
+
+    ProfileView.renderPointsAudit(audit, profilePointsAuditContent);
+  } catch (error) {
+    console.error('Error loading points audit:', error);
+    profilePointsAuditContent.innerHTML = '<div class="empty-state">Failed to load points audit.</div>';
+  }
+}
+
 async function updateGlobalRanking() {
   try {
     const [profilesRes, votesRes, moviesRes, ratingsRes, attendanceRes, sessionsRes] = await Promise.all([
@@ -984,7 +1240,7 @@ async function updateGlobalRanking() {
       supabase.from('movies').select('id, proposed_by, is_dropped, is_seen'),
       supabase.from('user_ratings').select('user_id, movie_id'),
       supabase.from('session_attendance').select('user_id, session_id'),
-      supabase.from('sessions').select('id, session_date')
+      supabase.from('sessions').select('id, session_date, movie_id, movies(title)')
     ]);
     
     if (profilesRes.error) throw profilesRes.error;
@@ -1002,68 +1258,11 @@ async function updateGlobalRanking() {
     const attendance = attendanceRes.data || [];
     const orderedSessions = sessionsRes.data || [];
 
-    // Calculate activity per user
-    const userStats = {};
-    profiles.forEach(p => {
-      userStats[p.id] = { 
-        activeVotes: 0,
-        activeProposals: 0,
-        cemeteryProposals: 0,
-        seenProposals: 0,
-        ratedMovieIds: new Set(),
-        attendedSessionIds: new Set(),
-        achievementPoints: 0
-      };
-    });
+    const userStats = buildUserScoreStatsMap(profiles, votes, allMoviesList, ratings, attendance, orderedSessions);
 
-    votes.forEach(v => {
-      if (!userStats[v.user_id]) return;
-      if (v.movies?.is_dropped) return;
-
-      userStats[v.user_id].activeVotes++;
-    });
-
-    allMoviesList.forEach(m => {
-      if (!userStats[m.proposed_by]) return;
-      if (m.is_dropped) {
-        userStats[m.proposed_by].cemeteryProposals++;
-      } else {
-        userStats[m.proposed_by].activeProposals++;
-        if (m.is_seen) userStats[m.proposed_by].seenProposals++;
-      }
-    });
-
-    ratings.forEach(r => {
-      if (userStats[r.user_id] && r.movie_id) {
-        userStats[r.user_id].ratedMovieIds.add(r.movie_id);
-      }
-    });
-
-    attendance.forEach(a => {
-      if (userStats[a.user_id] && a.session_id) {
-        userStats[a.user_id].attendedSessionIds.add(a.session_id);
-      }
-    });
-
-    // Calculate Achievements for each user from the same business rules shown in the UI.
     (profiles || []).forEach(p => {
       const stats = userStats[p.id];
-      if (!stats) return;
-      stats.achievementPoints = getAchievementPointsForUser(stats, orderedSessions);
-    });
-
-    // Final Score Calculation
-    (profiles || []).forEach(p => {
-      const s = userStats[p.id];
-      if (!s) { p.score = 0; return; }
-
-      p.score =
-        (s.activeProposals * PARTICIPATION_POINTS.proposalActive) +
-        (s.cemeteryProposals * PARTICIPATION_POINTS.proposalCemetery) +
-        (s.activeVotes * PARTICIPATION_POINTS.voteActive) +
-        (s.ratedMovieIds.size * PARTICIPATION_POINTS.review) +
-        (s.attendedSessionIds.size * PARTICIPATION_POINTS.attendance) +
-        s.achievementPoints;
+      p.score = stats?.totalScore || 0;
     });
 
     // Sort by score descending
