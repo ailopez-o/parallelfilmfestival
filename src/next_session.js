@@ -15,16 +15,49 @@ const state = {
 let currentSession = null; // Store current session object
 let sessionData = null;    // Store detailed session info
 
-async function init() {
-  const dismissPreloader = () => {
+const PRELOADER_MIN_VISIBLE_MS = 200;
+const PRELOADER_MAX_VISIBLE_MS = 1200;
+const PRELOADER_REMOVE_DELAY_MS = 450;
+
+function createPreloaderController() {
+  const startedAt = Date.now();
+  let dismissed = false;
+
+  const dismiss = () => {
+    if (dismissed) return;
+
     const preloader = document.getElementById('preloader');
-    if (preloader) {
-      preloader.classList.add('fade-out');
-      setTimeout(() => preloader.remove(), 800);
+    if (!preloader || preloader.classList.contains('fade-out')) {
+      dismissed = true;
+      return;
     }
+
+    dismissed = true;
+    const elapsed = Date.now() - startedAt;
+    const waitMs = Math.max(0, PRELOADER_MIN_VISIBLE_MS - elapsed);
+
+    window.setTimeout(() => {
+      preloader.classList.add('fade-out');
+      window.setTimeout(() => preloader.remove(), PRELOADER_REMOVE_DELAY_MS);
+    }, waitMs);
   };
 
+  const fallbackTimer = window.setTimeout(dismiss, PRELOADER_MAX_VISIBLE_MS);
+
+  return {
+    dismiss() {
+      window.clearTimeout(fallbackTimer);
+      dismiss();
+    }
+  };
+}
+
+async function init() {
+  const preloader = createPreloaderController();
   const container = document.getElementById('sessionContainer');
+  if (container) {
+    container.innerHTML = '<div class="empty-state">Loading session details...</div>';
+  }
 
   try {
     // 1. Auth check (OPTIONAL for viewing)
@@ -41,7 +74,7 @@ async function init() {
 
     if (!state.user) {
       // MANDATORY LOGIN
-      dismissPreloader();
+      preloader.dismiss();
       window.showLoginModal();
       return;
     }
@@ -54,7 +87,7 @@ async function init() {
 
     if (!currentSession) {
       container.innerHTML = '<div class="empty-state">No upcoming sessions found.</div>';
-      dismissPreloader();
+      preloader.dismiss();
       return;
     }
 
@@ -63,11 +96,11 @@ async function init() {
     // 3. Render Initial Detail
     renderAll();
     
-    dismissPreloader();
+    preloader.dismiss();
   } catch (err) {
     console.error('Error loading session:', err);
     container.innerHTML = '<div class="empty-state">Error loading session details.</div>';
-    dismissPreloader();
+    preloader.dismiss();
   }
 }
 

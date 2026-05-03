@@ -58,6 +58,71 @@ function setAuthContext(nextUser, nextUserProfile, nextIsAdmin) {
   });
 }
 
+const PRELOADER_MIN_VISIBLE_MS = 250;
+const PRELOADER_MAX_VISIBLE_MS = 1400;
+const PRELOADER_REMOVE_DELAY_MS = 450;
+
+function createPreloaderController() {
+  const startedAt = Date.now();
+  let dismissed = false;
+
+  const dismiss = () => {
+    if (dismissed) return;
+
+    const preloader = document.getElementById('preloader');
+    if (!preloader || preloader.classList.contains('fade-out')) {
+      dismissed = true;
+      return;
+    }
+
+    dismissed = true;
+    const elapsed = Date.now() - startedAt;
+    const waitMs = Math.max(0, PRELOADER_MIN_VISIBLE_MS - elapsed);
+
+    window.setTimeout(() => {
+      preloader.classList.add('fade-out');
+      window.setTimeout(() => preloader.remove(), PRELOADER_REMOVE_DELAY_MS);
+    }, waitMs);
+  };
+
+  const fallbackTimer = window.setTimeout(dismiss, PRELOADER_MAX_VISIBLE_MS);
+
+  return {
+    dismiss() {
+      window.clearTimeout(fallbackTimer);
+      dismiss();
+    }
+  };
+}
+
+function seedInitialLoadingState() {
+  if (movieGrid && movieGrid.innerHTML.trim() === '') {
+    HomeView.renderMovieGridSkeletons(movieGrid, 4);
+  }
+
+  if (historyGrid && historyGrid.innerHTML.trim() === '') {
+    HomeView.renderMovieGridSkeletons(historyGrid, 3);
+  }
+
+  if (nextSessionHero && nextSessionHero.innerHTML.trim() === '') {
+    HomeView.renderNextSessionHeroSkeleton(nextSessionHero);
+  }
+
+  if (sessionsGrid && sessionsGrid.innerHTML.trim() === '') {
+    SessionsView.renderSkeletons(sessionsGrid, 3);
+  }
+
+  const homeAchievementsGrid = document.getElementById('homeAchievementsGrid');
+  if (homeAchievementsGrid && homeAchievementsGrid.innerHTML.trim() === '') {
+    ProfileView.renderAchievementSkeletons(homeAchievementsGrid, 4);
+  }
+
+  const timelineBody = document.getElementById('timelineBody');
+  if (timelineBody && timelineBody.innerHTML.trim() === '') {
+    HomeView.renderTimelineSkeletons(timelineBody, 4);
+  }
+}
+
 function getMaxAttendanceStreak(attendedSessionIds, sessionsList) {
   let maxStreak = 0;
   let currentStreak = 0;
@@ -218,37 +283,27 @@ const editAvatar = document.getElementById('editAvatar');
 
 // Initialization
 async function init() {
-  const dismissPreloader = () => {
-    const preloader = document.getElementById('preloader');
-    if (preloader && !preloader.classList.contains('fade-out')) {
-      preloader.classList.add('fade-out');
-      setTimeout(() => preloader.remove(), 800);
-    }
-  };
+  const preloader = createPreloaderController();
+  seedInitialLoadingState();
 
   try {
-    // 1. Critical path: User and Genre/Provider maps (Parallel)
-    await Promise.all([
+    const startupBackgroundTasks = Promise.allSettled([
       fetchGenreMap(),
       fetchProvidersMap(),
-      fetchAppSettings(),
-      checkUser()
+      fetchAppSettings()
     ]);
 
-    // 2. Essential data: First batch of movies
-    await refreshData();
+    await checkUser();
 
-    // 3. Dismiss preloader NOW - user can see movies
-    dismissPreloader();
+    // Load the first meaningful screen quickly and defer slower enrichments.
+    await refreshData({ lazy: true });
+    preloader.dismiss();
 
-    // 4. Background tasks: Ranking and Sessions (don't block the UI)
-    updateGlobalRanking();
-    fetchSessions().then(() => renderSessions());
-    fetchRecentAchievementEvents();
+    await startupBackgroundTasks;
 
   } catch (err) {
     console.error('Initialization error:', err);
-    dismissPreloader(); // Dismiss anyway to show error state or partial content
+    preloader.dismiss();
   }
 
   setupEventListeners();
@@ -338,7 +393,9 @@ async function checkUser(session) {
   }
 }
 
-async function refreshData() {
+async function refreshData(options = {}) {
+  const { lazy = false } = options;
+
   try {
     allMovies = await MovieService.fetchAllMovies();
   } catch (error) {
@@ -382,11 +439,6 @@ async function refreshData() {
     };
   });
 
-  // Background enrichment for movies with missing data
-  await enrichMovieData(allMovies);
-
-
-
   proposedMovies = allMovies.filter(m => !m.is_seen && !m.is_dropped);
   seenMovies = allMovies.filter(m => m.is_seen);
   const droppedMovies = allMovies.filter(m => m.is_dropped);
@@ -396,21 +448,31 @@ async function refreshData() {
   renderCemetery(droppedMovies);
   if (currentView === 'profile') loadUserActivity();
   
-  // Also refresh ranking on any state change
+  // Kick off secondary UI updates after the first content is visible.
   updateGlobalRanking();
-
-  // Achievements rendering
   renderHomeAchievements();
   renderTopVotedShowcase();
   fetchRecentAchievementEvents();
   if (currentView === 'profile') renderProfileAchievements();
-
-  // Sessions rendering
-  await fetchSessions();
-  renderSessions();
-  renderNextSessionHero();
   updateAuthUI();
-  updateAdminSessions();
+
+  const enrichmentTask = enrichMovieData(allMovies).catch((error) => {
+    console.error('Error enriching movie data:', error);
+  });
+
+  const sessionsTask = fetchSessions()
+    .then(() => {
+      renderSessions();
+      renderNextSessionHero();
+      updateAdminSessions();
+    })
+    .catch((error) => {
+      console.error('Error refreshing sessions:', error);
+    });
+
+  if (!lazy) {
+    await Promise.all([enrichmentTask, sessionsTask]);
+  }
 }
 
 // Rendering Helpers

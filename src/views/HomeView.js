@@ -12,6 +12,67 @@ import { escapeHtml, timeAgo } from '../utils/index.js';
  */
 export const HomeView = {
   /**
+   * Renders skeletons for movie grids on the home screen.
+   */
+  renderMovieGridSkeletons(container, count = 4) {
+    if (!container) return;
+    container.innerHTML = Array(count).fill(0).map(() => `
+      <div class="skeleton-card">
+        <div class="skeleton skeleton-image"></div>
+        <div class="skeleton skeleton-title"></div>
+        <div class="skeleton skeleton-text"></div>
+        <div class="skeleton skeleton-text-short"></div>
+      </div>
+    `).join('');
+  },
+
+  /**
+   * Renders a skeleton for the next session hero.
+   */
+  renderNextSessionHeroSkeleton(container) {
+    if (!container) return;
+    container.classList.remove('page-hidden');
+    container.innerHTML = `
+      <div class="next-session-skeleton">
+        <div class="next-session-skeleton-copy">
+          <div class="skeleton skeleton-text-short"></div>
+          <div class="skeleton skeleton-title" style="width: 60%; height: 2.75rem;"></div>
+          <div class="skeleton skeleton-text" style="width: 85%;"></div>
+          <div class="skeleton skeleton-text" style="width: 70%;"></div>
+          <div class="next-session-skeleton-meta">
+            <div class="skeleton skeleton-text-short" style="width: 120px;"></div>
+            <div class="skeleton skeleton-text-short" style="width: 100px;"></div>
+            <div class="skeleton skeleton-text-short" style="width: 140px;"></div>
+          </div>
+        </div>
+        <div class="next-session-skeleton-poster">
+          <div class="skeleton skeleton-image"></div>
+        </div>
+      </div>
+    `;
+  },
+
+  /**
+   * Renders skeleton rows for the home activity timeline.
+   */
+  renderTimelineSkeletons(container, count = 4) {
+    if (!container) return;
+    container.innerHTML = Array(count).fill(0).map(() => `
+      <tr class="timeline-row">
+        <td>
+          <div class="event-user-cell">
+            <div class="skeleton skeleton-avatar" style="width: 42px; height: 42px;"></div>
+            <div class="event-content" style="flex: 1;">
+              <div class="skeleton skeleton-text" style="width: 75%; height: 1rem; margin-bottom: 0.5rem;"></div>
+              <div class="skeleton skeleton-text-short" style="width: 30%; height: 0.85rem;"></div>
+            </div>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  },
+
+  /**
    * Renders the proposed movies grid.
    */
   renderProposals(proposedMovies, container, state) {
