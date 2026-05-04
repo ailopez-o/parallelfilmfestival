@@ -3267,6 +3267,33 @@ nav {
   height: 16px;
 }
 
+.showcase-vote-count {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(10, 10, 10, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+}
+
+.showcase-vote-count i {
+  width: 14px;
+  height: 14px;
+  color: #ef4444;
+  fill: currentColor;
+}
+
 
 
 /* Sessions & Modals */

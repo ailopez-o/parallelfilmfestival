@@ -119,7 +119,7 @@ function seedInitialLoadingState() {
 
   const timelineBody = document.getElementById('timelineBody');
   if (timelineBody && timelineBody.innerHTML.trim() === '') {
-    HomeView.renderTimelineSkeletons(timelineBody, 4);
+    HomeView.renderTimelineSkeletons(timelineBody, 5);
   }
 }
 
@@ -2275,8 +2275,8 @@ async function fetchRecentAchievementEvents() {
     // Sort and render
     events.sort((a, b) => b.date - a.date);
     
-    // Home Timeline (Top 15)
-    renderAchievementTimeline(events.slice(0, 15));
+    // Home Timeline (Top 5)
+    renderAchievementTimeline(events.slice(0, 5));
 
     // Admin Audit List (Full history)
     const adminList = document.getElementById('adminAchievementsList');

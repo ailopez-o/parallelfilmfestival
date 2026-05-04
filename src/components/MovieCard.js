@@ -51,6 +51,10 @@ export function createMovieCardHTML(movie, options = {}) {
         <div class="top-badge">
           <i data-lucide="award"></i> #${options.rank} MOST WANTED
         </div>
+        <div class="showcase-vote-count">
+          <i data-lucide="heart"></i>
+          <span>${movie.vote_count || 0} ${movie.vote_count === 1 ? 'vote' : 'votes'}</span>
+        </div>
       ` : ''}
 	      <div class="poster-wrapper">
 	        <img src="${posterUrl}" alt="${safeTitle}" loading="lazy" onerror="this.onerror=null; this.src='${FALLBACK_IMAGE}'">
@@ -65,7 +69,7 @@ export function createMovieCardHTML(movie, options = {}) {
         ` : ''}
       </div>
 
-      ${isAdmin ? `
+      ${isAdmin && context !== 'showcase' ? `
         <div class="admin-actions-overlay">
           <button class="delete-movie-btn drop-only" onclick="window.dropMovie('${movie.id}')" title="Move to Cemetery">
             <i data-lucide="trash-2"></i>
@@ -74,7 +78,7 @@ export function createMovieCardHTML(movie, options = {}) {
             <i data-lucide="x-circle"></i>
           </button>
         </div>
-      ` : ((showDelete || (user && movie.proposed_by === user.id)) && !movie.is_seen && context !== 'cemetery' ? `
+      ` : ((showDelete || (user && movie.proposed_by === user.id)) && !movie.is_seen && context !== 'cemetery' && context !== 'showcase' ? `
         <div class="admin-actions-overlay user-only">
           <button class="delete-movie-btn drop-only" onclick="window.dropMovie('${movie.id}')" title="Move to Cemetery">
             <i data-lucide="trash-2"></i>
