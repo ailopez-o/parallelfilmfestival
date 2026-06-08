@@ -4,6 +4,7 @@ import {
   getAchievementBreakdownForUser,
   buildUserScoreStatsMap,
   createEmptyScoreStats,
+  buildUserPointsAudit,
 } from '../../src/controllers/RankingController.js';
 
 describe('getMaxAttendanceStreak', () => {
@@ -64,7 +65,7 @@ describe('buildUserScoreStatsMap', () => {
   it('returns empty stats for a profile with no activity', () => {
     const profiles = [{ id: 'u1' }];
     const result = buildUserScoreStatsMap(profiles, [], [], [], [], []);
-    expect(result['u1'].totalScore).toBeGreaterThanOrEqual(0);
+    expect(result['u1'].totalScore).toBe(5); // miembro static achievement = 5 pts
     expect(result['u1'].activeVotes).toBe(0);
   });
 
@@ -80,5 +81,29 @@ describe('buildUserScoreStatsMap', () => {
     const votes = [{ user_id: 'u1', movie_id: 'm1', movies: { is_dropped: true } }];
     const result = buildUserScoreStatsMap(profiles, votes, [], [], [], []);
     expect(result['u1'].activeVotes).toBe(0);
+  });
+});
+
+describe('buildUserPointsAudit', () => {
+  it('builds audit with correct structure', () => {
+    const profile = { id: 'u1' };
+    const stats = { ...createEmptyScoreStats(), activeProposals: 1, activeProposalMovieIds: new Set(['m1']) };
+    const context = {
+      movies: [{ id: 'm1', title: 'Test Movie' }],
+      votes: [],
+      ratings: [],
+      attendanceEntries: []
+    };
+    const audit = buildUserPointsAudit(profile, stats, context);
+    expect(audit.userId).toBe('u1');
+    expect(audit.lines[0].label).toBe('Valid Proposals');
+    expect(audit.lines[0].details).toContain('Test Movie');
+  });
+
+  it('returns Untitled movie for unknown movie IDs', () => {
+    const profile = { id: 'u1' };
+    const stats = { ...createEmptyScoreStats(), activeProposals: 1, activeProposalMovieIds: new Set(['unknown']) };
+    const audit = buildUserPointsAudit(profile, stats, { movies: [], votes: [], ratings: [], attendanceEntries: [] });
+    expect(audit.lines[0].details[0]).toBe('Untitled movie');
   });
 });
