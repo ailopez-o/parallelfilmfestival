@@ -1403,6 +1403,8 @@ function setupEventListeners() {
   });
 
   window.addEventListener('hashchange', handleRouting);
+  window.addEventListener('app:refresh', (e) => refreshData(e.detail || {}));
+  window.addEventListener('authui:update', () => updateAuthUI());
 
   searchInput.addEventListener('input', (e) => {
     clearTimeout(searchTimeout);

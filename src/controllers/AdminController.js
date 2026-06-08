@@ -1,9 +1,7 @@
-import { supabase } from '../config/supabase.js';
 import { AdminService } from '../api/index.js';
 import { store } from '../state/store.js';
 import { AdminView } from '../views/index.js';
 import { showNotification, escapeHtml } from '../utils/index.js';
-import { getUserDisplayName } from '../utils/index.js';
 
 export async function fetchAppSettings() {
   try {
