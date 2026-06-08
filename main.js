@@ -18,6 +18,7 @@ import {
 // Configuration removed (now in src/config/supabase.js)
 import { updateGlobalRanking, renderRankingView, buildUserScoreStatsMap, buildUserPointsAudit, createEmptyScoreStats } from './src/controllers/RankingController.js';
 import { fetchGenreMap, fetchProvidersMap, fetchExploreResults, fetchAIRecommendations, renderExploreResults, init as initExplore } from './src/controllers/ExploreController.js';
+import { fetchAppSettings, loadAppSettings, saveAppSettings, fetchUserList, fetchParticipationLog, init as initAdmin } from './src/controllers/AdminController.js';
 
 // Edge Function Proxy Helper logic is now fully in TMDBService
 
@@ -45,10 +46,6 @@ Object.defineProperty(window, 'userVotes', {
   get: () => store.getState().userVotes,
   set: (v) => store.setUserVotes(v)
 });
-
-function setAppLimits(maxProposals, maxVotes) {
-  store.setState({ maxProposals, maxVotes });
-}
 
 function setAuthContext(nextUser, nextUserProfile, nextIsAdmin) {
   store.setState({
@@ -122,51 +119,6 @@ function seedInitialLoadingState() {
     HomeView.renderTimelineSkeletons(timelineBody, 5);
   }
 }
-
-async function fetchAppSettings() {
-  try {
-    const settings = await AdminService.fetchAppSettings();
-    setAppLimits(settings.maxProposals, settings.maxVotes);
-  } catch (err) {
-    console.error('Error fetching settings:', err);
-    showNotification('Error: faltan ajustes de límites en la BBDD (app_settings).', 'error');
-  }
-}
-
-function loadAppSettings() {
-  const maxPropInput = document.getElementById('settingMaxProposals');
-  const maxVoteInput = document.getElementById('settingMaxVotes');
-  if (maxPropInput) maxPropInput.value = MAX_PROPOSALS;
-  if (maxVoteInput) maxVoteInput.value = MAX_VOTES;
-}
-
-window.saveAppSettings = async () => {
-  if (!isAdmin) return;
-  const maxPropInput = document.getElementById('settingMaxProposals');
-  const maxVoteInput = document.getElementById('settingMaxVotes');
-  
-  const newValProp = maxPropInput.value;
-  const newValVote = maxVoteInput.value;
-
-  try {
-    showNotification('Updating system settings...', 'warning');
-    
-    await AdminService.updateAppSettings(newValProp, newValVote);
-
-    // Update local config
-    setAppLimits(parseInt(newValProp), parseInt(newValVote));
-
-    showNotification('System settings updated successfully!', 'success');
-    
-    // Refresh UI components that use these limits
-    updateAuthUI();
-    if (currentView === 'profile') loadUserActivity();
-
-  } catch (err) {
-    console.error('Error saving app settings:', err);
-    showNotification('Error updating settings', 'error');
-  }
-};
 
 /**
  * Normalizes strings for robust comparison:
@@ -259,6 +211,7 @@ const INITIAL_PROPOSAL_ROOT_MARGIN = '900px 0px';
 // Initialization
 async function init() {
   initExplore();
+  initAdmin();
   const preloader = createPreloaderController();
   seedInitialLoadingState();
   setupEventListeners();
@@ -1025,19 +978,6 @@ window.saveProfile = async () => {
   }
 };
 
-async function fetchParticipationLog() {
-  if (!isAdmin) return;
-  
-  try {
-    const logs = await AdminService.fetchParticipationLogs(50);
-    AdminView.renderParticipationLog(logs, adminParticipationLog);
-    if (window.lucide) window.lucide.createIcons();
-  } catch (err) {
-    console.error('Error fetching activity log:', err);
-    adminParticipationLog.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--error);">Failed to load activity log.</td></tr>`;
-  }
-}
-
 async function loadProfilePointsAudit(profile) {
   if (!profile?.id || !profilePointsAuditContent) return;
 
@@ -1083,106 +1023,6 @@ async function loadProfilePointsAudit(profile) {
     profilePointsAuditContent.innerHTML = '<div class="empty-state">Failed to load points audit.</div>';
   }
 }
-
-async function fetchUserList() {
-  try {
-    const profiles = await AdminService.fetchAllProfiles();
-    const rankedById = new Map(rankedUsers.map(profile => [profile.id, profile]));
-    const profilesWithRanking = profiles.map(profile => {
-      const ranked = rankedById.get(profile.id);
-      return {
-        ...profile,
-        score: ranked?.score || 0,
-        rank: ranked?.rank || null
-      };
-    });
-
-    AdminView.renderUserList(profilesWithRanking, adminUserList, adminUserCount, user);
-    if (window.lucide) window.lucide.createIcons();
-  } catch (err) {
-    console.error('Error fetching user list:', err);
-  }
-}
-
-// Attendance Logic
-window.toggleCheckinDropdown = (userId) => {
-  const dropdown = document.getElementById(`checkin-${userId}`);
-  const allDropdowns = document.querySelectorAll('.checkin-dropdown');
-  
-  // Close others
-  allDropdowns.forEach(d => { if (d.id !== `checkin-${userId}`) d.classList.remove('active'); });
-
-  if (dropdown.classList.contains('active')) {
-    dropdown.classList.remove('active');
-  } else {
-    // Populate with seen movies
-    const sessions = [...seenMovies].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
-    
-    if (sessions.length === 0) {
-      dropdown.innerHTML = '<div style="padding:0.5rem; font-size:0.7rem; color:var(--text-secondary);">No sessions available. Mark a movie as "Seen" first.</div>';
-    } else {
-	      dropdown.innerHTML = sessions.map(m => `
-	        <button class="checkin-option" onclick="window.markAttendance('${userId}', '${m.id}')">
-	          <i data-lucide="play"></i> ${escapeHtml(m.title)}
-	        </button>
-	      `).join('');
-    }
-    
-    dropdown.classList.add('active');
-    if (window.lucide) window.lucide.createIcons();
-  }
-};
-
-window.markAttendance = async (userId, movieId) => {
-  if (!isAdmin) return;
-
-  try {
-    showNotification('Recording attendance...', 'info');
-
-    const result = await SessionService.recordAttendanceByMovie(userId, movieId);
-    if (result.action === 'existing') {
-      showNotification('User already checked-in for this session.', 'warning');
-      return;
-    }
-
-    showNotification('Attendance recorded! (+10 pts)', 'success');
-    
-    // Auto-refresh UI
-    const dropdown = document.getElementById(`checkin-${userId}`);
-    if (dropdown) dropdown.classList.remove('active');
-    
-    refreshData();
-    
-  } catch (err) {
-    console.error('Error marking attendance:', err);
-    showNotification('Failed to record attendance.', 'error');
-  }
-};
-
-window.confirmDeleteUser = async (userId, userName) => {
-  if (!isAdmin) return;
-  
-  const confirmed = window.confirm(`⚠️ DANGER ZONE: Are you sure you want to delete user "${userName}"? \n\nThis will also remove all their movie proposals, votes and ratings. This action cannot be undone.`);
-  if (!confirmed) return;
-
-  try {
-    showNotification(`Deleting user ${userName}...`, 'warning');
-    
-    await AdminService.deleteUser(userId);
-
-    console.log(`[Admin] User ${userName} successfully removed from the system.`);
-    showNotification(`User ${userName} and all their data have been removed.`, 'success');
-    
-    // Refresh UI
-    await updateGlobalRanking();
-    await fetchUserList();
-    await fetchParticipationLog();
-    await refreshData();
-  } catch (err) {
-    console.error('Error deleting user:', err);
-    showNotification(`Error: ${err.message || 'System error deleting user'}`, 'error');
-  }
-};
 
 window.unmarkAsSeen = async (movieId) => {
   if (!isAdmin) return;
@@ -2127,55 +1967,6 @@ window.handleUpdateSession = async (sessionId) => {
   }
 };
 
-window.handleDeployMetadata = async () => {
-  console.log('[Admin] handleDeployMetadata triggered');
-  if (!isAdmin) {
-    showNotification('Admin privileges required', 'error');
-    return;
-  }
-  
-  const upcoming = sessions
-    .filter(s => s.is_upcoming && new Date(s.session_date) > new Date())
-    .sort((a, b) => new Date(a.session_date) - new Date(b.session_date))[0];
-
-  if (!upcoming) {
-    showNotification('No upcoming sessions found to update.', 'warning');
-    return;
-  }
-
-  try {
-    showNotification('Updating social metadata in Supabase...', 'warning');
-    
-    // Update image and generate/upload HTML to Supabase Storage
-    const result = await AdminService.updateSocialMetadata(upcoming);
-    
-    if (result.success) {
-      showNotification(`Social preview for "${result.movieTitle}" updated successfully!`, 'success');
-    }
-  } catch (err) {
-    console.error('[Admin] Metadata update failed:', err);
-    showNotification(`Update failed: ${err.message}`, 'error');
-  }
-};
-
 init();
 
 // renderCemetery removed (now handled by HomeView)
-
-window.cleanupInactiveMovies = async (silent = false) => {
-  if (!isAdmin) return;
-  if (!silent) showNotification('Checking for inactive movies...', 'info');
-  
-  try {
-    const { cleanedCount } = await AdminService.cleanupInactiveMovies();
-    if (cleanedCount > 0) {
-      if (!silent) showNotification(`Cleaned up ${cleanedCount} inactive movies`, 'success');
-      refreshData();
-    } else {
-      if (!silent) showNotification('All movies are active!', 'success');
-    }
-  } catch (err) {
-    console.error('Error cleaning up movies:', err);
-    if (!silent) showNotification('Failed to clean inactive movies', 'error');
-  }
-};
