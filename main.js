@@ -1,6 +1,6 @@
 import { supabase } from './src/config/supabase.js';
 import { normalize, formatScore, timeAgo, showNotification, getUserDisplayName, escapeHtml } from './src/utils/index.js';
-import { FALLBACK_IMAGE, TBD_POSTER, PARTICIPATION_POINTS } from './src/config/constants.js';
+import { FALLBACK_IMAGE, TBD_POSTER, PARTICIPATION_POINTS, ACHIEVEMENT_LIST } from './src/config/constants.js';
 import { 
   createMovieCardHTML, 
   createSessionCardHTML, 
@@ -15,8 +15,6 @@ import {
   AuthService, MovieService, TMDBService, 
   AchievementService, SessionService, AdminService 
 } from './src/api/index.js';
-import { ACHIEVEMENT_LIST } from './src/config/constants.js';
-
 // Configuration removed (now in src/config/supabase.js)
 
 // Edge Function Proxy Helper logic is now fully in TMDBService
@@ -681,10 +679,11 @@ async function refreshData(options = {}) {
 async function enrichMovieData(movies, options = {}) {
   const { lazyProposals = false } = options;
 
-  // Find movies that need enrichment (missing scores, trailers, or providers)
+  // Find movies that need enrichment (missing scores, duration, trailers, or providers)
   const moviesToEnrich = movies.filter(m => m.tmdb_id && (
     m.vote_average === undefined || m.vote_average === null || m.vote_average === 0 ||
-    !m.trailer_url || 
+    !m.runtime ||
+    !m.trailer_url ||
     !m.watch_providers
   ));
   
@@ -705,6 +704,11 @@ async function enrichMovieData(movies, options = {}) {
         movie.vote_average = data.vote_average;
         updates.average_rating = data.vote_average;
         // Don't overwrite local vote_count with TMDB's global count
+      }
+
+      if (data.runtime) {
+        movie.runtime = data.runtime;
+        updates.runtime = data.runtime;
       }
       
       // 2. Trailers
@@ -1529,16 +1533,25 @@ async function handleMovieSearch(query) {
 
     const enrichedResults = await Promise.all(results.map(async movie => {
       try {
-        const creditsData = await TMDBService.invokeTMDBCall(`/movie/${movie.id}/credits`);
-        const directors = creditsData.crew
+        const detailsData = await TMDBService.invokeTMDBCall(`/movie/${movie.id}`, {
+          append_to_response: 'credits'
+        });
+        const directors = (detailsData.credits?.crew || [])
           .filter(person => person.job === 'Director')
           .map(d => d.name)
           .join(', ');
         
         // Map genres
-        const genreNames = movie.genre_ids.map(id => genreMap[id]).filter(Boolean);
+        const genreNames = detailsData.genres?.map(genre => genre.name)
+          || movie.genre_ids.map(id => genreMap[id]).filter(Boolean);
 
-        return { ...movie, director: directors || 'Unknown Director', genres: genreNames, synopsis: movie.overview };
+        return {
+          ...movie,
+          runtime: detailsData.runtime,
+          director: directors || 'Unknown Director',
+          genres: genreNames,
+          synopsis: detailsData.overview || movie.overview
+        };
       } catch (e) {
         return { ...movie, director: 'Unknown Director', genres: [], synopsis: movie.overview };
       }
@@ -1916,7 +1929,8 @@ window.proposeMovie = async (tmdbMovie, el) => {
     proposed_by: user.id,
     director: tmdbMovie.director,
     genres: tmdbMovie.genres,
-    synopsis: tmdbMovie.synopsis
+    synopsis: tmdbMovie.synopsis,
+    runtime: tmdbMovie.runtime
   };
 
   try {
