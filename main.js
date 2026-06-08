@@ -17,7 +17,7 @@ import {
 } from './src/api/index.js';
 // Configuration removed (now in src/config/supabase.js)
 import { updateGlobalRanking, renderRankingView, buildUserScoreStatsMap, buildUserPointsAudit, createEmptyScoreStats } from './src/controllers/RankingController.js';
-import { fetchGenreMap, fetchProvidersMap, fetchExploreResults, fetchAIRecommendations, renderExploreResults } from './src/controllers/ExploreController.js';
+import { fetchGenreMap, fetchProvidersMap, fetchExploreResults, fetchAIRecommendations, renderExploreResults, init as initExplore } from './src/controllers/ExploreController.js';
 
 // Edge Function Proxy Helper logic is now fully in TMDBService
 
@@ -258,6 +258,7 @@ const INITIAL_PROPOSAL_ROOT_MARGIN = '900px 0px';
 
 // Initialization
 async function init() {
+  initExplore();
   const preloader = createPreloaderController();
   seedInitialLoadingState();
   setupEventListeners();

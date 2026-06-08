@@ -21,25 +21,21 @@ export function buildProviderMap(providers) {
 }
 
 export async function fetchGenreMap() {
-  const exploreGenreSelect = document.getElementById('exploreGenreSelect') || document.querySelector('[id*="Genre"]');
+  const exploreGenreSelect = document.getElementById('exploreGenre');
   try {
     const data = await TMDBService.invokeTMDBCall('/genre/movie/list');
-    if (data.genres) {
-      const nextGenreMap = {};
-      if (exploreGenreSelect) {
-        exploreGenreSelect.innerHTML = '<option value="">All Genres</option>';
-      }
+    if (!data.genres) return;
+    const nextGenreMap = buildGenreMap(data.genres);
+    if (exploreGenreSelect) {
+      exploreGenreSelect.innerHTML = '<option value="">All Genres</option>';
       data.genres.forEach(g => {
-        nextGenreMap[g.id] = g.name;
-        if (exploreGenreSelect) {
-          const option = document.createElement('option');
-          option.value = g.id;
-          option.textContent = g.name;
-          exploreGenreSelect.appendChild(option);
-        }
+        const option = document.createElement('option');
+        option.value = g.id;
+        option.textContent = g.name;
+        exploreGenreSelect.appendChild(option);
       });
-      store.setState({ genreMap: nextGenreMap });
     }
+    store.setState({ genreMap: nextGenreMap });
   } catch (e) {
     console.error('Error fetching genre map:', e);
   }
@@ -54,20 +50,17 @@ export async function fetchProvidersMap() {
       : (/^[A-Z]{2}$/.test(localeRegion || '') ? localeRegion : 'ES');
     const data = await TMDBService.invokeTMDBCall('/watch/providers/movie', { watch_region: watchRegion });
     const select = document.getElementById('exploreProvider');
-    if (data.results && select) {
-      const nextProviderMap = {};
-      select.innerHTML = '<option value="">Any Platform</option>';
-      // Sort and take top providers or specific ones
-      const topProviders = data.results.slice(0, 50);
-      topProviders.forEach(p => {
-        nextProviderMap[p.provider_id] = p;
-        const option = document.createElement('option');
-        option.value = p.provider_id;
-        option.textContent = p.provider_name;
-        select.appendChild(option);
-      });
-      store.setState({ providerMap: nextProviderMap });
-    }
+    if (!data.results || !select) return;
+    const topProviders = data.results.slice(0, 50);
+    const nextProviderMap = buildProviderMap(topProviders);
+    select.innerHTML = '<option value="">Any Platform</option>';
+    topProviders.forEach(p => {
+      const option = document.createElement('option');
+      option.value = p.provider_id;
+      option.textContent = p.provider_name;
+      select.appendChild(option);
+    });
+    store.setState({ providerMap: nextProviderMap });
   } catch (e) {
     console.error('Error fetching providers map:', e);
   }
@@ -77,7 +70,7 @@ export async function fetchExploreResults() {
   const query = document.getElementById('exploreTitle').value.trim();
   const directorName = document.getElementById('exploreDirector').value.trim();
   const actorName = document.getElementById('exploreActor').value.trim();
-  const exploreGenreSelect = document.getElementById('exploreGenreSelect') || document.querySelector('[id*="Genre"]');
+  const exploreGenreSelect = document.getElementById('exploreGenre');
   const genreId = exploreGenreSelect ? exploreGenreSelect.value : '';
   const yearFrom = document.getElementById('exploreYearFrom').value;
   const yearTo = document.getElementById('exploreYearTo').value;
