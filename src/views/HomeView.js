@@ -4,7 +4,7 @@ import {
   createAchievementCardHTML, 
   createTimelineItemHTML 
 } from '../components/index.js';
-import { escapeHtml, timeAgo } from '../utils/index.js';
+import { escapeHtml, formatRuntime, timeAgo } from '../utils/index.js';
 
 /**
  * Home View Module.
@@ -244,23 +244,27 @@ export const HomeView = {
     if (!results.length) {
       container.innerHTML = '<div class="search-result-item">No movies found</div>';
 	    } else {
-	      container.innerHTML = results.map(movie => `
-	        <div class="search-result-item" onclick="window.proposeMovie(${escapeHtml(JSON.stringify(movie))})">
-	          <img class="result-poster" src="${movie.poster_path ? 'https://image.tmdb.org/t/p/w92' + movie.poster_path : fallbackImage}">
-	          <div class="result-info">
-	            <div class="result-title">${escapeHtml(movie.title)}</div>
-	            <div class="result-meta">
-              <span>${movie.release_date ? movie.release_date.split('-')[0] : 'N/A'}</span>
-              <span style="color: rgba(255,255,255,0.2);">•</span>
-              <div class="rating-badge" style="margin:0; padding:0; background:transparent; border:none; font-size: 0.75rem;">
-                <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
-                <span style="color:#fbbf24;">${formatScore(movie.vote_average)}</span>
+	      container.innerHTML = results.map(movie => {
+          const runtimeLabel = formatRuntime(movie.runtime);
+          return `
+	          <div class="search-result-item" onclick="window.proposeMovie(${escapeHtml(JSON.stringify(movie))})">
+	            <img class="result-poster" src="${movie.poster_path ? 'https://image.tmdb.org/t/p/w92' + movie.poster_path : fallbackImage}">
+	            <div class="result-info">
+	              <div class="result-title">${escapeHtml(movie.title)}</div>
+	              <div class="result-meta">
+                <span>${movie.release_date ? movie.release_date.split('-')[0] : 'N/A'}</span>
+                ${runtimeLabel ? `<span style="color: rgba(255,255,255,0.2);">•</span><span>${runtimeLabel}</span>` : ''}
+                <span style="color: rgba(255,255,255,0.2);">•</span>
+                <div class="rating-badge" style="margin:0; padding:0; background:transparent; border:none; font-size: 0.75rem;">
+                  <i data-lucide="star" style="width:12px; height:12px; fill:#fbbf24;"></i>
+                  <span style="color:#fbbf24;">${formatScore(movie.vote_average)}</span>
+                </div>
               </div>
-            </div>
-	            <div style="font-size: 0.7rem; color: var(--text-secondary); opacity: 0.7;">${escapeHtml(movie.director || 'Unknown')}</div>
+	              <div style="font-size: 0.7rem; color: var(--text-secondary); opacity: 0.7;">${escapeHtml(movie.director || 'Unknown')}</div>
+	            </div>
 	          </div>
-	        </div>
-	      `).join('');
+	        `;
+        }).join('');
     }
     container.classList.add('active');
   }

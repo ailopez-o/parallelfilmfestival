@@ -212,8 +212,7 @@ export const SessionService = {
    */
   async uploadSessionPhoto(sessionId, userId, file) {
     const fileExt = file.name.split('.').pop();
-    const fileName = `${sessionId}/${userId}_${Math.random().toString(36).substring(2)}.${fileExt}`;
-    const filePath = `${fileName}`;
+    const filePath = `${sessionId}/${userId}_${Math.random().toString(36).substring(2)}.${fileExt}`;
 
     // 1. Upload to Storage
     const { data: uploadData, error: uploadError } = await supabase.storage

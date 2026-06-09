@@ -23,6 +23,8 @@ class Store {
       // UI state
       currentView: 'home',
       currentSession: null,
+      profileAuditMode: 'activity',
+      authSyncSequence: 0,
       
       // Configuration state (Dynamic from DB)
       maxProposals: null,

@@ -8,11 +8,15 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "bash ./scripts/lint-js.sh",
-    "test": "npm run test:smoke",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:smoke": "npm run build"
   },
   "devDependencies": {
-    "vite": "^5.4.10"
+    "@vitest/coverage-v8": "^2.1.9",
+    "jsdom": "^29.1.1",
+    "vite": "^5.4.10",
+    "vitest": "^2.1.9"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
