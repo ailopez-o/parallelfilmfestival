@@ -129,7 +129,7 @@ export function init() {
     try {
       const { cleanedCount } = await AdminService.cleanupInactiveMovies();
       if (cleanedCount > 0) {
-        if (!silent) showNotification(`Cleaned up ${cleanedCount} inactive movies`, 'success');
+        if (!silent) showNotification(`Sent ${cleanedCount} movies to cemetery (bottom 50% by activity)`, 'success');
         window.dispatchEvent(new CustomEvent('app:refresh'));
       } else {
         if (!silent) showNotification('All movies are active!', 'success');
