@@ -201,7 +201,7 @@ async function refreshData(options = {}) {
 
   renderProposals({ lazy });
   renderHistory();
-  renderCemetery(droppedMovies);
+  renderCemetery(droppedMovies).catch(err => console.error('[Cemetery] Render error:', err));
   if (currentView === 'profile') loadUserActivity();
   
   // Kick off secondary UI updates after the first content is visible.

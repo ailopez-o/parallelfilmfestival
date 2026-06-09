@@ -143,10 +143,32 @@ export function renderHistory() {
   if (window.lucide) window.lucide.createIcons();
 }
 
-export function renderCemetery(droppedMoviesList) {
+export async function renderCemetery(droppedMoviesList) {
   const { isAdmin, user, userVotes } = store.getState();
   const cemeteryGrid = document.getElementById('cemeteryGrid');
-  HomeView.renderCemetery(droppedMoviesList, cemeteryGrid, { isAdmin, user, userVotes });
+  if (!cemeteryGrid || !droppedMoviesList.length) {
+    HomeView.renderCemetery(droppedMoviesList, cemeteryGrid, { isAdmin, user, userVotes });
+    if (window.lucide) window.lucide.createIcons();
+    return;
+  }
+
+  // Fetch live vote counts from votes table — more reliable than the denormalized
+  // vote_count column, which may be stale for movies dropped before vote-preservation was added.
+  let movies = droppedMoviesList;
+  try {
+    const ids = droppedMoviesList.map(m => m.id);
+    const liveCounts = await MovieService.getVoteCountsByMovieIds(ids);
+    if (liveCounts.size > 0) {
+      movies = droppedMoviesList.map(m => ({
+        ...m,
+        vote_count: liveCounts.get(m.id) ?? m.vote_count ?? 0
+      }));
+    }
+  } catch (err) {
+    console.warn('[Cemetery] Could not fetch live vote counts, using stored values:', err);
+  }
+
+  HomeView.renderCemetery(movies, cemeteryGrid, { isAdmin, user, userVotes });
   if (window.lucide) window.lucide.createIcons();
 }
 

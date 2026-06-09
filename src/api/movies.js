@@ -151,6 +151,18 @@ export const MovieService = {
     if (error) throw error;
   },
 
+  async getVoteCountsByMovieIds(movieIds) {
+    if (!movieIds.length) return new Map();
+    const { data, error } = await supabase
+      .from('votes')
+      .select('movie_id')
+      .in('movie_id', movieIds);
+    if (error) throw error;
+    const counts = new Map();
+    (data || []).forEach(v => counts.set(v.movie_id, (counts.get(v.movie_id) || 0) + 1));
+    return counts;
+  },
+
   async deleteVotesForMovie(movieId) {
     const { error } = await supabase
       .from('votes')
