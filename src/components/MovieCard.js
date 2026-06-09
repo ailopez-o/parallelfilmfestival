@@ -1,5 +1,5 @@
 import { FALLBACK_IMAGE } from '../config/constants.js';
-import { formatScore } from '../utils/formatters.js';
+import { formatRuntime, formatScore } from '../utils/formatters.js';
 import { escapeHtml, getUserDisplayName, sanitizeUrl } from '../utils/index.js';
 
 /**
@@ -31,10 +31,12 @@ export function createMovieCardHTML(movie, options = {}) {
     FALLBACK_IMAGE
   );
   const releaseYear = movie.release_year || (movie.release_date ? movie.release_date.split('-')[0] : 'N/A');
+  const runtimeLabel = formatRuntime(movie.runtime || movie.duration || movie.runtime_minutes);
   const safeTitle = escapeHtml(movie.title || 'Untitled');
   const safeDirector = escapeHtml(movie.director || 'Unknown');
   const safeSynopsis = escapeHtml(movie.synopsis || 'No synopsis available.');
   const safeUserComment = escapeHtml(movie.user_comment || '');
+  const movieMeta = [releaseYear, runtimeLabel, safeDirector].filter(Boolean).join(' • ');
   
   // Watch providers
   const providers = movie.watch_providers?.flatrate || [];
@@ -97,7 +99,7 @@ export function createMovieCardHTML(movie, options = {}) {
               </div>
             </div>
 	            <div class="movie-meta">
-	              <span>${releaseYear} • ${safeDirector}</span>
+	              <span>${movieMeta}</span>
 	              ${movie.trailer_url ? `
 	                <a href="${trailerUrl}" target="_blank" rel="noopener noreferrer" class="trailer-link-btn" title="Watch Trailer">
 	                  <i data-lucide="play-circle"></i> Trailer
@@ -157,7 +159,7 @@ export function createMovieCardHTML(movie, options = {}) {
                 </div>
               </div>
 	              <div class="movie-meta">
-	                <span>${releaseYear} • ${safeDirector}</span>
+	                <span>${movieMeta}</span>
 	                ${movie.trailer_url ? `<a href="${trailerUrl}" target="_blank" rel="noopener noreferrer" class="trailer-link-btn mini"><i data-lucide="play-circle"></i></a>` : ''}
 	              </div>
 	            </div>

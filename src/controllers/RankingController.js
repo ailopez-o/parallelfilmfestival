@@ -20,20 +20,6 @@ export function getMaxAttendanceStreak(attendedSessionIds, sessionsList) {
   return maxStreak;
 }
 
-export function getAchievementPointsForUser(stats, sessionsList) {
-  const attendanceCount = stats.attendedSessionIds.size;
-  const ratingsCount = stats.ratedMovieIds.size;
-  const streak = getMaxAttendanceStreak(stats.attendedSessionIds, sessionsList);
-  return ACHIEVEMENT_LIST.reduce((sum, achievement) => {
-    let earned = false;
-    if (achievement.type === 'static') earned = true;
-    if (achievement.type === 'ratings') earned = ratingsCount >= achievement.target;
-    if (achievement.type === 'attendance') earned = attendanceCount >= achievement.target;
-    if (achievement.type === 'visionary') earned = stats.seenProposals >= achievement.target;
-    if (achievement.type === 'streak') earned = streak >= achievement.target;
-    return earned ? sum + (achievement.points || 0) : sum;
-  }, 0);
-}
 
 export function getAchievementBreakdownForUser(stats, sessionsList) {
   const attendanceCount = stats.attendedSessionIds.size;

@@ -27,6 +27,25 @@ export function formatScore(score) {
 }
 
 /**
+ * Formats a movie runtime in minutes.
+ *
+ * @param {number|string} runtime - Runtime in minutes.
+ * @returns {string} Human-readable duration or an empty string.
+ */
+export function formatRuntime(runtime) {
+  if (runtime === undefined || runtime === null || runtime === '') return '';
+  const minutes = parseInt(runtime, 10);
+  if (Number.isNaN(minutes) || minutes <= 0) return '';
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  if (hours === 0) return `${remainingMinutes}m`;
+  if (remainingMinutes === 0) return `${hours}h`;
+  return `${hours}h ${remainingMinutes}m`;
+}
+
+/**
  * Returns a human-readable "time ago" string.
  * 
  * @param {Date|number} date - The date to compare.
