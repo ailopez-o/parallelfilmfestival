@@ -283,9 +283,6 @@ export const AdminService = {
 
     if (updateErr) throw updateErr;
 
-    // Free up user vote slots (DB triggers handle participation logs)
-    await supabase.from('votes').delete().in('movie_id', ids);
-
     return { cleanedCount: toDrop.length };
   },
 
