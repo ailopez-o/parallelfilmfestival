@@ -77,6 +77,20 @@ export async function fetchParticipationLog() {
 export function init() {
   window.saveAppSettings = saveAppSettings;
 
+  document.querySelectorAll('.admin-tab-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelector('.admin-tab-btn.active').classList.remove('active');
+      btn.classList.add('active');
+      const tab = btn.dataset.tab;
+      document.getElementById('adminUsersTab').classList.toggle('page-hidden', tab !== 'users');
+      document.getElementById('adminSessionsTab').classList.toggle('page-hidden', tab !== 'sessions');
+      document.getElementById('adminLogsTab').classList.toggle('page-hidden', tab !== 'logs');
+      document.getElementById('adminAchievementsTab').classList.toggle('page-hidden', tab !== 'achievements');
+      document.getElementById('adminSettingsTab').classList.toggle('page-hidden', tab !== 'settings');
+      if (tab === 'settings') loadAppSettings();
+    };
+  });
+
   window.confirmDeleteUser = async (userId, userName) => {
     const { isAdmin } = store.getState();
     if (!isAdmin) return;

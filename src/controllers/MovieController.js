@@ -345,6 +345,19 @@ export async function handleMovieSearch(query) {
 // ─── Window Actions ───────────────────────────────────────────────────────────
 
 export function init() {
+  const searchInput = document.getElementById('movieSearch');
+  const searchResults = document.getElementById('searchResults');
+  let searchTimeout;
+  searchInput.addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => handleMovieSearch(e.target.value), 500);
+  });
+  document.addEventListener('click', (e) => {
+    if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+      searchResults.classList.remove('active');
+    }
+  });
+
   window.deleteMovie = async (movieId) => {
     const { isAdmin, allMovies } = store.getState();
     if (!isAdmin) {

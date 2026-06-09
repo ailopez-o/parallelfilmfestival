@@ -198,13 +198,6 @@ export async function checkUser(session) {
     store.setState({ userAttendance: new Set() });
   }
   updateAuthUI();
-
-  // Handle Deep-Linking for sessions
-  const urlParams = new URLSearchParams(window.location.search);
-  const sessionId = urlParams.get('session');
-  if (sessionId) {
-    setTimeout(() => window.viewSessionDetails(sessionId), 1200);
-  }
 }
 
 export function scheduleAuthStateSync(session) {
@@ -414,6 +407,20 @@ async function renderProfileAchievements(userId) {
 }
 
 export function init() {
+  supabase.auth.onAuthStateChange((event, session) => {
+    scheduleAuthStateSync(session);
+  });
+
+  document.querySelectorAll('.auth-tab').forEach(tab => {
+    tab.onclick = () => {
+      document.querySelector('.auth-tab.active').classList.remove('active');
+      tab.classList.add('active');
+      const isLogin = tab.dataset.tab === 'login';
+      document.getElementById('loginForm').classList.toggle('page-hidden', !isLogin);
+      document.getElementById('signupForm').classList.toggle('page-hidden', isLogin);
+    };
+  });
+
   window.addEventListener('authui:update', () => updateAuthUI());
 
   window.signInWithGoogle = async () => {

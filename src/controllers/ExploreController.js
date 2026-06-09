@@ -353,4 +353,42 @@ export function renderExploreResults(results) {
 
 export function init() {
   window.fetchAIRecommendations = fetchAIRecommendations;
+
+  document.getElementById('exploreSearchBtn').onclick = fetchExploreResults;
+  document.getElementById('aiSearchBtn').onclick = fetchAIRecommendations;
+
+  document.querySelectorAll('.mode-tab').forEach(tab => {
+    tab.onclick = () => {
+      document.querySelector('.mode-tab.active').classList.remove('active');
+      tab.classList.add('active');
+      const isAI = tab.dataset.mode === 'ai';
+      document.getElementById('manualSearchPanel').classList.toggle('page-hidden', isAI);
+      document.getElementById('aiSearchPanel').classList.toggle('page-hidden', !isAI);
+      document.getElementById('exploreGrid').innerHTML = '<div class="empty-state">Start searching to discover films.</div>';
+    };
+  });
+
+  const exploreInputs = [
+    document.getElementById('exploreTitle'),
+    document.getElementById('exploreDirector'),
+    document.getElementById('exploreGenre'),
+    document.getElementById('exploreYearFrom'),
+    document.getElementById('exploreYearTo'),
+    document.getElementById('exploreLimit'),
+    document.getElementById('exploreActor'),
+    document.getElementById('exploreSort'),
+    document.getElementById('exploreProvider')
+  ];
+  document.getElementById('exploreClearBtn').onclick = () => {
+    exploreInputs.forEach(input => {
+      if (input.id === 'exploreLimit') {
+        input.value = '20';
+      } else if (input.id === 'exploreSort') {
+        input.value = 'popularity.desc';
+      } else {
+        input.value = '';
+      }
+    });
+    document.getElementById('exploreGrid').innerHTML = '<div class="empty-state">Start searching to discover films.</div>';
+  };
 }

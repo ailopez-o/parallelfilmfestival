@@ -1,33 +1,18 @@
-import { supabase } from './src/config/supabase.js';
-import { normalize, formatScore, timeAgo, showNotification, getUserDisplayName, escapeHtml } from './src/utils/index.js';
-import { FALLBACK_IMAGE, TBD_POSTER, ACHIEVEMENT_LIST } from './src/config/constants.js';
-import { 
-  createMovieCardHTML, 
-  createSessionCardHTML, 
-  createSessionHeroHTML, 
-  createRankingRowHTML, 
-  createAchievementCardHTML, 
-  createTimelineItemHTML,
-  renderAvatarStack
-} from './src/components/index.js';
-import { HomeView, ProfileView, AdminView, ExploreView, SessionsView } from './src/views/index.js';
-import { 
-  AuthService, MovieService, TMDBService, 
-  AchievementService, SessionService, AdminService 
+import { HomeView, ProfileView, SessionsView } from './src/views/index.js';
+import {
+  AuthService, MovieService, TMDBService,
+  AchievementService, SessionService, AdminService
 } from './src/api/index.js';
-// Configuration removed (now in src/config/supabase.js)
-import { updateGlobalRanking, renderRankingView, buildUserScoreStatsMap, buildUserPointsAudit, createEmptyScoreStats } from './src/controllers/RankingController.js';
-import { fetchGenreMap, fetchProvidersMap, fetchExploreResults, fetchAIRecommendations, renderExploreResults, init as initExplore } from './src/controllers/ExploreController.js';
-import { fetchAppSettings, loadAppSettings, saveAppSettings, fetchUserList, fetchParticipationLog, init as initAdmin } from './src/controllers/AdminController.js';
-import { checkUser, updateAuthUI, loadUserActivity, scheduleAuthStateSync, init as initAuth } from './src/controllers/AuthController.js';
+import { updateGlobalRanking, renderRankingView } from './src/controllers/RankingController.js';
+import { fetchGenreMap, fetchProvidersMap, init as initExplore } from './src/controllers/ExploreController.js';
+import { fetchAppSettings, init as initAdmin } from './src/controllers/AdminController.js';
+import { checkUser, updateAuthUI, loadUserActivity, init as initAuth } from './src/controllers/AuthController.js';
 import { fetchSessions, renderSessions, renderNextSessionHero, updateAdminSessions, init as initSessions } from './src/controllers/SessionController.js';
 import {
   renderProposals, renderHistory, renderCemetery, renderTopVotedShowcase,
   enrichMovieData, renderHomeAchievements, fetchRecentAchievementEvents,
-  handleMovieSearch, init as initMovies
+  init as initMovies
 } from './src/controllers/MovieController.js';
-
-// Edge Function Proxy Helper logic is now fully in TMDBService
 
 import { store } from './src/state/store.js';
 // This routes all variable reads/writes transparently into the centralized store.
@@ -53,14 +38,6 @@ Object.defineProperty(window, 'userVotes', {
   get: () => store.getState().userVotes,
   set: (v) => store.setUserVotes(v)
 });
-
-function setAuthContext(nextUser, nextUserProfile, nextIsAdmin) {
-  store.setState({
-    user: nextUser,
-    userProfile: nextUserProfile,
-    isAdmin: nextIsAdmin
-  });
-}
 
 const PRELOADER_MIN_VISIBLE_MS = 250;
 const PRELOADER_MAX_VISIBLE_MS = 1400;
@@ -127,14 +104,6 @@ function seedInitialLoadingState() {
   }
 }
 
-/**
- * Normalizes strings for robust comparison:
- * - Trims whitespace
- * - Converts to lowercase
- * - Removes diacritics (accents)
- */
-// normalize imported from utils
-
 // DOM Elements
 const views = {
   home: document.getElementById('homeView'),
@@ -144,66 +113,12 @@ const views = {
   explore: document.getElementById('exploreView'),
   sessions: document.getElementById('sessionsView')
 };
-const rankingList = document.getElementById('rankingList');
 const movieGrid = document.getElementById('movieGrid');
 const historyGrid = document.getElementById('historyGrid');
-const adminToggle = document.getElementById('adminToggle');
-const searchInput = document.getElementById('movieSearch');
-const searchResults = document.getElementById('searchResults');
-const userHeader = document.getElementById('userHeader');
-const exploreGrid = document.getElementById('exploreGrid');
-const exploreGenreSelect = document.getElementById('exploreGenre');
-const aiSearchInput = document.getElementById('aiSearchInput');
-const aiSearchBtn = document.getElementById('aiSearchBtn');
-const exploreSearchBtn = document.getElementById('exploreSearchBtn');
-const exploreInputs = [
-  document.getElementById('exploreTitle'),
-  document.getElementById('exploreDirector'),
-  document.getElementById('exploreGenre'),
-  document.getElementById('exploreYearFrom'),
-  document.getElementById('exploreYearTo'),
-  document.getElementById('exploreLimit'),
-  document.getElementById('exploreActor'),
-  document.getElementById('exploreSort'),
-  document.getElementById('exploreProvider')
-];
-const exploreButtons = [
-  document.getElementById('exploreClearBtn'),
-  document.getElementById('exploreSearchBtn')
-];
 
-// Profile Elements
-const profileName = document.getElementById('profileName');
-const profileEmail = document.getElementById('profileEmail');
-const profileAvatar = document.getElementById('profileAvatar');
-const countProposals = document.getElementById('countProposals');
-const countVotes = document.getElementById('countVotes');
-const profileActivityGrid = document.getElementById('profileActivityGrid');
-const profilePointsAuditSection = document.getElementById('profilePointsAuditSection');
-const profilePointsAuditContent = document.getElementById('profilePointsAuditContent');
-const profilePointsAuditSubtitle = document.getElementById('profilePointsAuditSubtitle');
 const adminDashboard = document.getElementById('adminDashboard');
-const adminUserList = document.getElementById('adminUserList');
-const adminUserCount = document.getElementById('adminUserCount');
-const adminParticipationLog = document.getElementById('adminParticipationLog');
-const homeLeaderboard = document.getElementById('homeLeaderboard');
-const homeLeaderboardSection = document.getElementById('homeLeaderboardSection');
 const nextSessionHero = document.getElementById('nextSessionHero');
 const sessionsGrid = document.getElementById('sessionsGrid');
-const sessionModal = document.getElementById('sessionModal');
-const sessionModalBody = document.getElementById('sessionModalBody');
-const createSessionModal = document.getElementById('createSessionModal');
-const sessionMovieSelect = document.getElementById('sessionMovieSelect');
-const adminSessionsList = document.getElementById('adminSessionsList');
-
-// Profile Edit Elements
-const profileDisplay = document.getElementById('profileDisplay');
-const profileEditForm = document.getElementById('profileEditForm');
-const editName = document.getElementById('editName');
-const editAvatar = document.getElementById('editAvatar');
-
-// Fallback images (imported from constants)
-// Limits configuration
 
 // Initialization
 async function init() {
@@ -222,7 +137,14 @@ async function init() {
       fetchGenreMap(),
       fetchProvidersMap(),
       fetchAppSettings()
-    ]);
+    ]).then(results => {
+      const names = ['fetchGenreMap', 'fetchProvidersMap', 'fetchAppSettings'];
+      results.forEach((result, i) => {
+        if (result.status === 'rejected') {
+          console.error(`[Init] ${names[i]} failed:`, result.reason);
+        }
+      });
+    });
 
     await checkUser();
 
@@ -337,10 +259,13 @@ async function refreshData(options = {}) {
   if (!lazy) {
     await Promise.all([ratingsHydrationTask, enrichmentTask, sessionsTask]);
   }
-}
 
-// Rendering Helpers
-// formatScore imported from utils
+  const urlParams = new URLSearchParams(window.location.search);
+  const sessionId = urlParams.get('session');
+  if (sessionId) {
+    window.viewSessionDetails(sessionId);
+  }
+}
 
 // Routing
 window.navigateTo = (viewId, targetUserId = null) => {
@@ -399,96 +324,9 @@ function handleRouting() {
   if (window.lucide) window.lucide.createIcons();
 }
 
-// Visual Feedback System (Toasts)
-// showNotification imported from utils
-
-// createMovieCardHTML imported from components
-
-// Profile Logic
-
-function renderActivityGrid(movies) {
-  ProfileView.renderActivityGrid(movies, profileActivityGrid, { isAdmin, user, userVotes });
-  if (window.lucide) window.lucide.createIcons();
-}
-
 function setupEventListeners() {
-  supabase.auth.onAuthStateChange((event, session) => {
-    scheduleAuthStateSync(session);
-  });
-
   window.addEventListener('hashchange', handleRouting);
   window.addEventListener('app:refresh', (e) => refreshData(e.detail || {}));
-
-  let searchTimeout;
-  searchInput.addEventListener('input', (e) => {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => handleMovieSearch(e.target.value), 500);
-  });
-
-  document.addEventListener('click', (e) => {
-    if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
-      searchResults.classList.remove('active');
-    }
-  });
-
-  // Auth Tab Toggling
-  document.querySelectorAll('.auth-tab').forEach(tab => {
-    tab.onclick = () => {
-      document.querySelector('.auth-tab.active').classList.remove('active');
-      tab.classList.add('active');
-      const isLogin = tab.dataset.tab === 'login';
-      document.getElementById('loginForm').classList.toggle('page-hidden', !isLogin);
-      document.getElementById('signupForm').classList.toggle('page-hidden', isLogin);
-    };
-  });
-
-  // Explore Controls
-  document.getElementById('exploreSearchBtn').onclick = fetchExploreResults;
-  document.getElementById('aiSearchBtn').onclick = fetchAIRecommendations;
-  
-  document.querySelectorAll('.mode-tab').forEach(tab => {
-    tab.onclick = () => {
-      document.querySelector('.mode-tab.active').classList.remove('active');
-      tab.classList.add('active');
-      const isAI = tab.dataset.mode === 'ai';
-      document.getElementById('manualSearchPanel').classList.toggle('page-hidden', isAI);
-      document.getElementById('aiSearchPanel').classList.toggle('page-hidden', !isAI);
-      exploreGrid.innerHTML = '<div class="empty-state">Start searching to discover films.</div>';
-    };
-  });
-
-  // Admin Tabs
-  document.querySelectorAll('.admin-tab-btn').forEach(btn => {
-    btn.onclick = () => {
-      document.querySelector('.admin-tab-btn.active').classList.remove('active');
-      btn.classList.add('active');
-      const tab = btn.dataset.tab;
-      document.getElementById('adminUsersTab').classList.toggle('page-hidden', tab !== 'users');
-      document.getElementById('adminSessionsTab').classList.toggle('page-hidden', tab !== 'sessions');
-      document.getElementById('adminLogsTab').classList.toggle('page-hidden', tab !== 'logs');
-      document.getElementById('adminAchievementsTab').classList.toggle('page-hidden', tab !== 'achievements');
-      document.getElementById('adminSettingsTab').classList.toggle('page-hidden', tab !== 'settings');
-      if (tab === 'settings') loadAppSettings();
-    };
-  });
-
-  document.getElementById('exploreClearBtn').onclick = () => {
-    exploreInputs.forEach(input => {
-      if (input.id === 'exploreLimit') {
-        input.value = '20';
-      } else if (input.id === 'exploreSort') {
-        input.value = 'popularity.desc';
-      } else {
-        input.value = '';
-      }
-    });
-    exploreGrid.innerHTML = '<div class="empty-state">Start searching to discover films.</div>';
-  };
 }
 
-/* --- Session System Logic moved to SessionController.js --- */
-/* --- Movie/Achievement Logic moved to MovieController.js --- */
-
 init();
-
-// renderCemetery removed (now handled by HomeView)
