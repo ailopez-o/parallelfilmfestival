@@ -223,39 +223,59 @@ export const AdminService = {
     const fifteenDaysAgo = new Date();
     fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
     const thresholdIso = fifteenDaysAgo.toISOString();
-    
-    const { data: moviesToClean, error: fetchErr } = await supabase
+
+    // Candidates: proposed movies older than 15 days
+    const { data: candidates, error: fetchErr } = await supabase
       .from('movies')
-      .select('id, title, created_at, is_dropped, is_seen, proposed_by')
+      .select('id, title, created_at')
       .eq('is_dropped', false)
-      .eq('is_seen', false);
-      
-    if (fetchErr || !moviesToClean) throw fetchErr || new Error('No movies found');
+      .eq('is_seen', false)
+      .lt('created_at', thresholdIso);
 
-    if (moviesToClean.length === 0) {
-      return { cleanedCount: 0 };
-    }
+    if (fetchErr) throw fetchErr;
+    if (!candidates || candidates.length === 0) return { cleanedCount: 0 };
 
-    const candidateIds = moviesToClean.map(m => m.id);
-    const { data: recentVotes, error: votesErr } = await supabase
+    const candidateIds = candidates.map(m => m.id);
+
+    // All votes ever cast for these candidates
+    const { data: allVotes, error: allVotesErr } = await supabase
+      .from('votes')
+      .select('movie_id')
+      .in('movie_id', candidateIds);
+
+    if (allVotesErr) throw allVotesErr;
+
+    // Votes cast in the last 15 days
+    const { data: recentVoteData, error: recentVotesErr } = await supabase
       .from('votes')
       .select('movie_id')
       .in('movie_id', candidateIds)
       .gte('created_at', thresholdIso);
-      
-    if (votesErr) throw votesErr;
 
-    const activeMovieIds = new Set((recentVotes || []).map(v => v.movie_id));
-    const toDrop = moviesToClean.filter(m => {
-      const proposalDate = new Date(m.created_at);
-      return proposalDate < fifteenDaysAgo && !activeMovieIds.has(m.id);
+    if (recentVotesErr) throw recentVotesErr;
+
+    const totalByMovie = new Map();
+    const recentByMovie = new Map();
+    (allVotes || []).forEach(v => {
+      totalByMovie.set(v.movie_id, (totalByMovie.get(v.movie_id) || 0) + 1);
+    });
+    (recentVoteData || []).forEach(v => {
+      recentByMovie.set(v.movie_id, (recentByMovie.get(v.movie_id) || 0) + 1);
     });
 
-    if (toDrop.length === 0) {
-      return { cleanedCount: 0 };
-    }
+    const scored = candidates.map(m => ({
+      ...m,
+      score: computeActivityScore(
+        totalByMovie.get(m.id) || 0,
+        recentByMovie.get(m.id) || 0
+      )
+    }));
+
+    const toDrop = selectBottomHalf(scored);
+    if (toDrop.length === 0) return { cleanedCount: 0 };
 
     const ids = toDrop.map(m => m.id);
+
     const { error: updateErr } = await supabase
       .from('movies')
       .update({ is_dropped: true })
@@ -263,10 +283,9 @@ export const AdminService = {
 
     if (updateErr) throw updateErr;
 
-    // Permanently delete votes for dropped movies to free up user vote slots.
-    // Supabase DB triggers are now responsible for generating participation logs.
+    // Free up user vote slots (DB triggers handle participation logs)
     await supabase.from('votes').delete().in('movie_id', ids);
-    
+
     return { cleanedCount: toDrop.length };
   },
 
