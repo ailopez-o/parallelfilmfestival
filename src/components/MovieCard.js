@@ -60,14 +60,20 @@ export function createMovieCardHTML(movie, options = {}) {
       ` : ''}
 	      <div class="poster-wrapper">
 	        <img src="${posterUrl}" alt="${safeTitle}" loading="lazy" onerror="this.onerror=null; this.src='${FALLBACK_IMAGE}'">
-        
-        <!-- Explore Context Overlay (Now inside poster) -->
-	        ${context === 'explore' ? `
+
+        ${context === 'explore' ? `
 	          <div class="propose-overlay">
 	            <button class="btn-propose" onclick="window.proposeMovie(${escapeHtml(JSON.stringify(movie))}, this)">
 	              <i data-lucide="plus"></i> Propose Movie
 	            </button>
 	          </div>
+        ` : ''}
+
+        ${context === 'cemetery' ? `
+          <div class="cemetery-vote-badge">
+            <i data-lucide="heart"></i>
+            <span>${movie.vote_count || 0}</span>
+          </div>
         ` : ''}
       </div>
 

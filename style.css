@@ -3874,6 +3874,29 @@ nav {
   transform: translateY(-5px);
 }
 
+.cemetery-vote-badge {
+  position: absolute;
+  bottom: 0.6rem;
+  left: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+}
+
+.cemetery-vote-badge i {
+  width: 12px;
+  height: 12px;
+  color: #f87171;
+}
+
 .cemetery-status {
   display: flex;
   align-items: center;
