@@ -245,6 +245,7 @@ export function createMovieCardHTML(movie, options = {}) {
           <div class="cemetery-status">
             <i data-lucide="skull"></i>
             <span>Dropped Film</span>
+            <span class="vote-count">${movie.vote_count || 0} votes</span>
           </div>
         ` : ""}
       </div>
