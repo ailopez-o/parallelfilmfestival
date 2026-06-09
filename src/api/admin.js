@@ -113,6 +113,16 @@ function normalizeTemplateAssetUrls(html, publicOrigin) {
     .replace(/(src|href)="\/(style\.css|src\/[^"]+)"/gi, (_, attr, path) => `${attr}="${absolutizeAssetUrl(path, publicOrigin)}"`);
 }
 
+export function computeActivityScore(totalVotes, recentVotes) {
+  return totalVotes * (recentVotes > 0 ? 2 : 1);
+}
+
+export function selectBottomHalf(movies) {
+  const sorted = [...movies].sort((a, b) => a.score - b.score);
+  const cullCount = Math.floor(sorted.length / 2);
+  return sorted.slice(0, cullCount);
+}
+
 /**
  * Admin API service.
  * Handles user management, logs, and application settings.
