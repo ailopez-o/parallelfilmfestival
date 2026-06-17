@@ -285,19 +285,18 @@ export async function loadUserActivity(targetUserId = null) {
     if (displayEmailInput) displayEmailInput.value = user.email;
   }
 
-  const { data: proposals } = await supabase
-    .from('movies')
-    .select('*')
-    .eq('proposed_by', activeUid)
-    .eq('is_dropped', false)
-    .eq('is_seen', false);
-
-  const { data: votes } = await supabase
-    .from('votes')
-    .select('movie_id, movies(*)')
-    .eq('user_id', activeUid);
+  const [
+    { data: proposals },
+    { data: votes },
+    { data: seenProposalsData }
+  ] = await Promise.all([
+    supabase.from('movies').select('*').eq('proposed_by', activeUid).eq('is_dropped', false).eq('is_seen', false),
+    supabase.from('votes').select('movie_id, movies(*)').eq('user_id', activeUid),
+    supabase.from('movies').select('*').eq('proposed_by', activeUid).eq('is_seen', true).order('updated_at', { ascending: false })
+  ]);
 
   const activeVotes = (votes || []).filter(vote => vote.movies && !vote.movies.is_dropped && !vote.movies.is_seen);
+  const seenProposals = seenProposalsData || [];
 
   const proposalsLimitLabel = Number.isInteger(MAX_PROPOSALS) ? MAX_PROPOSALS : '—';
   const votesLimitLabel = Number.isInteger(MAX_VOTES) ? MAX_VOTES : '—';
@@ -325,7 +324,9 @@ export async function loadUserActivity(targetUserId = null) {
       document.querySelector('.activity-tab.active').classList.remove('active');
       tab.classList.add('active');
       const view = tab.dataset.view;
-      renderActivityGrid(view === 'myProposals' ? (proposals || []) : activeVotes.map(v => v.movies));
+      if (view === 'myProposals') renderActivityGrid(proposals || []);
+      else if (view === 'myVotes') renderActivityGrid(activeVotes.map(v => v.movies));
+      else if (view === 'seenProposals') renderActivityGrid(seenProposals);
     };
   });
 
