@@ -48,8 +48,8 @@ export const ProfileView = {
 
     container.innerHTML = movies.map(movie => {
       const isOwner = state.user && movie.proposed_by === state.user.id;
-      return createMovieCardHTML(movie, { 
-        context: 'activity', 
+      return createMovieCardHTML(movie, {
+        context: state.context || 'activity',
         showDelete: isOwner || state.isAdmin,
         isAdmin: state.isAdmin,
         user: state.user,

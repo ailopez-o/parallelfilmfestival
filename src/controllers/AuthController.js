@@ -288,15 +288,18 @@ export async function loadUserActivity(targetUserId = null) {
   const [
     { data: proposals },
     { data: votes },
-    { data: seenProposalsData }
+    { data: seenProposalsData },
+    { data: cemeteryProposalsData }
   ] = await Promise.all([
     supabase.from('movies').select('*').eq('proposed_by', activeUid).eq('is_dropped', false).eq('is_seen', false),
     supabase.from('votes').select('movie_id, movies(*)').eq('user_id', activeUid),
-    supabase.from('movies').select('*').eq('proposed_by', activeUid).eq('is_seen', true).order('updated_at', { ascending: false })
+    supabase.from('movies').select('*').eq('proposed_by', activeUid).eq('is_seen', true).order('created_at', { ascending: false }),
+    supabase.from('movies').select('*').eq('proposed_by', activeUid).eq('is_dropped', true).eq('is_seen', false).order('created_at', { ascending: false })
   ]);
 
   const activeVotes = (votes || []).filter(vote => vote.movies && !vote.movies.is_dropped && !vote.movies.is_seen);
   const seenProposals = seenProposalsData || [];
+  const cemeteryProposals = cemeteryProposalsData || [];
 
   const proposalsLimitLabel = Number.isInteger(MAX_PROPOSALS) ? MAX_PROPOSALS : '—';
   const votesLimitLabel = Number.isInteger(MAX_VOTES) ? MAX_VOTES : '—';
@@ -304,6 +307,23 @@ export async function loadUserActivity(targetUserId = null) {
   if (countVotes) countVotes.textContent = `${activeVotes.length || 0} / ${votesLimitLabel}`;
 
   renderActivityGrid(proposals || []);
+
+  // Update tab labels with counts
+  const tabCounts = {
+    myProposals: proposals?.length || 0,
+    myVotes: activeVotes.length,
+    seenProposals: seenProposals.length,
+    cemeteryProposals: cemeteryProposals.length
+  };
+  document.querySelectorAll('.activity-tab').forEach(tab => {
+    const count = tabCounts[tab.dataset.view];
+    if (count !== undefined) {
+      const label = tab.dataset.view === 'myProposals' ? 'My Proposals' :
+                    tab.dataset.view === 'myVotes' ? 'My Votes' :
+                    tab.dataset.view === 'seenProposals' ? 'Vistas' : 'Cementerio';
+      tab.innerHTML = `${label} <span class="tab-count-badge">${count}</span>`;
+    }
+  });
 
   if (isAudit && profileAuditMode === 'points') {
     if (profilePointsAuditSubtitle) {
@@ -326,7 +346,8 @@ export async function loadUserActivity(targetUserId = null) {
       const view = tab.dataset.view;
       if (view === 'myProposals') renderActivityGrid(proposals || []);
       else if (view === 'myVotes') renderActivityGrid(activeVotes.map(v => v.movies));
-      else if (view === 'seenProposals') renderActivityGrid(seenProposals);
+      else if (view === 'seenProposals') renderActivityGrid(seenProposals, 'history');
+      else if (view === 'cemeteryProposals') renderActivityGrid(cemeteryProposals, 'cemetery');
     };
   });
 
@@ -389,10 +410,10 @@ export async function loadProfilePointsAudit(profile) {
   }
 }
 
-function renderActivityGrid(movies) {
+function renderActivityGrid(movies, context = 'activity') {
   const { isAdmin, user, userVotes } = store.getState();
   const profileActivityGrid = document.getElementById('profileActivityGrid');
-  ProfileView.renderActivityGrid(movies, profileActivityGrid, { isAdmin, user, userVotes });
+  ProfileView.renderActivityGrid(movies, profileActivityGrid, { isAdmin, user, userVotes, context });
   if (window.lucide) window.lucide.createIcons();
 }
 
