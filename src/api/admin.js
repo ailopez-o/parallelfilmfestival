@@ -113,6 +113,8 @@ function normalizeTemplateAssetUrls(html, publicOrigin) {
     .replace(/(src|href)="\/(style\.css|src\/[^"]+)"/gi, (_, attr, path) => `${attr}="${absolutizeAssetUrl(path, publicOrigin)}"`);
 }
 
+export const MIN_ACTIVE_POOL_SIZE = 10;
+
 export function computeActivityScore(totalVotes, recentVotes) {
   return totalVotes * (recentVotes > 0 ? 2 : 1);
 }
@@ -223,6 +225,16 @@ export const AdminService = {
     const fifteenDaysAgo = new Date();
     fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
     const thresholdIso = fifteenDaysAgo.toISOString();
+
+    // Guard: never cull when the active pool is too small
+    const { count: activeCount, error: countErr } = await supabase
+      .from('movies')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_dropped', false)
+      .eq('is_seen', false);
+
+    if (countErr) throw countErr;
+    if (activeCount < MIN_ACTIVE_POOL_SIZE) return { cleanedCount: 0 };
 
     // Candidates: proposed movies older than 15 days
     const { data: candidates, error: fetchErr } = await supabase

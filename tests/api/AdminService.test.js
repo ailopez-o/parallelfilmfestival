@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { computeActivityScore, selectBottomHalf } from '../../src/api/admin.js';
+import { computeActivityScore, selectBottomHalf, MIN_ACTIVE_POOL_SIZE } from '../../src/api/admin.js';
 
 describe('computeActivityScore', () => {
   test('0 votes → score 0', () => {
@@ -17,6 +17,12 @@ describe('computeActivityScore', () => {
 
   test('0 total votes with recent votes → score 0', () => {
     expect(computeActivityScore(0, 1)).toBe(0);
+  });
+});
+
+describe('MIN_ACTIVE_POOL_SIZE', () => {
+  test('is 10', () => {
+    expect(MIN_ACTIVE_POOL_SIZE).toBe(10);
   });
 });
 
