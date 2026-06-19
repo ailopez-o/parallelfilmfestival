@@ -233,13 +233,11 @@ export async function enrichMovieData(movies, options = {}) {
         updates.watch_providers = providers;
       }
 
+      enrichedMap.set(movie.id, localMovie);
+
       if (Object.keys(updates).length > 0) {
         console.log(`[Enrichment] Data updated for ${movie.title}`);
         await MovieService.updateMovieData(movie.id, updates);
-        if (updates.average_rating !== undefined) {
-          localMovie.vote_average = updates.average_rating;
-        }
-        enrichedMap.set(movie.id, localMovie);
       }
     } catch (e) {
       console.error(`[Enrichment] Failed for ${movie.title}:`, e);
