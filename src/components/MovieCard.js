@@ -36,7 +36,8 @@ export function createMovieCardHTML(movie, options = {}) {
   const safeDirector = escapeHtml(movie.director || 'Unknown');
   const safeSynopsis = escapeHtml(movie.synopsis || 'No synopsis available.');
   const safeUserComment = escapeHtml(movie.user_comment || '');
-  const movieMeta = [releaseYear, runtimeLabel, safeDirector].filter(Boolean).join(' • ');
+  const movieDirectorYear = [safeDirector, releaseYear].filter(Boolean).join(' • ');
+  const runtimeDisplay = runtimeLabel || '—';
   
   // Watch providers
   const providers = movie.watch_providers?.flatrate || [];
@@ -104,13 +105,15 @@ export function createMovieCardHTML(movie, options = {}) {
                 <span class="rating-value">${formatScore(movie.vote_average)}</span>
               </div>
             </div>
-	            <div class="movie-meta">
-	              <span>${movieMeta}</span>
-	              ${movie.trailer_url ? `
-	                <a href="${trailerUrl}" target="_blank" rel="noopener noreferrer" class="trailer-link-btn" title="Watch Trailer">
-	                  <i data-lucide="play-circle"></i> Trailer
-	                </a>
-	              ` : ''}
+            <div class="movie-meta">${movieDirectorYear}</div>
+            <div class="movie-runtime">
+              <i data-lucide="clock" class="runtime-icon"></i>
+              <span${runtimeLabel ? '' : ' data-empty'}>${runtimeDisplay}</span>
+              ${movie.trailer_url ? `
+                <a href="${trailerUrl}" target="_blank" rel="noopener noreferrer" class="trailer-link-btn" title="Watch Trailer" style="margin-left:auto;">
+                  <i data-lucide="play-circle"></i> Trailer
+                </a>
+              ` : ''}
             </div>
           </div>
 
@@ -164,10 +167,12 @@ export function createMovieCardHTML(movie, options = {}) {
                   <span class="rating-value">${formatScore(movie.vote_average)}</span>
                 </div>
               </div>
-	              <div class="movie-meta">
-	                <span>${movieMeta}</span>
-	                ${movie.trailer_url ? `<a href="${trailerUrl}" target="_blank" rel="noopener noreferrer" class="trailer-link-btn mini"><i data-lucide="play-circle"></i></a>` : ''}
-	              </div>
+              <div class="movie-meta">${movieDirectorYear}</div>
+              <div class="movie-runtime">
+                <i data-lucide="clock" class="runtime-icon"></i>
+                <span${runtimeLabel ? '' : ' data-empty'}>${runtimeDisplay}</span>
+                ${movie.trailer_url ? `<a href="${trailerUrl}" target="_blank" rel="noopener noreferrer" class="trailer-link-btn mini" style="margin-left:auto;"><i data-lucide="play-circle"></i></a>` : ''}
+              </div>
 	            </div>
 
 	            <div class="history-content-row">
