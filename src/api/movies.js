@@ -5,11 +5,6 @@ import { supabase } from '../config/supabase.js';
  * Handles all database operations related to movies, votes, and ratings.
  */
 
-function isMissingRuntimeColumnError(error) {
-  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`;
-  return error?.code === 'PGRST204' && message.includes('runtime');
-}
-
 function withoutRuntime(movieData) {
   const { runtime, ...rest } = movieData;
   return rest;
@@ -52,21 +47,6 @@ export const MovieService = {
       .eq('id', movieId)
       .select()
       .single();
-    
-    if (error && updates.runtime !== undefined && isMissingRuntimeColumnError(error)) {
-      const fallbackUpdates = withoutRuntime(updates);
-      if (Object.keys(fallbackUpdates).length === 0) return null;
-
-      const retry = await supabase
-        .from('movies')
-        .update(fallbackUpdates)
-        .eq('id', movieId)
-        .select()
-        .single();
-
-      if (retry.error) throw retry.error;
-      return retry.data;
-    }
 
     if (error) throw error;
     return data;
@@ -75,20 +55,9 @@ export const MovieService = {
   async createMovie(movieData) {
     const { data, error } = await supabase
       .from('movies')
-      .insert([movieData])
+      .insert([withoutRuntime(movieData)])
       .select()
       .single();
-    
-    if (error && movieData.runtime !== undefined && isMissingRuntimeColumnError(error)) {
-      const retry = await supabase
-        .from('movies')
-        .insert([withoutRuntime(movieData)])
-        .select()
-        .single();
-
-      if (retry.error) throw retry.error;
-      return retry.data;
-    }
 
     if (error) throw error;
     return data;

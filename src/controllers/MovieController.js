@@ -217,7 +217,6 @@ export async function enrichMovieData(movies, options = {}) {
 
       if (data.runtime) {
         localMovie.runtime = data.runtime;
-        updates.runtime = data.runtime;
       }
 
       // 2. Trailers
