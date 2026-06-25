@@ -5,11 +5,6 @@ import { supabase } from '../config/supabase.js';
  * Handles all database operations related to movies, votes, and ratings.
  */
 
-function withoutRuntime(movieData) {
-  const { runtime, ...rest } = movieData;
-  return rest;
-}
-
 export const MovieService = {
   async fetchAllMovies() {
     const { data, error } = await supabase
@@ -55,7 +50,7 @@ export const MovieService = {
   async createMovie(movieData) {
     const { data, error } = await supabase
       .from('movies')
-      .insert([withoutRuntime(movieData)])
+      .insert([movieData])
       .select()
       .single();
 

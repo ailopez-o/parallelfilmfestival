@@ -196,11 +196,9 @@ export async function enrichMovieData(movies, options = {}) {
 
   if (moviesToEnrich.length === 0) return;
 
-  console.log(`[Enrichment] Found ${moviesToEnrich.length} movies needing TMDB data.`);
-
   const enrichedMap = new Map();
 
-  for (const movie of moviesToEnrich) {
+  await Promise.all(moviesToEnrich.map(async (movie) => {
     try {
       const data = await TMDBService.invokeTMDBCall(`/movie/${movie.tmdb_id}`, {
         append_to_response: 'videos,watch/providers'
@@ -217,6 +215,7 @@ export async function enrichMovieData(movies, options = {}) {
 
       if (data.runtime) {
         localMovie.runtime = data.runtime;
+        updates.runtime = data.runtime;
       }
 
       // 2. Trailers
@@ -236,13 +235,12 @@ export async function enrichMovieData(movies, options = {}) {
       enrichedMap.set(movie.id, localMovie);
 
       if (Object.keys(updates).length > 0) {
-        console.log(`[Enrichment] Data updated for ${movie.title}`);
         await MovieService.updateMovieData(movie.id, updates);
       }
     } catch (e) {
       console.error(`[Enrichment] Failed for ${movie.title}:`, e);
     }
-  }
+  }));
 
   // Batch update store — no direct mutation of existing references
   if (enrichedMap.size > 0) {
@@ -255,9 +253,10 @@ export async function enrichMovieData(movies, options = {}) {
     });
   }
 
-  // Re-render
-  renderProposals({ lazy: lazyProposals });
+  // Re-render immediately (non-lazy) so enriched data (e.g. runtime) appears without delay
+  renderProposals({ lazy: false });
   renderHistory();
+  renderTopVotedShowcase();
 }
 
 // ─── Achievements ─────────────────────────────────────────────────────────────
