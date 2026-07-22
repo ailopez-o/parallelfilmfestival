@@ -59,11 +59,20 @@ export const MovieService = {
   },
 
   async deleteMovie(movieId) {
+    const cleanupResults = await Promise.all([
+      supabase.from('votes').delete().eq('movie_id', movieId),
+      supabase.from('user_ratings').delete().eq('movie_id', movieId),
+      supabase.from('participation_log').delete().eq('movie_id', movieId),
+    ]);
+
+    const cleanupError = cleanupResults.find(r => r.error)?.error;
+    if (cleanupError) throw cleanupError;
+
     const { error } = await supabase
       .from('movies')
       .delete()
       .eq('id', movieId);
-    
+
     if (error) throw error;
   },
 
