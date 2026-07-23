@@ -137,9 +137,20 @@ export function renderProposals(options = {}) {
 }
 
 export function renderHistory() {
-  const { seenMovies, isAdmin, user, userVotes, userAttendance } = store.getState();
+  const { seenMovies, isAdmin, user, userVotes, userAttendance, sessions } = store.getState();
   const historyGrid = document.getElementById('historyGrid');
-  HomeView.renderHistory(seenMovies, historyGrid, { isAdmin, user, userVotes, userAttendance });
+
+  const sessionDateByMovieId = new Map((sessions || []).map(s => [s.movie_id, s.session_date]));
+  const sorted = [...seenMovies].sort((a, b) => {
+    const dateA = sessionDateByMovieId.get(a.id);
+    const dateB = sessionDateByMovieId.get(b.id);
+    if (!dateA && !dateB) return 0;
+    if (!dateA) return 1;
+    if (!dateB) return -1;
+    return new Date(dateB) - new Date(dateA);
+  });
+
+  HomeView.renderHistory(sorted, historyGrid, { isAdmin, user, userVotes, userAttendance });
   if (window.lucide) window.lucide.createIcons();
 }
 
