@@ -620,6 +620,20 @@ export function init() {
     }
   };
 
+  window.startEditReview = (movieId) => {
+    const section = document.getElementById(`review-section-${movieId}`);
+    if (!section) return;
+    section.querySelector('.review-view-mode').style.display = 'none';
+    section.querySelector('.review-edit-mode').style.display = '';
+  };
+
+  window.cancelEditReview = (movieId) => {
+    const section = document.getElementById(`review-section-${movieId}`);
+    if (!section) return;
+    section.querySelector('.review-edit-mode').style.display = 'none';
+    section.querySelector('.review-view-mode').style.display = '';
+  };
+
   window.selectRating = (movieId, rating) => {
     const valLabel = document.getElementById(`rating-val-${movieId}`);
     if (valLabel) valLabel.textContent = rating;
