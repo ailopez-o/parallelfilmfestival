@@ -2541,6 +2541,60 @@ nav {
   margin-top: 2px;
 }
 
+.review-view-mode {
+  margin-bottom: 0.75rem;
+}
+
+.rev-name-group {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.edit-review-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--accent);
+  padding: 0.1rem 0.25rem;
+  border-radius: 0.4rem;
+  display: flex;
+  align-items: center;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.edit-review-btn:hover {
+  opacity: 1;
+}
+
+.edit-review-btn i {
+  width: 11px;
+  height: 11px;
+}
+
+.cancel-review-btn {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.5rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 0.35rem;
+  display: flex;
+  align-items: center;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.cancel-review-btn:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+  color: var(--text-primary);
+}
+
+.cancel-review-btn i {
+  width: 14px;
+  height: 14px;
+}
+
 .history-metadata-right {
   flex: 0 0 auto;
   display: flex;
