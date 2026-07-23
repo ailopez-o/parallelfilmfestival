@@ -209,13 +209,15 @@ export function createMovieCardHTML(movie, options = {}) {
                       <img src="${userAvatar}" class="rev-avatar-mini" />
                       <div class="rev-main">
                         <div class="rev-top">
-                          <span class="rev-name" style="color:var(--accent);">Your Review</span>
+                          <div class="rev-name-group">
+                            <span class="rev-name" style="color:var(--accent);">Your Review</span>
+                            <button class="edit-review-btn" onclick="window.startEditReview('${movie.id}')" title="Edit review">
+                              <i data-lucide="pencil"></i>
+                            </button>
+                          </div>
                           <div class="rev-stars-bar">
                             ${Array.from({length: 10}).map((_, i) => `<div class="star-dot ${movie.user_rating > i ? 'active' : ''}"></div>`).join('')}
                           </div>
-                          <button class="edit-review-btn" onclick="window.startEditReview('${movie.id}')" title="Edit review">
-                            <i data-lucide="pencil"></i>
-                          </button>
                         </div>
                         ${movie.user_comment ? `<p class="rev-text-compact">${safeUserComment}</p>` : ''}
                       </div>

@@ -2541,17 +2541,26 @@ nav {
   margin-top: 2px;
 }
 
+.review-view-mode {
+  margin-bottom: 0.75rem;
+}
+
+.rev-name-group {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .edit-review-btn {
-  margin-left: auto;
   background: none;
   border: none;
   cursor: pointer;
   color: var(--accent);
-  padding: 0.15rem 0.3rem;
+  padding: 0.1rem 0.25rem;
   border-radius: 0.4rem;
   display: flex;
   align-items: center;
-  opacity: 0.6;
+  opacity: 0.5;
   transition: opacity 0.2s;
 }
 
@@ -2560,8 +2569,8 @@ nav {
 }
 
 .edit-review-btn i {
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
 }
 
 .cancel-review-btn {
