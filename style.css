@@ -3562,6 +3562,9 @@ nav {
   border: 1px solid var(--border);
   border-radius: 2.5rem;
   padding: 3rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .close-modal-btn {
@@ -4012,6 +4015,248 @@ nav {
   width: 14px;
   height: 14px;
 }
+
+/* ── Attendance Panel ─────────────────────────────────────────────────────── */
+.attendance-loading {
+  padding: 3rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.attendance-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.attendance-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 2rem 2rem 1.25rem;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+
+.attendance-panel-header h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 0 0 0.2rem;
+}
+
+.attendance-panel-header p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.attendance-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text-secondary);
+  border-radius: 0.6rem;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.attendance-back-btn:hover {
+  color: var(--text-primary);
+  border-color: rgba(255,255,255,0.25);
+}
+
+.attendance-back-btn i { width: 14px; height: 14px; }
+
+.attendance-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1.25rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  overscroll-behavior: contain;
+}
+
+.attendance-panel-footer {
+  padding: 1.25rem 2rem 2rem;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+
+.attendance-panel-footer .submit-btn {
+  width: 100%;
+  margin: 0;
+}
+
+.attendance-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.attendance-section-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.attendance-count {
+  background: rgba(255,255,255,0.08);
+  border-radius: 2rem;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+.attendance-hint {
+  font-weight: 400;
+  text-transform: none;
+  opacity: 0.6;
+  letter-spacing: 0;
+}
+
+.attendee-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.attendee-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  transition: background 0.2s;
+}
+
+.attendee-row:hover { background: rgba(255,255,255,0.05); }
+
+.attendee-info {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.attendee-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.guest-avatar-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.guest-avatar-icon i { width: 14px; height: 14px; color: var(--text-secondary); }
+
+.attendee-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attendance-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.attendance-toggle-btn:hover:not(:disabled):not(.static) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.attendance-toggle-btn.confirmed {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #10b981;
+}
+
+.attendance-toggle-btn.confirmed:hover:not(.static) {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.attendance-toggle-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.attendance-toggle-btn.static { cursor: default; pointer-events: none; }
+.attendance-toggle-btn i { width: 13px; height: 13px; }
+
+.guest-add-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.guest-add-row .explore-input {
+  flex: 1;
+  margin: 0;
+  padding: 0.7rem 1rem;
+  color-scheme: dark;
+}
+
+.btn-add-guest {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.7rem 1.1rem;
+  background: rgba(79, 70, 229, 0.15);
+  border: 1px solid rgba(79, 70, 229, 0.3);
+  color: var(--accent);
+  border-radius: 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.btn-add-guest:hover {
+  background: var(--accent);
+  color: white;
+}
+
+.btn-add-guest i { width: 14px; height: 14px; }
 
 /* Admin Actions Overlay */
 .admin-actions-overlay {
