@@ -300,6 +300,11 @@ export function createMovieCardHTML(movie, options = {}) {
             <span>Dropped Film</span>
             <span class="vote-count">${movie.vote_count || 0} votes</span>
           </div>
+          ${user ? `
+            <button class="rescue-btn" onclick="window.rescueCemeteryMovie('${movie.id}')">
+              <i data-lucide="heart-handshake"></i> Rescue
+            </button>
+          ` : ''}
         ` : ""}
       </div>
     </div>

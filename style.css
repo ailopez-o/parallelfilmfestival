@@ -4013,6 +4013,35 @@ nav {
   height: 14px;
 }
 
+.rescue-btn {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--accent);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  font-size: 0.875rem;
+}
+
+.rescue-btn:hover {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.rescue-btn i {
+  width: 16px;
+  height: 16px;
+}
+
 /* Admin Actions Overlay */
 .admin-actions-overlay {
   position: absolute;

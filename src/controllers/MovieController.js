@@ -587,6 +587,47 @@ export function init() {
     updateAuthUI();
   };
 
+  window.rescueCemeteryMovie = async (movieId) => {
+    const { user, allMovies, isAdmin, proposedMovies, maxProposals: MAX_PROPOSALS } = store.getState();
+    if (!user) { window.navigateTo('auth'); return; }
+
+    const movie = allMovies.find(m => m.id === movieId);
+    if (!movie) return;
+
+    if (!confirm(`Rescue "${movie.title}" from the Cemetery and bring it back to active proposals?`)) return;
+
+    const { count, error: countError } = await supabase
+      .from('movies')
+      .select('*', { count: 'exact', head: true })
+      .eq('proposed_by', user.id)
+      .eq('is_seen', false)
+      .eq('is_dropped', false);
+
+    if (countError) console.error('Error checking proposal limits:', countError);
+
+    const currentCount = count !== null ? count : proposedMovies.filter(m => m.proposed_by === user.id).length;
+    if (currentCount >= MAX_PROPOSALS && !isAdmin) {
+      showNotification(`Proposal limit reached! You can't rescue right now — you already have ${MAX_PROPOSALS} active proposals.`, 'warning');
+      return;
+    }
+
+    try {
+      await MovieService.rescueMovie(movieId, user.id);
+
+      const userVotesData = await MovieService.fetchVotesForUser(user.id);
+      if (!userVotesData.some(v => v.movie_id === movieId)) {
+        await MovieService.addVote(user.id, movieId);
+        store.setUserVotes(new Set([...store.getState().userVotes, movieId]));
+      }
+
+      showNotification(`"${movie.title}" has been rescued from the cemetery!`, 'success');
+      window.dispatchEvent(new CustomEvent('app:refresh'));
+    } catch (e) {
+      console.error('Error rescuing movie:', e);
+      showNotification('Error rescuing movie', 'error');
+    }
+  };
+
   window.markAsSeen = async (movieId) => {
     if (!confirm('Mark this movie as SEEN?')) return;
     try {
