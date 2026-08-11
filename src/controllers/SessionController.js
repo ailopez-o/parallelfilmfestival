@@ -412,7 +412,7 @@ export function init() {
 
     const [signupsRes, attendanceRes, profilesRes] = await Promise.all([
       supabase.from('session_signups').select('user_id, profiles(id, full_name, email)').eq('session_id', sessionId),
-      supabase.from('session_attendance').select('user_id, guest_name').eq('session_id', sessionId),
+      supabase.from('session_attendance').select('user_id').eq('session_id', sessionId),
       supabase.from('profiles').select('id, full_name, email')
     ]);
 
@@ -422,7 +422,6 @@ export function init() {
 
     const attendedUserIds = new Set(attendanceRows.filter(a => a.user_id).map(a => a.user_id));
     const signupUserIds = new Set(signups.map(s => s.user_id));
-    const guests = attendanceRows.filter(a => !a.user_id && a.guest_name);
     const otherMembers = allProfiles.filter(p => !signupUserIds.has(p.id));
 
     const makeRow = (profile, attended) => {
@@ -458,21 +457,6 @@ export function init() {
         </div>
       </div>` : '';
 
-    const guestsSection = guests.length ? `
-      <div class="attendance-section">
-        <div class="attendance-section-title">Guests <span class="attendance-count">${guests.length}</span></div>
-        <div class="attendee-list">
-          ${guests.map(g => `
-            <div class="attendee-row">
-              <div class="attendee-info">
-                <div class="attendee-avatar guest-avatar-icon"><i data-lucide="user"></i></div>
-                <span class="attendee-name">${escapeHtml(g.guest_name)}</span>
-              </div>
-              <span class="attendance-toggle-btn confirmed static"><i data-lucide="check-circle"></i> Guest</span>
-            </div>`).join('')}
-        </div>
-      </div>` : '';
-
     return `
       <div class="attendance-panel">
         <div class="attendance-panel-header">
@@ -488,19 +472,6 @@ export function init() {
         <div class="attendance-panel-body">
           ${signupsSection}
           ${othersSection}
-          ${guestsSection}
-
-          <div class="attendance-section">
-            <div class="attendance-section-title">Add Guest <span class="attendance-hint">(not in app)</span></div>
-            <div class="guest-add-row">
-              <input type="text" id="guestNameInput-${sessionId}" class="explore-input"
-                     placeholder="Guest name…"
-                     onkeydown="if(event.key==='Enter') window.addGuestAttendee('${sessionId}')" />
-              <button class="btn-add-guest" onclick="window.addGuestAttendee('${sessionId}')">
-                <i data-lucide="user-plus"></i> Add
-              </button>
-            </div>
-          </div>
         </div>
 
         <div class="attendance-panel-footer">
@@ -541,23 +512,4 @@ export function init() {
     }
   };
 
-  window.addGuestAttendee = async (sessionId) => {
-    const input = document.getElementById(`guestNameInput-${sessionId}`);
-    const name = input?.value?.trim();
-    if (!name) { showNotification('Enter a guest name first', 'warning'); return; }
-
-    try {
-      await SessionService.addGuestAttendance(sessionId, name);
-      showNotification(`${name} added as guest`, 'success');
-
-      const sessionModalBody = document.getElementById('sessionModalBody');
-      if (sessionModalBody) {
-        sessionModalBody.innerHTML = await buildAttendancePanel(sessionId);
-        if (window.lucide) window.lucide.createIcons();
-      }
-    } catch (err) {
-      console.error('Error adding guest:', err);
-      showNotification('Could not add guest — check DB migration (see code comment)', 'error');
-    }
-  };
 }
