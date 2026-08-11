@@ -45,7 +45,7 @@ export function createEmptyScoreStats() {
   };
 }
 
-export function buildUserScoreStatsMap(profiles, votes, allMoviesList, ratings, attendance, orderedSessions) {
+export function buildUserScoreStatsMap(profiles, votes, allMoviesList, ratings, attendance, orderedSessions, signups) {
   const userStats = {};
   (profiles || []).forEach(profile => { userStats[profile.id] = createEmptyScoreStats(); });
 
@@ -74,9 +74,17 @@ export function buildUserScoreStatsMap(profiles, votes, allMoviesList, ratings, 
     if (stats && rating.movie_id) stats.ratedMovieIds.add(rating.movie_id);
   });
 
+  const signupSet = {};
+  (signups || []).forEach(s => {
+    if (!signupSet[s.user_id]) signupSet[s.user_id] = new Set();
+    signupSet[s.user_id].add(s.session_id);
+  });
+
   (attendance || []).forEach(entry => {
     const stats = userStats[entry.user_id];
-    if (stats && entry.session_id) stats.attendedSessionIds.add(entry.session_id);
+    if (stats && entry.session_id && signupSet[entry.user_id]?.has(entry.session_id)) {
+      stats.attendedSessionIds.add(entry.session_id);
+    }
   });
 
   (profiles || []).forEach(profile => {
@@ -134,13 +142,14 @@ export function buildUserPointsAudit(profile, stats, context = {}) {
 
 export async function updateGlobalRanking() {
   try {
-    const [profilesRes, votesRes, moviesRes, ratingsRes, attendanceRes, sessionsRes] = await Promise.all([
+    const [profilesRes, votesRes, moviesRes, ratingsRes, attendanceRes, sessionsRes, signupsRes] = await Promise.all([
       supabase.from('profiles').select('*'),
       supabase.from('votes').select('user_id, movie_id, movies(is_dropped)'),
       supabase.from('movies').select('id, proposed_by, is_dropped, is_seen'),
       supabase.from('user_ratings').select('user_id, movie_id'),
       supabase.from('session_attendance').select('user_id, session_id'),
-      supabase.from('sessions').select('id, session_date, movie_id, movies(title)')
+      supabase.from('sessions').select('id, session_date, movie_id, movies(title)'),
+      supabase.from('session_signups').select('user_id, session_id')
     ]);
     if (profilesRes.error) throw profilesRes.error;
     if (votesRes.error) throw votesRes.error;
@@ -152,7 +161,7 @@ export async function updateGlobalRanking() {
     const profiles = (profilesRes.data || []).filter(p => p.role !== 'admin');
     const userStats = buildUserScoreStatsMap(
       profiles, votesRes.data || [], moviesRes.data || [],
-      ratingsRes.data || [], attendanceRes.data || [], sessionsRes.data || []
+      ratingsRes.data || [], attendanceRes.data || [], sessionsRes.data || [], signupsRes.data || []
     );
 
     profiles.forEach(p => { p.score = userStats[p.id]?.totalScore || 0; });
