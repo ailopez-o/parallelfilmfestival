@@ -269,10 +269,23 @@ export async function enrichMovieData(movies, options = {}) {
     }
   }));
 
-  // Batch update store — no direct mutation of existing references
+  // Batch update store — no direct mutation of existing references.
+  // Merge enriched fields (runtime, trailer, providers) with current store values for
+  // user-specific data (ratings, comments, reviews) that may have been hydrated
+  // concurrently by ratingsHydrationTask.
   if (enrichedMap.size > 0) {
     const { allMovies } = store.getState();
-    const newAllMovies = allMovies.map(m => enrichedMap.has(m.id) ? enrichedMap.get(m.id) : m);
+    const newAllMovies = allMovies.map(m => {
+      if (!enrichedMap.has(m.id)) return m;
+      const enriched = enrichedMap.get(m.id);
+      return {
+        ...enriched,
+        user_rating: m.user_rating,
+        user_comment: m.user_comment,
+        reviews: m.reviews,
+        average_community_rating: m.average_community_rating,
+      };
+    });
     store.setState({
       allMovies: newAllMovies,
       proposedMovies: newAllMovies.filter(m => !m.is_seen && !m.is_dropped),
