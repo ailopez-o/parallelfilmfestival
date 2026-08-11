@@ -116,13 +116,48 @@ function normalizeTemplateAssetUrls(html, publicOrigin) {
 export const MIN_ACTIVE_POOL_SIZE = 10;
 
 export function computeActivityScore(totalVotes, recentVotes) {
-  return totalVotes * (recentVotes > 0 ? 2 : 1);
+  // Recent votes count 10x more than old votes so forgotten high-vote
+  // movies don't block the cemetery indefinitely.
+  return recentVotes * 10 + totalVotes;
 }
 
 export function selectBottomHalf(movies) {
   const sorted = [...movies].sort((a, b) => a.score - b.score);
   const cullCount = Math.floor(sorted.length / 2);
   return sorted.slice(0, cullCount);
+}
+
+/**
+ * Fetches recent vote data for the given movies and returns them annotated
+ * with an `activity_score` field. Used by the purge logic and the showcase.
+ */
+export async function computeActivityScoresForMovies(movies, windowDays = 15) {
+  if (!movies || movies.length === 0) return [];
+
+  const thresholdIso = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const ids = movies.map(m => m.id);
+
+  const [allVotesRes, recentVotesRes] = await Promise.all([
+    supabase.from('votes').select('movie_id').in('movie_id', ids),
+    supabase.from('votes').select('movie_id').in('movie_id', ids).gte('created_at', thresholdIso)
+  ]);
+
+  const totalByMovie = new Map();
+  const recentByMovie = new Map();
+  (allVotesRes.data || []).forEach(v => {
+    totalByMovie.set(v.movie_id, (totalByMovie.get(v.movie_id) || 0) + 1);
+  });
+  (recentVotesRes.data || []).forEach(v => {
+    recentByMovie.set(v.movie_id, (recentByMovie.get(v.movie_id) || 0) + 1);
+  });
+
+  return movies.map(m => ({
+    ...m,
+    activity_score: computeActivityScore(
+      totalByMovie.get(m.id) || 0,
+      recentByMovie.get(m.id) || 0
+    )
+  }));
 }
 
 /**
@@ -222,9 +257,8 @@ export const AdminService = {
    * Cleans up movies that have been inactive for more than 15 days.
    */
   async cleanupInactiveMovies() {
-    const fifteenDaysAgo = new Date();
-    fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
-    const thresholdIso = fifteenDaysAgo.toISOString();
+    const WINDOW_DAYS = 15;
+    const thresholdIso = new Date(Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
     // Guard: never cull when the active pool is too small
     const { count: activeCount, error: countErr } = await supabase
@@ -247,41 +281,9 @@ export const AdminService = {
     if (fetchErr) throw fetchErr;
     if (!candidates || candidates.length === 0) return { cleanedCount: 0 };
 
-    const candidateIds = candidates.map(m => m.id);
+    const scoredCandidates = await computeActivityScoresForMovies(candidates, WINDOW_DAYS);
 
-    // All votes ever cast for these candidates
-    const { data: allVotes, error: allVotesErr } = await supabase
-      .from('votes')
-      .select('movie_id')
-      .in('movie_id', candidateIds);
-
-    if (allVotesErr) throw allVotesErr;
-
-    // Votes cast in the last 15 days
-    const { data: recentVoteData, error: recentVotesErr } = await supabase
-      .from('votes')
-      .select('movie_id')
-      .in('movie_id', candidateIds)
-      .gte('created_at', thresholdIso);
-
-    if (recentVotesErr) throw recentVotesErr;
-
-    const totalByMovie = new Map();
-    const recentByMovie = new Map();
-    (allVotes || []).forEach(v => {
-      totalByMovie.set(v.movie_id, (totalByMovie.get(v.movie_id) || 0) + 1);
-    });
-    (recentVoteData || []).forEach(v => {
-      recentByMovie.set(v.movie_id, (recentByMovie.get(v.movie_id) || 0) + 1);
-    });
-
-    const scored = candidates.map(m => ({
-      ...m,
-      score: computeActivityScore(
-        totalByMovie.get(m.id) || 0,
-        recentByMovie.get(m.id) || 0
-      )
-    }));
+    const scored = scoredCandidates.map(m => ({ ...m, score: m.activity_score }));
 
     const toDrop = selectBottomHalf(scored);
     if (toDrop.length === 0) return { cleanedCount: 0 };
