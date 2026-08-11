@@ -250,6 +250,7 @@ export function init() {
     const sessionMovieSelect = document.getElementById('sessionMovieSelect');
     resetSessionModalToCreateMode();
     createSessionModal.classList.remove('page-hidden');
+    document.body.classList.add('modal-open');
 
     sessionMovieSelect.innerHTML = `
       <option value="">-- To Be Decided --</option>
@@ -264,6 +265,7 @@ export function init() {
     resetSessionModalToCreateMode();
     store.setState({ currentSession: null });
     createSessionModal.classList.add('page-hidden');
+    document.body.classList.remove('modal-open');
   };
 
   window.handleCreateSession = async () => {
@@ -312,6 +314,7 @@ export function init() {
 
     store.setState({ currentSession: session });
     createSessionModal.classList.remove('page-hidden');
+    document.body.classList.add('modal-open');
 
     sessionMovieSelect.innerHTML = `
       <option value="">-- To Be Decided --</option>
@@ -402,58 +405,159 @@ export function init() {
     }
   };
 
-  window.manageAttendance = async (sessionId) => {
+  async function buildAttendancePanel(sessionId) {
     const { sessions } = store.getState();
     const session = sessions.find(s => s.id === sessionId);
-    const { data: signups } = await supabase.from('session_signups').select('*, profiles(full_name, id)').eq('session_id', sessionId);
-    const { data: attendance } = await supabase.from('session_attendance').select('user_id').eq('session_id', sessionId);
+    if (!session) return '<p>Session not found.</p>';
 
-    const attendedSet = new Set(attendance?.map(a => a.user_id) || []);
+    const [signupsRes, attendanceRes, profilesRes] = await Promise.all([
+      supabase.from('session_signups').select('user_id, profiles(id, full_name, email)').eq('session_id', sessionId),
+      supabase.from('session_attendance').select('user_id, guest_name').eq('session_id', sessionId),
+      supabase.from('profiles').select('id, full_name, email')
+    ]);
 
-    const html = `
-      <div style="padding: 2rem;">
-        <h3>Attendance: ${escapeHtml(session.movies?.title || 'Film To Be Decided')}</h3>
-        <p style="margin-bottom: 2rem;">Confirm who actually attended the session.</p>
+    const signups = signupsRes.data || [];
+    const attendanceRows = attendanceRes.data || [];
+    const allProfiles = profilesRes.data || [];
 
-        <div style="display:grid; gap:1rem;">
-          ${signups?.length ? signups.map(s => `
-            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:1rem; border-radius:1rem;">
-              <span>${escapeHtml(getUserDisplayName(s.profiles))}</span>
-              <button class="btn-signup-hero ${attendedSet.has(s.user_id) ? 'success' : 'secondary'}"
-                      style="padding:0.5rem 1rem; font-size:0.8rem;"
-                      onclick="window.toggleAttendance('${sessionId}', '${s.user_id}', this)">
-                ${attendedSet.has(s.user_id) ? 'Confirmed' : 'Confirm Attendance'}
-              </button>
-            </div>
-          `).join('') : '<p>No signups for this session yet.</p>'}
+    const attendedUserIds = new Set(attendanceRows.filter(a => a.user_id).map(a => a.user_id));
+    const signupUserIds = new Set(signups.map(s => s.user_id));
+    const guests = attendanceRows.filter(a => !a.user_id && a.guest_name);
+    const otherMembers = allProfiles.filter(p => !signupUserIds.has(p.id));
+
+    const makeRow = (profile, attended) => {
+      const name = getUserDisplayName(profile);
+      const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=5850ec&color=fff&size=32&bold=true`;
+      return `
+        <div class="attendee-row">
+          <div class="attendee-info">
+            <img src="${avatar}" class="attendee-avatar" />
+            <span class="attendee-name">${escapeHtml(name)}</span>
+          </div>
+          <button class="attendance-toggle-btn ${attended ? 'confirmed' : ''}"
+                  onclick="window.toggleAttendance('${sessionId}', '${profile.id}', this)">
+            <i data-lucide="${attended ? 'check-circle' : 'circle'}"></i>
+            ${attended ? 'Confirmed' : 'Confirm'}
+          </button>
+        </div>`;
+    };
+
+    const signupsSection = signups.length ? `
+      <div class="attendance-section">
+        <div class="attendance-section-title">Signed Up <span class="attendance-count">${signups.length}</span></div>
+        <div class="attendee-list">
+          ${signups.map(s => makeRow(s.profiles, attendedUserIds.has(s.user_id))).join('')}
+        </div>
+      </div>` : '';
+
+    const othersSection = otherMembers.length ? `
+      <div class="attendance-section">
+        <div class="attendance-section-title">Other Members <span class="attendance-count">${otherMembers.length}</span></div>
+        <div class="attendee-list">
+          ${otherMembers.map(p => makeRow(p, attendedUserIds.has(p.id))).join('')}
+        </div>
+      </div>` : '';
+
+    const guestsSection = guests.length ? `
+      <div class="attendance-section">
+        <div class="attendance-section-title">Guests <span class="attendance-count">${guests.length}</span></div>
+        <div class="attendee-list">
+          ${guests.map(g => `
+            <div class="attendee-row">
+              <div class="attendee-info">
+                <div class="attendee-avatar guest-avatar-icon"><i data-lucide="user"></i></div>
+                <span class="attendee-name">${escapeHtml(g.guest_name)}</span>
+              </div>
+              <span class="attendance-toggle-btn confirmed static"><i data-lucide="check-circle"></i> Guest</span>
+            </div>`).join('')}
+        </div>
+      </div>` : '';
+
+    return `
+      <div class="attendance-panel">
+        <div class="attendance-panel-header">
+          <div>
+            <h3>${escapeHtml(session.movies?.title || 'Film To Be Decided')}</h3>
+            <p>Confirm who attended this session.</p>
+          </div>
+          <button class="attendance-back-btn" onclick="window.viewSessionDetails('${sessionId}')">
+            <i data-lucide="arrow-left"></i> Back
+          </button>
         </div>
 
-        <button class="submit-btn" style="margin-top:2rem;" onclick="window.closeSessionModal()">Done</button>
-      </div>
-    `;
+        <div class="attendance-panel-body">
+          ${signupsSection}
+          ${othersSection}
+          ${guestsSection}
 
+          <div class="attendance-section">
+            <div class="attendance-section-title">Add Guest <span class="attendance-hint">(not in app)</span></div>
+            <div class="guest-add-row">
+              <input type="text" id="guestNameInput-${sessionId}" class="explore-input"
+                     placeholder="Guest name…"
+                     onkeydown="if(event.key==='Enter') window.addGuestAttendee('${sessionId}')" />
+              <button class="btn-add-guest" onclick="window.addGuestAttendee('${sessionId}')">
+                <i data-lucide="user-plus"></i> Add
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="attendance-panel-footer">
+          <button class="submit-btn" onclick="window.closeSessionModal()">Done</button>
+        </div>
+      </div>`;
+  }
+
+  window.manageAttendance = async (sessionId) => {
     const sessionModalBody = document.getElementById('sessionModalBody');
     const sessionModal = document.getElementById('sessionModal');
-    sessionModalBody.innerHTML = html;
+    sessionModalBody.innerHTML = '<div class="attendance-loading">Loading…</div>';
     sessionModal.classList.remove('page-hidden');
+    document.body.style.overflow = 'hidden';
+
+    sessionModalBody.innerHTML = await buildAttendancePanel(sessionId);
+    if (window.lucide) window.lucide.createIcons();
   };
 
   window.toggleAttendance = async (sessionId, userId, btn) => {
+    btn.disabled = true;
     try {
       const res = await SessionService.toggleAttendance(sessionId, userId);
+      showNotification(res.action === 'added' ? 'Attendance confirmed!' : 'Attendance removed', res.action === 'added' ? 'success' : 'info');
 
-      if (res.action === 'added') {
-        showNotification('Attendance confirmed!', 'success');
-      } else {
-        showNotification('Attendance removed', 'info');
+      // Re-render the panel in place — do NOT call viewSessionDetails
+      const sessionModalBody = document.getElementById('sessionModalBody');
+      if (sessionModalBody) {
+        sessionModalBody.innerHTML = await buildAttendancePanel(sessionId);
+        if (window.lucide) window.lucide.createIcons();
       }
 
-      await fetchSessions();
-      renderSessions();
-      window.viewSessionDetails(sessionId);
+      fetchSessions().then(renderSessions);
     } catch (err) {
       console.error('Error toggling attendance:', err);
       showNotification('Action failed', 'error');
+      btn.disabled = false;
+    }
+  };
+
+  window.addGuestAttendee = async (sessionId) => {
+    const input = document.getElementById(`guestNameInput-${sessionId}`);
+    const name = input?.value?.trim();
+    if (!name) { showNotification('Enter a guest name first', 'warning'); return; }
+
+    try {
+      await SessionService.addGuestAttendance(sessionId, name);
+      showNotification(`${name} added as guest`, 'success');
+
+      const sessionModalBody = document.getElementById('sessionModalBody');
+      if (sessionModalBody) {
+        sessionModalBody.innerHTML = await buildAttendancePanel(sessionId);
+        if (window.lucide) window.lucide.createIcons();
+      }
+    } catch (err) {
+      console.error('Error adding guest:', err);
+      showNotification('Could not add guest — check DB migration (see code comment)', 'error');
     }
   };
 }

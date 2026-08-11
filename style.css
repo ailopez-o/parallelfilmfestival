@@ -2352,7 +2352,8 @@ nav {
   max-width: 1400px;
 }
 
-#historyGrid {
+#historyGrid,
+#profileActivityGrid:has(.movie-card.horizontal) {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -2364,16 +2365,19 @@ nav {
   flex-direction: row;
   min-height: auto;
   width: 100%;
+  overflow: hidden;
 }
 
 .movie-card.horizontal .poster-wrapper {
-  flex: 0 0 400px;
+  flex: 0 0 clamp(140px, 28%, 300px);
   height: auto;
   aspect-ratio: 2/3;
 }
 
 .movie-card.horizontal .movie-info {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
   padding: 1.5rem 2rem;
   display: flex;
   flex-direction: column;
@@ -2385,21 +2389,26 @@ nav {
   flex-direction: column;
   gap: 1.25rem;
   width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .history-header-compact {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .history-content-row {
   display: flex;
   gap: 2rem;
   align-items: flex-start;
+  min-width: 0;
 }
 
 .history-synopsis-compact {
   flex: 1;
+  min-width: 0;
   font-size: 0.85rem;
   line-height: 1.6;
   color: var(--text-secondary);
@@ -2419,6 +2428,8 @@ nav {
   border-radius: 1rem;
   padding: 1.25rem;
   border: 1px solid rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  min-width: 0;
 }
 
 .reviews-title-row {
@@ -2634,10 +2645,12 @@ nav {
   display: flex;
   gap: 0.5rem;
   align-items: flex-end;
+  min-width: 0;
 }
 
 .review-comment-textarea.compact {
   flex: 1;
+  min-width: 0;
   min-height: 44px;
   margin: 0.5rem 0 0;
   padding: 0.6rem 0.85rem;
@@ -2690,6 +2703,9 @@ nav {
     flex: 0 0 auto;
     width: 100%;
     aspect-ratio: 16/9;
+  }
+  .movie-card.horizontal .movie-info {
+    padding: 1rem 1.25rem;
   }
 }
 
@@ -3556,12 +3572,134 @@ nav {
   width: 95%;
 }
 
+/* ── Create / Edit Session Form Modal ─────────────────────────────────────── */
+.session-form-card {
+  position: relative;
+  z-index: 10;
+  width: min(560px, 95vw);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-dark, #0f0f17);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.5rem;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255,255,255,0.04);
+  overflow: hidden;
+}
+
+.session-form-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1.75rem 2rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.session-form-header h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 0.25rem;
+}
+
+.session-form-header p {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.session-form-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1.5rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  overscroll-behavior: contain;
+}
+
+.session-form-body .input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.session-form-body label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.label-hint {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.7;
+}
+
+.session-form-footer {
+  padding: 1.25rem 2rem 1.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.session-form-footer .submit-btn {
+  width: 100%;
+  margin: 0;
+}
+
+/* Dark-themed select for the session form */
+.session-select {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  color: var(--text-primary, #e2e8f0);
+  width: 100%;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.95rem;
+  transition: border-color 0.3s ease, background 0.3s ease;
+  cursor: pointer;
+  appearance: auto;
+  color-scheme: dark;
+}
+
+.session-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: rgba(79, 70, 229, 0.06);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.session-select option {
+  background: #1a1b26;
+  color: #e2e8f0;
+}
+
+/* Fix native select & datetime-local in dark context */
+.session-form-body .explore-input {
+  margin-bottom: 0;
+  color-scheme: dark;
+}
+
+/* Body scroll lock when any modal is open */
+body.modal-open {
+  overflow: hidden;
+}
+
 .session-modal-content {
   max-width: 1000px;
   background: var(--bg-dark);
   border: 1px solid var(--border);
   border-radius: 2.5rem;
   padding: 3rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .close-modal-btn {
@@ -4012,6 +4150,276 @@ nav {
   width: 14px;
   height: 14px;
 }
+
+.rescue-btn {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--accent);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  font-size: 0.875rem;
+}
+
+.rescue-btn:hover {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.rescue-btn i {
+  width: 16px;
+  height: 16px;
+}
+/* ── Attendance Panel ─────────────────────────────────────────────────────── */
+.attendance-loading {
+  padding: 3rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.attendance-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.attendance-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 2rem 2rem 1.25rem;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+
+.attendance-panel-header h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 0 0 0.2rem;
+}
+
+.attendance-panel-header p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.attendance-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text-secondary);
+  border-radius: 0.6rem;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.attendance-back-btn:hover {
+  color: var(--text-primary);
+  border-color: rgba(255,255,255,0.25);
+}
+
+.attendance-back-btn i { width: 14px; height: 14px; }
+
+.attendance-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1.25rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  overscroll-behavior: contain;
+}
+
+.attendance-panel-footer {
+  padding: 1.25rem 2rem 2rem;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+
+.attendance-panel-footer .submit-btn {
+  width: 100%;
+  margin: 0;
+}
+
+.attendance-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.attendance-section-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.attendance-count {
+  background: rgba(255,255,255,0.08);
+  border-radius: 2rem;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+.attendance-hint {
+  font-weight: 400;
+  text-transform: none;
+  opacity: 0.6;
+  letter-spacing: 0;
+}
+
+.attendee-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.attendee-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  transition: background 0.2s;
+}
+
+.attendee-row:hover { background: rgba(255,255,255,0.05); }
+
+.attendee-info {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.attendee-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.guest-avatar-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.guest-avatar-icon i { width: 14px; height: 14px; color: var(--text-secondary); }
+
+.attendee-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attendance-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.attendance-toggle-btn:hover:not(:disabled):not(.static) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.attendance-toggle-btn.confirmed {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #10b981;
+}
+
+.attendance-toggle-btn.confirmed:hover:not(.static) {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.attendance-toggle-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.attendance-toggle-btn.static { cursor: default; pointer-events: none; }
+.attendance-toggle-btn i { width: 13px; height: 13px; }
+
+.guest-add-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.guest-add-row .explore-input {
+  flex: 1;
+  margin: 0;
+  padding: 0.7rem 1rem;
+  color-scheme: dark;
+}
+
+.btn-add-guest {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.7rem 1.1rem;
+  background: rgba(79, 70, 229, 0.15);
+  border: 1px solid rgba(79, 70, 229, 0.3);
+  color: var(--accent);
+  border-radius: 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.btn-add-guest:hover {
+  background: var(--accent);
+  color: white;
+}
+
+.btn-add-guest i { width: 14px; height: 14px; }
 
 /* Admin Actions Overlay */
 .admin-actions-overlay {

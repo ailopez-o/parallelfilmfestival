@@ -616,34 +616,42 @@
     <!-- CREATE SESSION MODAL -->
     <div id="createSessionModal" class="modal page-hidden">
       <div class="modal-overlay" onclick="window.closeCreateSessionModal()"></div>
-      <div class="modal-content glass auth-card" style="max-width: 600px;">
-        <div class="auth-form-content">
-          <h2>Create Session</h2>
-          <p>Schedule a new screening.</p>
-          
+      <div class="session-form-card">
+        <div class="session-form-header">
+          <div>
+            <h2>Create Session</h2>
+            <p>Schedule a new screening.</p>
+          </div>
+          <button class="close-modal-btn" onclick="window.closeCreateSessionModal()">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+
+        <div class="session-form-body">
           <div class="input-group">
             <label>Select Movie</label>
-            <select id="sessionMovieSelect" class="explore-input" style="margin-bottom: 1.5rem;">
+            <select id="sessionMovieSelect" class="session-select">
               <!-- Movies injected here -->
             </select>
           </div>
 
           <div class="input-group">
             <label>Session Date</label>
-            <input type="datetime-local" id="sessionDate" class="explore-input" style="margin-bottom: 1.5rem;" />
+            <input type="datetime-local" id="sessionDate" class="explore-input" />
           </div>
 
           <div class="input-group">
             <label>Description</label>
-            <textarea id="sessionDescription" class="explore-input" placeholder="What's special about this session?" rows="3" style="margin-bottom: 1.5rem;"></textarea>
+            <textarea id="sessionDescription" class="explore-input" placeholder="What's special about this session?" rows="3"></textarea>
           </div>
 
           <div class="input-group">
-            <label>Secret Keyword (Promotional)</label>
-            <input type="text" id="sessionKeyword" class="explore-input" placeholder="e.g. CINEMA2024" style="margin-bottom: 1.5rem;" />
-            <p style="font-size: 0.75rem; color: var(--text-secondary); margin-top: -1rem; margin-bottom: 1.5rem;">Only visible to registered users.</p>
+            <label>Secret Keyword <span class="label-hint">(Promotional — only visible to registered users)</span></label>
+            <input type="text" id="sessionKeyword" class="explore-input" placeholder="e.g. CINEMA2024" />
           </div>
+        </div>
 
+        <div class="session-form-footer">
           <button class="submit-btn" onclick="window.handleCreateSession()">Create Session</button>
         </div>
       </div>
