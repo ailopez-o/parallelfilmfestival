@@ -2526,9 +2526,8 @@ nav {
   font-size: 0.75rem;
   color: var(--text-secondary);
   margin: 0.2rem 0 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
   opacity: 0.7;
 }
 
