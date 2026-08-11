@@ -136,17 +136,6 @@ export const SessionService = {
   },
 
   /**
-   * Records attendance for an unregistered guest (requires guest_name column
-   * on session_attendance: ALTER TABLE session_attendance ADD COLUMN guest_name TEXT).
-   */
-  async addGuestAttendance(sessionId, guestName) {
-    const { error } = await supabase
-      .from('session_attendance')
-      .insert([{ session_id: sessionId, guest_name: guestName }]);
-    if (error) throw error;
-  },
-
-  /**
    * Records attendance for the most recent session associated with a movie.
    */
   async recordAttendanceByMovie(userId, movieId) {

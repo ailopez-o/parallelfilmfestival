@@ -14,17 +14,18 @@ export const AchievementService = {
     if (!userId) return ACHIEVEMENT_LIST.map(a => ({ ...a, progress: 0, current: 0, completed: false }));
 
     try {
-      const [ratingsRes, tableRes, visionaryRes] = await Promise.all([
+      const [ratingsRes, tableRes, visionaryRes, signupsRes] = await Promise.all([
         supabase.from('user_ratings').select('*', { count: 'exact', head: true }).eq('user_id', userId),
         supabase.from('session_attendance').select('session_id').eq('user_id', userId),
-        supabase.from('movies').select('*', { count: 'exact', head: true }).eq('proposed_by', userId).eq('is_seen', true)
+        supabase.from('movies').select('*', { count: 'exact', head: true }).eq('proposed_by', userId).eq('is_seen', true),
+        supabase.from('session_signups').select('session_id').eq('user_id', userId)
       ]);
 
       const ratingsCount = ratingsRes.count || 0;
-      
-      // session_attendance is the source of truth
+
+      const signedUpSessionIds = new Set((signupsRes.data || []).map(s => s.session_id).filter(Boolean));
       const attendedSessionIds = new Set(
-        (tableRes.data || []).map(a => a.session_id).filter(Boolean)
+        (tableRes.data || []).map(a => a.session_id).filter(id => id && signedUpSessionIds.has(id))
       );
       
       const attendanceCount = attendedSessionIds.size;
@@ -98,11 +99,12 @@ export const AchievementService = {
       streak5: 0
     };
     try {
-      const [profilesRes, ratingsRes, attendanceRes, sessionsRes] = await Promise.all([
+      const [profilesRes, ratingsRes, attendanceRes, sessionsRes, signupsRes] = await Promise.all([
         supabase.from('profiles').select('id'),
         supabase.from('user_ratings').select('user_id'),
         supabase.from('session_attendance').select('user_id, session_id'),
-        supabase.from('sessions').select('id, session_date').order('session_date', { ascending: true })
+        supabase.from('sessions').select('id, session_date').order('session_date', { ascending: true }),
+        supabase.from('session_signups').select('user_id, session_id')
       ]);
 
       stats.miembro = profilesRes.data?.length || 0;
@@ -115,10 +117,17 @@ export const AchievementService = {
         if (count >= 10) stats.oro++;
       });
 
+      const signupSet = {};
+      signupsRes.data?.forEach(s => {
+        if (!signupSet[s.user_id]) signupSet[s.user_id] = new Set();
+        signupSet[s.user_id].add(s.session_id);
+      });
+
       const attMap = {};
-      attendanceRes.data?.forEach(a => { 
+      attendanceRes.data?.forEach(a => {
+        if (!a.session_id || !signupSet[a.user_id]?.has(a.session_id)) return;
         if (!attMap[a.user_id]) attMap[a.user_id] = new Set();
-        if (a.session_id) attMap[a.user_id].add(a.session_id);
+        attMap[a.user_id].add(a.session_id);
       });
       Object.values(attMap).forEach(sessionSet => {
         const count = sessionSet.size;
@@ -166,13 +175,14 @@ export const AchievementService = {
    */
   async fetchRecentEvents() {
     try {
-      const [profiles, allRatings, allAttendance, allMovies, allSessions, allAttendanceTable] = await Promise.all([
+      const [profiles, allRatings, allAttendance, allMovies, allSessions, allAttendanceTable, allSignups] = await Promise.all([
         supabase.from('profiles').select('id, full_name, email, created_at').order('created_at', { ascending: false }),
         supabase.from('user_ratings').select('user_id, created_at, movie_id'),
         supabase.from('participation_log').select('user_id, created_at, action_type, movie_id'),
         supabase.from('movies').select('id, proposed_by, is_seen, created_at'),
         supabase.from('sessions').select('id, session_date, movie_id').order('session_date', { ascending: true }),
-        supabase.from('session_attendance').select('user_id, session_id, sessions(movie_id, session_date)')
+        supabase.from('session_attendance').select('user_id, session_id, sessions(movie_id, session_date)'),
+        supabase.from('session_signups').select('user_id, session_id')
       ]);
 
       if (profiles.error) throw profiles.error;
@@ -214,11 +224,17 @@ export const AchievementService = {
       });
 
       // 3. Attendance Milestones (Source of Truth: session_attendance + logs)
+      const signupSetEvents = {};
+      (allSignups?.data || []).forEach(s => {
+        if (!signupSetEvents[s.user_id]) signupSetEvents[s.user_id] = new Set();
+        signupSetEvents[s.user_id].add(s.session_id);
+      });
+
       const attendanceStats = {};
       const processedAttendanceKeys = new Set();
-      
-      // First, process official session_attendance (Authority)
-      (allAttendanceTable?.data || []).forEach(a => {
+
+      // First, process official session_attendance (only if user had a signup)
+      (allAttendanceTable?.data || []).filter(a => signupSetEvents[a.user_id]?.has(a.session_id)).forEach(a => {
         const movieId = a.sessions?.movie_id;
         const date = a.sessions?.session_date ? new Date(a.sessions.session_date) : new Date();
         if (!movieId) return;
@@ -251,7 +267,7 @@ export const AchievementService = {
 
       // 4. Streak Milestones
       const userAttMap = {};
-      (allAttendanceTable.data || []).forEach(entry => {
+      (allAttendanceTable.data || []).filter(entry => signupSetEvents[entry.user_id]?.has(entry.session_id)).forEach(entry => {
         if (!userAttMap[entry.user_id]) userAttMap[entry.user_id] = new Set();
         if (entry.session_id) userAttMap[entry.user_id].add(entry.session_id);
       });
