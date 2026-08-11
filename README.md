@@ -1,15 +1,15 @@
-# 🎬 Parallel Film Festival (PFF)
+# 🎬 Paral·lel Film Festival (PFF)
 
-![PFF Banner](https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&q=80&w=1200)
+![PFF Banner](public/og-image.png)
 
-**Parallel Film Festival** is a high-end, cinematic film proposal and voting platform. Designed with a **Noir & Indigo** aesthetic, it provides a premium space for film enthusiasts to curate their own festivals through real-time collaboration and discovery.
+**Paral·lel Film Festival** is a high-end, cinematic film proposal and voting platform. Designed with a **Noir & Indigo** aesthetic, it provides a premium space for film enthusiasts to curate their own festivals through real-time collaboration and discovery.
 
 ---
 
 ## 💎 Premium Design Philosophy
 The application features a cutting-edge **Glassmorphism** interface with:
 - **Noir & Indigo Palette:** Deep obsidian backgrounds with vibrant indigo accents.
-- **Cinematic Textures:** Refined typography using *Outfit* and *Inter*.
+- **Cinematic Textures:** Refined typography using *Outfit* (Headings), *Syne* (Logo), and *Inter* (Body/UI).
 - **Dynamic Micro-interactions:** Smooth transitions, hover-glow effects, and glass-blur overlays.
 
 ---
@@ -18,21 +18,27 @@ The application features a cutting-edge **Glassmorphism** interface with:
 
 ### 🔍 Discovery & Proposals
 - **TMDB Smart Search:** Real-time search powered by The Movie Database API, enriched with director credits, genres, and synopses.
-- **Curated Results:** Intelligent popularity filtering to prioritize well-known titles.
+- **Multiverse Explore:** Advanced filtering by year, genre, watch provider, and AI-powered recommendations.
 - **Proposal System:** Logged-in users can propose films to the shared dashboard.
 
 ### 🗳️ Living Lineup
 - **Dynamic Voting:** Real-time community voting with heart-based micro-animations.
+- **Cinema Cemetery:** Inactive or unpopular movies are automatically archived but can be resurrected.
 - **Vote Persistence:** Powered by Supabase to ensure every vote counts across sessions.
 
-### 🛡️ Authentication & Profiles
-- **Secure Access:** Integrated with Supabase Auth (Email & Social).
-- **Personal Dashboard:** Track your proposals and voting activity in a personalized profile view.
-- **Role-Based Controls:** Automated admin roles for festival management (e.g., marking movies as seen).
+### 📅 Sessions & Attendance
+- **Event Management:** Create and manage real-world festival sessions.
+- **RSVP & Check-in:** Users can sign up for upcoming sessions, and admins can mark physical attendance.
+- **Session Hub:** Upload photos and comments to commemorate past screenings.
+
+### 🏆 Gamification & Profiles
+- **Achievement Medals:** Earn dynamic titles (e.g., "The Visionary", "Iron Streak") based on attendance, voting accuracy, and proposal success.
+- **Personal Dashboard:** Track your proposals, voting activity, and score progression.
+- **Role-Based Controls:** Automated admin roles for festival management and destructive actions.
 
 ### 🎬 Seen History
 - **Archival Feed:** Move films from the live lineup to the history section once they've been watched.
-- **Community Rating:** (Coming Soon) Rate films in the history section once viewed.
+- **Community Rating:** Rate films and view aggregate scores for all watched cinema.
 
 ---
 
@@ -47,6 +53,8 @@ The application features a cutting-edge **Glassmorphism** interface with:
 | **Backend** | Database | [Supabase](https://supabase.com/) (PostgreSQL) |
 | | Auth | Supabase Auth |
 | | API | [TMDB API](https://www.themoviedb.org/documentation/api) |
+
+> 📚 **Developer Guide:** For a detailed breakdown of how the frontend modules and backend services interact, please read our [System Architecture Document](ARCHITECTURE.md).
 
 ---
 
@@ -90,8 +98,11 @@ To enable the full feature set, ensure your Supabase instance includes the follo
 - `movies`: Stores proposals, genres, and metadata.
 - `votes`: Tracks user interaction.
 - `profiles`: Manages user roles and festival permissions.
+- `user_ratings`: Tracks post-viewing movie ratings.
+- `sessions`, `session_signups`, `session_attendance`, `session_comments`, `session_photos`: Event management.
+- `participation_log`: Audit trail for calculating gamification scores.
 
 ---
 
 *“Celebrating cinema, one frame at a time.”*
-**© 2024 Parallel Film Festival**
+**© 2024 Paral·lel Film Festival**

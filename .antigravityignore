@@ -1,0 +1,46 @@
+# Antigravity Ignore - Parallel Film Festival
+# Use this to exclude files from being analyzed by Antigravity
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+dist-ssr/
+build/
+
+# System files and IDEs
+.DS_Store
+.vscode/
+.idea/
+.git/
+*.swp
+*.swo
+
+# Environment and Secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+
+# Supabase Local
+supabase/.temp/
+
+# Assets (images, fonts, etc. usually don't need analysis)
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.gif
+**/*.svg
+**/*.ico
+**/*.woff
+**/*.woff2
+**/*.ttf
+**/*.eot

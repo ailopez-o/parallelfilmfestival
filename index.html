@@ -8,7 +8,7 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Google Fonts for Arthouse -->
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
     <!-- Main Style -->
     <link id="theme-link" rel="stylesheet" href="/style.css" />
     
@@ -16,14 +16,14 @@
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://parallelfilmfestival.com">
     <meta property="og:title" content="Paral·lel Film Festival | Proposals & Voting">
-    <meta property="og:description" content="Propose your favorite movies and vote on the lineup for our next festival session.">
+    <meta property="og:description" content="Discover, propose, and vote for the next films at Paral·lel Film Festival.">
     <meta property="og:image" content="/og-image.png">
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:url" content="https://parallelfilmfestival.com">
     <meta name="twitter:title" content="Paral·lel Film Festival | Proposals & Voting">
-    <meta name="twitter:description" content="Propose your favorite movies and vote on the lineup for our next festival session.">
+    <meta name="twitter:description" content="Discover, propose, and vote for the next films at Paral·lel Film Festival.">
     <meta name="twitter:image" content="/og-image.png">
   </head>
   <body>
@@ -50,8 +50,10 @@
         <nav>
           <div class="logo" onclick="window.navigateTo('home')">
             <i data-lucide="clapperboard"></i>
-            <span>Paral·lel<span>FilmFestival</span></span>
+            <span>Paral·lel Film Festival</span>
           </div>
+
+
           <div id="userHeader" class="user-actions">
             <!-- Auth buttons/user info will be injected here -->
           </div>
@@ -66,15 +68,57 @@
           <h1>Vote for your <br/>Next Favorite Film</h1>
           <p>Propose your favorite movies and vote on the lineup for our next festival session.</p>
           
-          <div id="searchContainer" class="main-search-container">
+          <!-- NEXT SESSION FEATURE -->
+          <div id="nextSessionHero" class="next-session-hero page-hidden">
+            <!-- Injected by JS -->
+          </div>
+
+          <div id="proposalsCountLabel" style="max-width: 800px; margin: 3rem auto 0.5rem; text-align: left; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; opacity: 0; padding-left: 0.5rem;"></div>
+          <div id="searchContainer" class="main-search-container" style="margin-top: 0;">
             <div class="search-wrapper">
               <i data-lucide="search"></i>
               <input type="text" id="movieSearch" placeholder="Search for movies to propose..." />
               <div id="searchResults" class="search-results-dropdown"></div>
             </div>
             <button class="explore-btn-hero" onclick="window.navigateTo('explore')">
-              <i data-lucide="compass"></i> Explore All
+              <i data-lucide="compass"></i> Explore ALL
             </button>
+          </div>
+        </section>
+        
+        <!-- GLOBAL ACHIEVEMENTS SHOWCASE -->
+        <section id="homeAchievements" class="home-achievements-section container">
+          <div class="section-title">
+            <h2>Community Achievements</h2>
+            <p style="color:var(--text-secondary); font-size: 0.9rem;">How much do you love cinema?</p>
+          </div>
+          <div id="homeAchievementsGrid" class="achievements-grid">
+            <!-- Legend and stats will be injected here -->
+          </div>
+        </section>
+
+        <!-- RECENT ACTIVITY TIMELINE -->
+        <section id="achievementTimeline" class="container" style="margin-bottom: 4rem;">
+          <div class="section-title">
+            <h2>Recent Community Milestones</h2>
+          </div>
+          <div class="timeline-section">
+            <table class="timeline-table">
+              <tbody id="timelineBody">
+                <!-- Feed items will be injected here -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- TOP VOTED SHOWCASE -->
+        <section id="topVotedShowcase" class="showcase-section container page-hidden">
+          <div class="section-title">
+            <h2>🏆 Most Wanted Movies</h2>
+            <p style="color:var(--text-secondary); font-size: 0.9rem;">The community speaks! These are the top contenders to be screened next.</p>
+          </div>
+          <div id="topVotedGrid" class="showcase-grid">
+            <!-- Top 3 cards injected here -->
           </div>
         </section>
 
@@ -97,6 +141,62 @@
             </div>
           </div>
         </section>
+
+        <!-- DROPPED FILMS (CEMETERY) -->
+        <section class="history-section cemetery-section">
+          <div class="container">
+            <div class="section-title">
+              <h2>🪦 Dropped Films Cemetery</h2>
+              <p style="color:var(--text-secondary); font-size: 0.85rem;">These movies were proposed but didn't make it... for now.</p>
+            </div>
+            <div id="cemeteryGrid" class="movie-grid cemetery-grid">
+              <!-- Dropped movies injected here -->
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <!-- SESSIONS VIEW -->
+      <section id="sessionsView" class="view page-hidden">
+        <div class="container" style="padding-top: 4rem;">
+          <div class="section-title">
+            <div>
+              <h2>Cinema Sessions</h2>
+              <p style="color:var(--text-secondary); margin-top: 0.5rem;">Relive our past screenings and join the next one.</p>
+            </div>
+          </div>
+
+          <div id="sessionsGrid" class="sessions-grid">
+            <!-- Sessions injected here -->
+          </div>
+        </div>
+      </section>
+
+      <!-- RANKING VIEW -->
+      <section id="rankingView" class="view page-hidden">
+        <div class="container" style="padding-top: 4rem;">
+          <div class="section-title">
+            <h2><i data-lucide="trophy" style="color:#fbbf24; vertical-align:middle; margin-right:0.5rem;"></i> Festival Leaderboard</h2>
+            <p style="color:var(--text-secondary); margin-top: 0.5rem;">The most active film lovers in our community.</p>
+          </div>
+          
+          <div class="admin-panel glass">
+            <div class="user-list-container">
+              <table class="user-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>User</th>
+                    <th>Score</th>
+                  </tr>
+                </thead>
+                <tbody id="rankingList">
+                  <!-- Leaderboard items will be injected here -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- AUTH VIEW -->
@@ -207,6 +307,29 @@
             </div>
           </div>
 
+          <!-- USER ACHIEVEMENTS PROGRESS -->
+          <div class="profile-activity" style="margin-top: 2rem;">
+            <div class="section-title">
+              <h2>My Trophies</h2>
+              <p style="color:var(--text-secondary); font-size: 0.9rem;">Keep engaging to unlock them all.</p>
+            </div>
+            <div id="profileAchievementsGrid" class="achievements-grid">
+              <!-- Progress cards will be injected here -->
+            </div>
+          </div>
+
+          <div id="profilePointsAuditSection" class="profile-activity page-hidden">
+            <div class="section-title">
+              <div>
+                <h2>Points Audit</h2>
+                <p id="profilePointsAuditSubtitle" style="color:var(--text-secondary); font-size: 0.9rem;">A full breakdown of where this user's score comes from.</p>
+              </div>
+            </div>
+            <div id="profilePointsAuditContent">
+              <!-- Audit breakdown injected here -->
+            </div>
+          </div>
+
           <div class="profile-activity">
             <div class="section-title">
               <h2>My Activity</h2>
@@ -214,6 +337,8 @@
             <div class="activity-tabs">
               <button class="activity-tab active" data-view="myProposals">My Proposals</button>
               <button class="activity-tab" data-view="myVotes">My Votes</button>
+              <button class="activity-tab" data-view="seenProposals">Vistas</button>
+              <button class="activity-tab" data-view="cemeteryProposals">Cementerio</button>
             </div>
             <div id="profileActivityGrid" class="movie-grid">
               <!-- User activity cards will be injected here -->
@@ -225,26 +350,142 @@
           <div id="adminDashboard" class="admin-dashboard page-hidden">
             <div class="section-title">
               <h2><i data-lucide="shield-check" style="color:var(--success); vertical-align:middle; margin-right:0.5rem;"></i> Admin Dashboard</h2>
+              <div class="admin-top-actions" style="margin-top: 1rem; display: flex; gap: 1rem; align-items: center;">
+                <div class="admin-tabs" style="margin: 0;">
+                  <button class="admin-tab-btn active" data-tab="users">Users</button>
+                  <button class="admin-tab-btn" data-tab="sessions">Sessions</button>
+                  <button class="admin-tab-btn" data-tab="logs">Activity Log</button>
+                  <button class="admin-tab-btn" data-tab="achievements">Achievements</button>
+                  <button class="admin-tab-btn" data-tab="settings">Settings</button>
+                </div>
+                <div style="flex-grow: 1;"></div>
+                <button class="admin-btn-action" onclick="window.cleanupInactiveMovies()" style="background: var(--warning); color: black; border: none; padding: 0.5rem 1rem; border-radius: 8px; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; cursor: pointer;" title="Move movies with no votes in 15 days to cemetery">
+                  <i data-lucide="wind"></i> Cleanup Inactive (15d)
+                </button>
+              </div>
             </div>
             
-            <div class="admin-panel glass">
-              <div class="panel-header">
-                <h3>User Directory</h3>
-                <span class="user-count-badge" id="adminUserCount">0 Users</span>
+            <div id="adminUsersTab" class="admin-tab-content">
+              <div class="admin-panel glass">
+                <div class="panel-header">
+                  <h3>User Directory</h3>
+                  <span class="user-count-badge" id="adminUserCount">0 Users</span>
+                </div>
+                <div class="user-list-container">
+                  <table class="user-table">
+                    <thead>
+                      <tr>
+                        <th>User</th>
+                        <th>Email</th>
+                        <th>Score</th>
+                        <th>Joined</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="adminUserList">
+                      <!-- Users will be injected here -->
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <div class="user-list-container">
-                <table class="user-table">
-                  <thead>
-                    <tr>
-                      <th>User</th>
-                      <th>Email</th>
-                      <th>Joined</th>
-                    </tr>
-                  </thead>
-                  <tbody id="adminUserList">
-                    <!-- Users will be injected here -->
-                  </tbody>
-                </table>
+            </div>
+
+            <!-- ADMIN LOGS TAB -->
+            <div id="adminLogsTab" class="admin-tab-content page-hidden">
+              <div class="admin-panel glass">
+                <div class="panel-header">
+                  <h3>Global Participation Log</h3>
+                  <span class="status-badge">Live Updates</span>
+                </div>
+                <div class="user-list-container">
+                  <table class="user-table">
+                    <thead>
+                      <tr>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>Movie</th>
+                        <th>Points</th>
+                        <th>Date</th>
+                      </tr>
+                    </thead>
+                    <tbody id="adminParticipationLog">
+                      <tr><td colspan="5" style="text-align:center; padding:2rem; color:var(--text-secondary);">Loading activity log...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- ADMIN ACHIEVEMENTS TAB -->
+            <div id="adminAchievementsTab" class="admin-tab-content page-hidden">
+              <div class="admin-panel glass">
+                <div class="panel-header">
+                  <h3>Achievements Audit</h3>
+                  <span class="status-badge" style="background:var(--accent); color:white;">Global Milestones</span>
+                </div>
+                <div class="user-list-container">
+                  <table class="user-table">
+                    <thead>
+                      <tr>
+                        <th>User</th>
+                        <th>Medal / Achievement</th>
+                        <th>Date Earned</th>
+                        <th>Points</th>
+                      </tr>
+                    </thead>
+                    <tbody id="adminAchievementsList">
+                      <tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--text-secondary);">Calculating achievements...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- ADMIN SESSIONS TAB -->
+            <div id="adminSessionsTab" class="admin-tab-content page-hidden">
+              <div class="admin-panel glass">
+                <div class="panel-header">
+                  <h3>Session Management</h3>
+                  <div style="display:flex; gap:0.75rem;">
+                    <button class="btn-create-session" style="background:var(--accent); color:white;" onclick="window.handleDeployMetadata()" title="Generate shareable link for social media previews">
+                      <i data-lucide="share-2"></i> Update Social Metadata
+                    </button>
+                    <button class="btn-create-session" onclick="window.showCreateSessionModal()">
+                      <i data-lucide="plus"></i> New Session
+                    </button>
+                  </div>
+                </div>
+                
+                <div id="adminSessionsList" class="admin-sessions-list">
+                  <!-- Sessions with management tools injected here -->
+                </div>
+              </div>
+            </div>
+
+            <!-- ADMIN SETTINGS TAB -->
+            <div id="adminSettingsTab" class="admin-tab-content page-hidden">
+              <div class="admin-panel glass">
+                <div class="panel-header">
+                  <h3>Global Festival Settings</h3>
+                  <p>Control the rules of participation for all users.</p>
+                </div>
+                <div class="settings-grid" style="padding: 2rem; max-width: 600px;">
+                  <div class="input-group">
+                    <label><i data-lucide="layers"></i> Max Proposals per User</label>
+                    <input type="number" id="settingMaxProposals" min="1" max="100" />
+                    <small>Movies a user can have active at the same time.</small>
+                  </div>
+                  <div class="input-group" style="margin-top: 1.5rem;">
+                    <label><i data-lucide="heart"></i> Max Votes per User</label>
+                    <input type="number" id="settingMaxVotes" min="1" max="1000" />
+                    <small>Total "likes" a user can distribute among proposals.</small>
+                  </div>
+                  <div class="edit-actions" style="margin-top: 2rem;">
+                    <button class="save-profile-btn" onclick="window.saveAppSettings()">
+                      <i data-lucide="save"></i> Save System Settings
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -284,6 +525,10 @@
                 <label>Director</label>
                 <input type="text" id="exploreDirector" placeholder="e.g. Nolan..." class="explore-input" />
               </div>
+              <div class="input-group">
+                <label>Actor</label>
+                <input type="text" id="exploreActor" placeholder="e.g. Brad Pitt..." class="explore-input" />
+              </div>
             </div>
 
             <div class="explore-row">
@@ -300,6 +545,27 @@
                   <span>to</span>
                   <input type="number" id="exploreYearTo" placeholder="To" min="1900" max="2030" />
                 </div>
+              </div>
+              <div class="input-group" style="max-width: 120px;">
+                <label>Limit</label>
+                <input type="number" id="exploreLimit" value="20" min="1" max="100" class="explore-input" />
+              </div>
+            </div>
+
+            <div class="explore-row">
+              <div class="input-group">
+                <label>Sort By</label>
+                <select id="exploreSort" class="explore-input">
+                  <option value="popularity.desc">Most Popular</option>
+                  <option value="vote_average.desc">Top Rated</option>
+                  <option value="primary_release_date.desc">Newest Releases</option>
+                </select>
+              </div>
+              <div class="input-group">
+                <label>Streaming On (ES)</label>
+                <select id="exploreProvider" class="explore-input">
+                  <option value="">Any Platform</option>
+                </select>
               </div>
             </div>
 
@@ -334,6 +600,55 @@
       </section>
     </main>
 
+    <!-- SESSION DETAIL MODAL -->
+    <div id="sessionModal" class="modal page-hidden">
+      <div class="modal-overlay" onclick="window.closeSessionModal()"></div>
+      <div class="modal-content session-modal-content">
+        <button class="close-modal-btn" onclick="window.closeSessionModal()">
+          <i data-lucide="x"></i>
+        </button>
+        <div id="sessionModalBody">
+          <!-- Injected by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- CREATE SESSION MODAL -->
+    <div id="createSessionModal" class="modal page-hidden">
+      <div class="modal-overlay" onclick="window.closeCreateSessionModal()"></div>
+      <div class="modal-content glass auth-card" style="max-width: 600px;">
+        <div class="auth-form-content">
+          <h2>Create Session</h2>
+          <p>Schedule a new screening.</p>
+          
+          <div class="input-group">
+            <label>Select Movie</label>
+            <select id="sessionMovieSelect" class="explore-input" style="margin-bottom: 1.5rem;">
+              <!-- Movies injected here -->
+            </select>
+          </div>
+
+          <div class="input-group">
+            <label>Session Date</label>
+            <input type="datetime-local" id="sessionDate" class="explore-input" style="margin-bottom: 1.5rem;" />
+          </div>
+
+          <div class="input-group">
+            <label>Description</label>
+            <textarea id="sessionDescription" class="explore-input" placeholder="What's special about this session?" rows="3" style="margin-bottom: 1.5rem;"></textarea>
+          </div>
+
+          <div class="input-group">
+            <label>Secret Keyword (Promotional)</label>
+            <input type="text" id="sessionKeyword" class="explore-input" placeholder="e.g. CINEMA2024" style="margin-bottom: 1.5rem;" />
+            <p style="font-size: 0.75rem; color: var(--text-secondary); margin-top: -1rem; margin-bottom: 1.5rem;">Only visible to registered users.</p>
+          </div>
+
+          <button class="submit-btn" onclick="window.handleCreateSession()">Create Session</button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/main.js"></script>
     <script>
       // Initialize icons
@@ -343,4 +658,3 @@
     </script>
   </body>
 </html>
-

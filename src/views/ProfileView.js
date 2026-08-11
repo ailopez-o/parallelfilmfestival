@@ -1,0 +1,254 @@
+import { createMovieCardHTML, createAchievementCardHTML } from '../components/index.js';
+import { escapeHtml, getUserDisplayName } from '../utils/index.js';
+
+/**
+ * Profile View Module.
+ * Manages the user profile screen and activity history.
+ */
+export const ProfileView = {
+  /**
+   * Renders the profile header and stats.
+   */
+  renderHeader(profile, options = {}) {
+    const { 
+      profileName, 
+      profileEmail, 
+      profileAvatar, 
+      countProposals, 
+      countVotes,
+      maxProposals,
+      maxVotes,
+      proposalsCount,
+      votesCount
+    } = options;
+
+    const displayName = getUserDisplayName(profile);
+    const displayEmail = profile?.email || 'N/A';
+    const displayAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=5850ec&color=fff&size=256&bold=true`;
+
+    if (profileName) profileName.textContent = displayName;
+    if (profileEmail) profileEmail.textContent = displayEmail;
+    if (profileAvatar) profileAvatar.src = displayAvatar;
+
+    const proposalsLimitLabel = Number.isInteger(maxProposals) ? maxProposals : '—';
+    const votesLimitLabel = Number.isInteger(maxVotes) ? maxVotes : '—';
+    if (countProposals) countProposals.textContent = `${proposalsCount || 0} / ${proposalsLimitLabel}`;
+    if (countVotes) countVotes.textContent = `${votesCount || 0} / ${votesLimitLabel}`;
+  },
+
+  /**
+   * Renders the activity grid (proposals or votes).
+   */
+  renderActivityGrid(movies, container, state) {
+    if (!container) return;
+    if (!movies || movies.length === 0) {
+      container.innerHTML = '<div class="empty-state">No movies found in this category.</div>';
+      return;
+    }
+
+    container.innerHTML = movies.map(movie => {
+      const isOwner = state.user && movie.proposed_by === state.user.id;
+      return createMovieCardHTML(movie, {
+        context: state.context || 'activity',
+        showDelete: isOwner || state.isAdmin,
+        isAdmin: state.isAdmin,
+        user: state.user,
+        userVotes: state.userVotes
+      });
+    }).join('');
+  },
+
+  /**
+   * Renders user achievements.
+   */
+  renderAchievements(achievements, container) {
+    if (!container) return;
+    container.innerHTML = achievements.map(a => createAchievementCardHTML(a)).join('');
+  },
+
+  /**
+   * Renders skeletons for the profile header.
+   */
+  renderSkeletonHeader(options = {}) {
+    const { profileName, profileEmail, profileAvatar, countProposals, countVotes } = options;
+    if (profileName) profileName.innerHTML = '<div class="skeleton skeleton-title" style="width: 200px; height: 2rem;"></div>';
+    if (profileEmail) profileEmail.innerHTML = '<div class="skeleton skeleton-text" style="width: 150px;"></div>';
+    if (profileAvatar) profileAvatar.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; // Transparent 1x1
+    if (profileAvatar) profileAvatar.parentElement.classList.add('skeleton');
+    
+    if (countProposals) countProposals.innerHTML = '<div class="skeleton skeleton-stat"></div>';
+    if (countVotes) countVotes.innerHTML = '<div class="skeleton skeleton-stat"></div>';
+  },
+
+  /**
+   * Renders skeletons for the activity grid.
+   */
+  renderActivitySkeletons(container, count = 4) {
+    if (!container) return;
+    container.innerHTML = Array(count).fill(0).map(() => `
+      <div class="skeleton-card">
+        <div class="skeleton skeleton-image"></div>
+        <div class="skeleton skeleton-title"></div>
+        <div class="skeleton skeleton-text-short"></div>
+      </div>
+    `).join('');
+  },
+
+  /**
+   * Renders skeletons for the achievements grid.
+   */
+  renderAchievementSkeletons(container, count = 3) {
+    if (!container) return;
+    container.innerHTML = Array(count).fill(0).map(() => `
+      <div class="skeleton-achievement">
+        <div style="display:flex; gap:1rem; align-items:center;">
+          <div class="skeleton skeleton-avatar" style="width:40px; height:40px;"></div>
+          <div style="flex:1;">
+            <div class="skeleton skeleton-title" style="width:60%; height:1rem; margin-bottom:0.5rem;"></div>
+            <div class="skeleton skeleton-text" style="width:80%; height:0.75rem;"></div>
+          </div>
+        </div>
+        <div class="skeleton skeleton-text" style="width:100%; height:8px; margin-top:1rem;"></div>
+      </div>
+    `).join('');
+  },
+
+  /**
+   * Renders skeletons for the points audit section.
+   */
+  renderPointsAuditSkeleton(container) {
+    if (!container) return;
+    container.innerHTML = `
+      <div class="admin-panel glass">
+        <div class="user-list-container">
+          <table class="user-table">
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Count</th>
+                <th>Rule</th>
+                <th>Total</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${Array(5).fill(0).map(() => `
+                <tr>
+                  <td><div class="skeleton skeleton-text-short" style="width: 120px;"></div></td>
+                  <td><div class="skeleton skeleton-text-short" style="width: 50px;"></div></td>
+                  <td><div class="skeleton skeleton-text-short" style="width: 80px;"></div></td>
+                  <td><div class="skeleton skeleton-text-short" style="width: 70px;"></div></td>
+                  <td><div class="skeleton skeleton-text" style="width: 90%;"></div></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  },
+
+  /**
+   * Renders the points audit breakdown table.
+   */
+  renderPointsAudit(audit, container) {
+    if (!container) return;
+    if (!audit) {
+      container.innerHTML = '<div class="empty-state">No audit data available.</div>';
+      return;
+    }
+
+    const summaryCards = `
+      <div class="audit-summary-grid">
+        <div class="stat-card">
+          <div class="stat-value">${audit.totalScore}</div>
+          <div class="stat-label">Total Score</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">${audit.basePoints}</div>
+          <div class="stat-label">Participation</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">${audit.achievementPoints}</div>
+          <div class="stat-label">Achievements</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">${audit.achievements.length}</div>
+          <div class="stat-label">Medals Earned</div>
+        </div>
+      </div>
+    `;
+
+    const rows = audit.lines.map((line) => {
+      const details = line.details.length
+        ? `<div class="audit-detail-list">${line.details.map(detail => `<span class="audit-detail-chip">${escapeHtml(detail)}</span>`).join('')}</div>`
+        : '<span style="color:var(--text-secondary);">No items</span>';
+
+      return `
+        <tr>
+          <td><span style="font-weight:700;">${escapeHtml(line.label)}</span></td>
+          <td>${line.count}</td>
+          <td><span class="score-badge ${line.unitPoints >= 0 ? 'success' : 'danger'}">${line.unitPoints >= 0 ? '+' : ''}${line.unitPoints} pts</span></td>
+          <td><span class="score-badge ${line.totalPoints >= 0 ? 'success' : 'danger'}">${line.totalPoints >= 0 ? '+' : ''}${line.totalPoints}</span></td>
+          <td>${details}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const achievementRows = audit.achievements.length
+      ? audit.achievements.map((achievement) => `
+          <tr>
+            <td><span style="font-weight:700;">${escapeHtml(achievement.name)}</span></td>
+            <td><span style="color:var(--text-secondary);">${escapeHtml(achievement.reason)}</span></td>
+            <td><span class="score-badge success">+${achievement.points}</span></td>
+          </tr>
+        `).join('')
+      : '<tr><td colspan="3" style="text-align:center; padding:2rem; color:var(--text-secondary);">No achievements contributing points yet.</td></tr>';
+
+    container.innerHTML = `
+      ${summaryCards}
+      <div class="admin-panel glass" style="margin-top: 1.5rem;">
+        <div class="panel-header">
+          <h3>Score Breakdown</h3>
+          <span class="user-count-badge">${audit.totalScore} pts total</span>
+        </div>
+        <div class="user-list-container">
+          <table class="user-table">
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Count</th>
+                <th>Rule</th>
+                <th>Total</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="admin-panel glass" style="margin-top: 1.5rem;">
+        <div class="panel-header">
+          <h3>Achievement Points</h3>
+          <span class="user-count-badge">${audit.achievementPoints} pts</span>
+        </div>
+        <div class="user-list-container">
+          <table class="user-table">
+            <thead>
+              <tr>
+                <th>Medal</th>
+                <th>Why It Counts</th>
+                <th>Points</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${achievementRows}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+};
