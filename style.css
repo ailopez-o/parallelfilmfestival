@@ -3693,6 +3693,7 @@ body.modal-open {
 
 .session-modal-content {
   max-width: 1000px;
+  max-height: 90vh;
   background: var(--bg-dark);
   border: 1px solid var(--border);
   border-radius: 2.5rem;
@@ -3700,6 +3701,15 @@ body.modal-open {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+#sessionModalBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .close-modal-btn {
