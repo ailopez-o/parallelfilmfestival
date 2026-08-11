@@ -3706,8 +3706,7 @@ body.modal-open {
 #sessionModalBody {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -4200,7 +4199,8 @@ body.modal-open {
 .attendance-panel {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 .attendance-panel-header {
@@ -4248,6 +4248,7 @@ body.modal-open {
 
 .attendance-panel-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 1.25rem 2rem;
