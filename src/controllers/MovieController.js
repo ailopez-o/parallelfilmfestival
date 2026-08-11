@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase.js';
 import { MovieService, TMDBService, AchievementService } from '../api/index.js';
+import { computeActivityScoresForMovies } from '../api/admin.js';
 import { store } from '../state/store.js';
 import { HomeView, ProfileView, AdminView } from '../views/index.js';
 import { FALLBACK_IMAGE, ACHIEVEMENT_LIST } from '../config/constants.js';
@@ -187,7 +188,22 @@ export async function renderTopVotedShowcase() {
   const { proposedMovies, isAdmin, user, userVotes } = store.getState();
   const container = document.getElementById('topVotedShowcase');
   const grid = document.getElementById('topVotedGrid');
-  HomeView.renderTopVotedShowcase(proposedMovies, container, grid, { isAdmin, user, userVotes });
+
+  // Build top3 only from the most-active half so forgotten high-vote
+  // movies don't block the showcase indefinitely.
+  let activePool = proposedMovies;
+  if (proposedMovies.length >= 2) {
+    try {
+      const scored = await computeActivityScoresForMovies(proposedMovies);
+      const sorted = [...scored].sort((a, b) => b.activity_score - a.activity_score);
+      const activeCount = Math.ceil(sorted.length / 2);
+      activePool = sorted.slice(0, activeCount);
+    } catch (e) {
+      console.error('[Showcase] Could not compute activity scores, falling back to all proposals:', e);
+    }
+  }
+
+  HomeView.renderTopVotedShowcase(activePool, container, grid, { isAdmin, user, userVotes });
   if (window.lucide) window.lucide.createIcons();
 }
 
