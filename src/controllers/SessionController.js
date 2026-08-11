@@ -250,6 +250,7 @@ export function init() {
     const sessionMovieSelect = document.getElementById('sessionMovieSelect');
     resetSessionModalToCreateMode();
     createSessionModal.classList.remove('page-hidden');
+    document.body.classList.add('modal-open');
 
     sessionMovieSelect.innerHTML = `
       <option value="">-- To Be Decided --</option>
@@ -264,6 +265,7 @@ export function init() {
     resetSessionModalToCreateMode();
     store.setState({ currentSession: null });
     createSessionModal.classList.add('page-hidden');
+    document.body.classList.remove('modal-open');
   };
 
   window.handleCreateSession = async () => {
@@ -312,6 +314,7 @@ export function init() {
 
     store.setState({ currentSession: session });
     createSessionModal.classList.remove('page-hidden');
+    document.body.classList.add('modal-open');
 
     sessionMovieSelect.innerHTML = `
       <option value="">-- To Be Decided --</option>
