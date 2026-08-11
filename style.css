@@ -3556,6 +3556,125 @@ nav {
   width: 95%;
 }
 
+/* ── Create / Edit Session Form Modal ─────────────────────────────────────── */
+.session-form-card {
+  position: relative;
+  z-index: 10;
+  width: min(560px, 95vw);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-dark, #0f0f17);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.5rem;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255,255,255,0.04);
+  overflow: hidden;
+}
+
+.session-form-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1.75rem 2rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.session-form-header h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 0.25rem;
+}
+
+.session-form-header p {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.session-form-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1.5rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  overscroll-behavior: contain;
+}
+
+.session-form-body .input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.session-form-body label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.label-hint {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.7;
+}
+
+.session-form-footer {
+  padding: 1.25rem 2rem 1.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.session-form-footer .submit-btn {
+  width: 100%;
+  margin: 0;
+}
+
+/* Dark-themed select for the session form */
+.session-select {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  color: var(--text-primary, #e2e8f0);
+  width: 100%;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.95rem;
+  transition: border-color 0.3s ease, background 0.3s ease;
+  cursor: pointer;
+  appearance: auto;
+  color-scheme: dark;
+}
+
+.session-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: rgba(79, 70, 229, 0.06);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.session-select option {
+  background: #1a1b26;
+  color: #e2e8f0;
+}
+
+/* Fix native select & datetime-local in dark context */
+.session-form-body .explore-input {
+  margin-bottom: 0;
+  color-scheme: dark;
+}
+
+/* Body scroll lock when any modal is open */
+body.modal-open {
+  overflow: hidden;
+}
+
 .session-modal-content {
   max-width: 1000px;
   background: var(--bg-dark);
