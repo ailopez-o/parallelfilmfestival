@@ -36,15 +36,12 @@ export const MovieService = {
   },
 
   async updateMovieData(movieId, updates) {
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('movies')
       .update(updates)
-      .eq('id', movieId)
-      .select()
-      .single();
+      .eq('id', movieId);
 
     if (error) throw error;
-    return data;
   },
 
   async createMovie(movieData) {

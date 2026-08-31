@@ -262,7 +262,7 @@ export async function enrichMovieData(movies, options = {}) {
       enrichedMap.set(movie.id, localMovie);
 
       if (Object.keys(updates).length > 0) {
-        await MovieService.updateMovieData(movie.id, updates);
+        await MovieService.updateMovieData(movie.id, updates).catch(() => {});
       }
     } catch (e) {
       console.error(`[Enrichment] Failed for ${movie.title}:`, e);
