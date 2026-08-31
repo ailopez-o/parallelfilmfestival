@@ -649,6 +649,17 @@ export function init() {
         store.setUserVotes(new Set([...store.getState().userVotes, movieId]));
       }
 
+      // Update store immediately so re-renders see the correct state before app:refresh completes.
+      const { allMovies: currentMovies } = store.getState();
+      const updatedMovies = currentMovies.map(m =>
+        m.id === movieId ? { ...m, is_dropped: false, proposed_by: user.id } : m
+      );
+      store.setState({
+        allMovies: updatedMovies,
+        proposedMovies: updatedMovies.filter(m => !m.is_seen && !m.is_dropped),
+      });
+      renderCemetery(updatedMovies.filter(m => m.is_dropped));
+
       showNotification(`"${movie.title}" has been rescued from the cemetery!`, 'success');
       window.dispatchEvent(new CustomEvent('app:refresh'));
     } catch (e) {

@@ -88,12 +88,14 @@ export const MovieService = {
   },
 
   async rescueMovie(movieId, userId) {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('movies')
       .update({ is_dropped: false, proposed_by: userId })
-      .eq('id', movieId);
-      
+      .eq('id', movieId)
+      .select('id');
+
     if (error) throw error;
+    if (!data?.length) throw new Error('rescue_no_rows_updated');
   },
 
   async fetchVotesForUser(userId) {
@@ -109,8 +111,8 @@ export const MovieService = {
   async addVote(userId, movieId) {
     const { error } = await supabase
       .from('votes')
-      .insert([{ user_id: userId, movie_id: movieId }]);
-    
+      .upsert([{ user_id: userId, movie_id: movieId }], { onConflict: 'user_id,movie_id', ignoreDuplicates: true });
+
     if (error) throw error;
   },
 
